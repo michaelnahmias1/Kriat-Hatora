@@ -164,6 +164,12 @@ class handler(BaseHTTPRequestHandler):
             payload, status = {"error": str(e)}, 400
         except LookupError as e:
             payload, status = {"error": str(e)}, 404
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                payload, status = {"error": "הקטע לא נמצא ב-Sefaria — "
+                                            "בדוק את מספר הפרק וטווח הפסוקים"}, 404
+            else:
+                payload, status = {"error": f"תקלה בגישה ל-Sefaria: {e}"}, 502
         except urllib.error.URLError as e:
             payload, status = {"error": f"תקלה בגישה ל-Sefaria: {e}"}, 502
         except Exception as e:  # noqa: BLE001 — תשובת JSON גם על הפתעות
