@@ -98,10 +98,17 @@ def verses_to_segments(verses: list, max_words: int = 4) -> list:
 
 # --- שלב 3: יישור -----------------------------------------------------------
 
+WAV16K_NAME = "aligned_input_16k.wav"
+
+
 def load_audio_16k_mono(audio_path: str, work_dir: str = "."):
-    """ממיר כל פורמט ל-wav 16kHz מונו (ffmpeg) וטוען כ-tensor."""
+    """ממיר כל פורמט ל-wav 16kHz מונו (ffmpeg) וטוען כ-tensor.
+
+    הקובץ נשמר בשם קבוע (WAV16K_NAME בתוך work_dir) כדי ששלבים נוספים
+    (ASR, ‏VAD) יוכלו לקרוא את אותו הקובץ בלי המרה חוזרת.
+    """
     import torchaudio
-    wav_path = str(Path(work_dir) / "aligned_input_16k.wav")
+    wav_path = str(Path(work_dir) / WAV16K_NAME)
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", audio_path,
          "-ar", "16000", "-ac", "1", wav_path], check=True)
@@ -124,32 +131,52 @@ def romanize_words(words: list) -> list:
     return out
 
 
-def align_words(waveform, romanized_words: list) -> list:
-    """יישור מאולץ עם MMS_FA. מחזיר [(start_sec, end_sec)] לכל מילה.
+class MmsAligner:
+    """מיישר MMS_FA רב-שימושי: המודל נטען פעם אחת ומשרת N חלונות.
 
-    הערת גבול: על GPU T4 היישור בטוח עד ~6 דקות אודיו ברצף. הקלטה ארוכה
-    משמעותית עלולה לגמור את הזיכרון — לפצל את ההקלטה לפי עליות.
+    align() מקבל גל-אודיו (או פרוסה שלו) ו-offset בשניות, ומחזיר לכל מילה
+    (start_sec, end_sec, score) בזמן גלובלי. score = ממוצע ציוני הטוקנים
+    (הסתברות פוסטריורית של ה-CTC) — מזין את ניקוד הביטחון.
+
+    הערת גבול: על GPU T4 חלון בטוח עד ~6 דקות אודיו ברצף; הפייפליין
+    ההיברידי (hybrid.py) שומר על חלונות קצרים בהרבה.
     """
-    import torch
-    from torchaudio.pipelines import MMS_FA as bundle
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = bundle.get_model(with_star=False).to(device)
-    tokenizer = bundle.get_tokenizer()
-    aligner = bundle.get_aligner()
+    def __init__(self, device: str = None, with_star: bool = False):
+        import torch
+        from torchaudio.pipelines import MMS_FA as bundle
+        self._torch = torch
+        self.sample_rate = bundle.sample_rate
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = bundle.get_model(with_star=with_star).to(self.device)
+        self.tokenizer = bundle.get_tokenizer()
+        self.aligner = bundle.get_aligner()
 
-    with torch.inference_mode():
-        emission, _ = model(waveform.to(device))
-        token_spans = aligner(emission[0], tokenizer(romanized_words))
+    def align(self, waveform, romanized_words: list,
+              offset_sec: float = 0.0) -> list:
+        with self._torch.inference_mode():
+            emission, _ = self.model(waveform.to(self.device))
+            token_spans = self.aligner(emission[0],
+                                       self.tokenizer(romanized_words))
+        num_frames = emission.size(1)
+        sec_per_frame = waveform.size(1) / num_frames / self.sample_rate
+        spans = []
+        for word_spans in token_spans:
+            start = offset_sec + word_spans[0].start * sec_per_frame
+            end = offset_sec + word_spans[-1].end * sec_per_frame
+            scores = [getattr(t, "score", 1.0) for t in word_spans]
+            spans.append((start, end, sum(scores) / len(scores)))
+        return spans
 
-    num_frames = emission.size(1)
-    sec_per_frame = waveform.size(1) / num_frames / bundle.sample_rate
-    spans = []
-    for word_spans in token_spans:
-        start = word_spans[0].start * sec_per_frame
-        end = word_spans[-1].end * sec_per_frame
-        spans.append((start, end))
-    return spans
+
+def align_words(waveform, romanized_words: list) -> list:
+    """יישור מאולץ בהרצה אחת. מחזיר [(start_sec, end_sec)] לכל מילה.
+
+    עטיפה דקה סביב MmsAligner — נשמרת עבור run() (מסלול "MMS טהור",
+    המתחרה בהערכת ה-POC) ולתאימות לאחור.
+    """
+    aligner = MmsAligner()
+    return [(s, e) for s, e, _score in aligner.align(waveform, romanized_words)]
 
 
 # --- שלב 4: דגימת גבולות + SRT ----------------------------------------------
@@ -162,11 +189,10 @@ def _fmt_ts(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25) -> str:
-    """גבולות מקטעים בלבד (שאר חותמות המילים נזרקות) → תוכן קובץ SRT.
+def segment_bounds(segments: list, word_spans: list):
+    """זמני-מילים → (starts, ends) לכל מקטע, לפי מילתו הראשונה/אחרונה.
 
-    לכל מקטע: התחלה = תחילת מילתו הראשונה; סוף = תחילת המקטע הבא
-    (רציף, בלי חורים — נוח יותר לצפייה), ולמקטע האחרון סוף-מילה + ריפוד.
+    word_spans יכולים להיות (start, end) או (start, end, score).
     """
     starts, ends = [], []
     wi = 0
@@ -178,6 +204,26 @@ def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25) -> str:
     if wi != len(word_spans):
         raise RuntimeError(
             f"אי-התאמה: {len(word_spans)} מילים יושרו אבל המקטעים מכסים {wi}")
+    return starts, ends
+
+
+def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25,
+              starts_override: list = None) -> str:
+    """גבולות מקטעים בלבד (שאר חותמות המילים נזרקות) → תוכן קובץ SRT.
+
+    לכל מקטע: התחלה = תחילת מילתו הראשונה; סוף = תחילת המקטע הבא
+    (רציף, בלי חורים — נוח יותר לצפייה), ולמקטע האחרון סוף-מילה + ריפוד.
+    starts_override מאפשר להזריק תחילות מתוקנות (הצמדת VAD בפייפליין
+    ההיברידי) בלי לשנות את חוזה הפונקציה. הטקסט המוצג הוא display בלבד —
+    טקסט Sefaria המדויק, מנוקד ומוטעם, ללא שום עיבוד.
+    """
+    starts, ends = segment_bounds(segments, word_spans)
+    if starts_override is not None:
+        if len(starts_override) != len(starts):
+            raise RuntimeError(
+                f"אי-התאמה: {len(starts_override)} תחילות מוזרקות מול "
+                f"{len(starts)} מקטעים")
+        starts = list(starts_override)
 
     lines = []
     for i, seg in enumerate(segments):

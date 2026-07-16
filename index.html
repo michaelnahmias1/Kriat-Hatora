@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a365d">
+<title>קריאת התורה — כתוביות מסונכרנות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=David+Libre:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --card: #ffffff;
+    --ink: #1c2733;
+    --muted: #66707c;
+    --accent: #1a365d;
+    --accent-ink: #ffffff;
+    --gold: #b98a2f;
+    --line: #e3ded4;
+    --ok: #1e7d46;
+    --err: #b3372e;
+    --verse-chip: #eef2f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14181d;
+      --card: #1d232b;
+      --ink: #e8e6e1;
+      --muted: #9aa4af;
+      --accent: #7ea4d4;
+      --accent-ink: #10151b;
+      --gold: #d4a94c;
+      --line: #2c343e;
+      --verse-chip: #262e38;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Hebrew", "Arial Hebrew", Arial, sans-serif;
+    line-height: 1.55;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .bible {
+    font-family: "David Libre", "Taamey David CLM", "SBL Hebrew", "Times New Roman", serif;
+  }
+  header {
+    background: var(--accent); color: #fff;
+    padding: 14px 16px calc(14px);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { margin: 0; font-size: 1.15rem; font-weight: 700; }
+  header p { margin: 2px 0 0; font-size: .8rem; opacity: .85; }
+  main { max-width: 640px; margin: 0 auto; padding: 12px 12px 40px; }
+  section.card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px; margin: 12px 0;
+  }
+  section.card.locked { opacity: .45; pointer-events: none; }
+  h2 { font-size: 1rem; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  h2 .n {
+    background: var(--accent); color: var(--accent-ink); border-radius: 50%;
+    width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: .85rem; flex: none;
+  }
+  h2 .done { color: var(--ok); font-size: 1rem; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 3px; }
+  input, select {
+    width: 100%; padding: 11px 10px; font-size: 1rem; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; min-width: 0; }
+  button {
+    font: inherit; font-weight: 600; border: none; border-radius: 12px;
+    padding: 13px 16px; cursor: pointer; touch-action: manipulation;
+    background: var(--accent); color: var(--accent-ink); width: 100%;
+  }
+  button:disabled { opacity: .5; }
+  button.secondary { background: var(--verse-chip); color: var(--ink); }
+  button.small { width: auto; padding: 8px 12px; font-size: .85rem; border-radius: 9px; }
+  .mt { margin-top: 10px; }
+  .hint { font-size: .8rem; color: var(--muted); margin: 8px 0 0; }
+  .error { color: var(--err); font-size: .9rem; margin-top: 8px; white-space: pre-wrap; }
+  .okline { color: var(--ok); font-size: .9rem; margin-top: 8px; }
+
+  /* רשימת מקטעים */
+  .seglist { max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 10px; }
+  .segrow { display: flex; gap: 8px; align-items: baseline; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  .segrow:last-child { border-bottom: none; }
+  .segrow .idx { color: var(--muted); font-size: .75rem; min-width: 2em; flex: none; }
+  .segrow .vchip {
+    background: var(--verse-chip); border-radius: 6px; font-size: .7rem; color: var(--muted);
+    padding: 1px 6px; flex: none;
+  }
+  .segrow .txt { font-size: 1.05rem; }
+
+  audio { width: 100%; margin-top: 10px; }
+
+  /* מסך ההקשות */
+  #tapOverlay {
+    position: fixed; inset: 0; z-index: 50; background: var(--bg);
+    display: none; flex-direction: column; padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  #tapOverlay.open { display: flex; }
+  #tapTop { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #tapProgress { font-size: .85rem; color: var(--muted); }
+  #tapCurrent {
+    flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center; gap: 14px; min-height: 0; padding: 8px 4px;
+  }
+  #tapNowText { font-size: 1.7rem; line-height: 1.7; }
+  #tapNextText { font-size: 1rem; color: var(--muted); }
+  #tapNextText b { color: var(--gold); font-weight: 600; }
+  #tapBtn {
+    min-height: 92px; font-size: 1.25rem; border-radius: 18px;
+    background: var(--gold); color: #fff;
+  }
+  #tapControls { display: flex; gap: 8px; margin-top: 8px; }
+  #tapControls button { flex: 1; }
+  #tapClock { font-variant-numeric: tabular-nums; font-size: .95rem; color: var(--muted); }
+
+  /* מסך הבדיקה */
+  .timelist { border: 1px solid var(--line); border-radius: 10px; margin-top: 10px; max-height: 340px; overflow-y: auto; }
+  .timerow { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .timerow:last-child { border-bottom: none; }
+  .timerow .t { font-variant-numeric: tabular-nums; font-size: .8rem; color: var(--muted); min-width: 4.6em; flex: none; }
+  .timerow .txt { flex: 1; font-size: .98rem; min-width: 0; }
+  .timerow button { flex: none; }
+  .badge {
+    display: inline-block; background: var(--verse-chip); color: var(--muted);
+    border-radius: 8px; padding: 2px 8px; font-size: .75rem; margin-inline-start: 6px;
+  }
+  footer { text-align: center; font-size: .78rem; color: var(--muted); padding: 10px 16px 26px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>קריאת התורה — כתוביות מסונכרנות</h1>
+  <p>טקסט מדויק מנוקד ומוטעם (MAM) · הכל בטלפון · ההקלטה לא עוזבת את המכשיר</p>
+</header>
+<main>
+
+  <!-- שלב 1: הטקסט -->
+  <section class="card" id="step1">
+    <h2><span class="n">1</span> בחירת הקטע <span class="done" id="done1" hidden>✓</span></h2>
+    <div class="row">
+      <div>
+        <label for="book">ספר</label>
+        <select id="book">
+          <option>בראשית</option><option>שמות</option><option>ויקרא</option>
+          <option>במדבר</option><option>דברים</option>
+        </select>
+      </div>
+      <div>
+        <label for="chapter">פרק</label>
+        <input id="chapter" type="number" min="1" inputmode="numeric" value="1">
+      </div>
+    </div>
+    <div class="row mt">
+      <div>
+        <label for="verse_start">מפסוק (רשות)</label>
+        <input id="verse_start" type="number" min="1" inputmode="numeric" placeholder="1">
+      </div>
+      <div>
+        <label for="verse_end">עד פסוק</label>
+        <input id="verse_end" type="number" min="1" inputmode="numeric" placeholder="סוף הפרק">
+      </div>
+      <div>
+        <label for="chapter_end">עד פרק</label>
+        <input id="chapter_end" type="number" min="1" inputmode="numeric" placeholder="—">
+      </div>
+    </div>
+    <button class="mt" id="loadBtn">טען את הטקסט</button>
+    <div id="loadMsg"></div>
+    <div id="segPreviewWrap" hidden>
+      <p class="okline" id="loadOk"></p>
+      <div class="seglist bible" id="segPreview"></div>
+      <p class="hint">בדיקת עיניים: החיתוך לפי טעמי המקרא — כל שורה תהיה כתובית אחת.</p>
+    </div>
+  </section>
+
+  <!-- שלב 2: ההקלטה -->
+  <section class="card locked" id="step2">
+    <h2><span class="n">2</span> ההקלטה <span class="done" id="done2" hidden>✓</span></h2>
+    <input type="file" id="audioFile" accept="audio/*,video/*" hidden>
+    <button id="pickAudio" class="secondary">בחירת הקלטה מהטלפון…</button>
+    <div id="audioInfo" class="hint" hidden></div>
+    <audio id="player" controls preload="metadata" hidden></audio>
+    <p class="hint">הקובץ נשאר במכשיר — שום דבר לא מועלה לשרת.</p>
+  </section>
+
+  <!-- שלב 3: תזמון -->
+  <section class="card locked" id="step3">
+    <h2><span class="n">3</span> תזמון <span class="done" id="done3" hidden>✓</span></h2>
+    <button id="startSmart">⚡ תזמון אוטומטי — המערכת מנתחת את ההקלטה</button>
+    <p class="hint" style="margin-top:4px">המערכת מזהה את הפסקות הקריאה (סופי פסוקים, נשימות) בתוך ההקלטה ומצמידה אליהן את המקטעים. הכל במכשיר — כלום לא מועלה. אחר-כך בודקים ומתקנים בשלב 4.</p>
+    <button id="startTap" class="secondary mt">🎯 תזמון ידני בהקשות (גיבוי)</button>
+    <p class="hint" style="margin-top:4px">מאזינים להקלטה ומקישים ברגע שכל מקטע מתחיל — למקרה שהתזמון האוטומטי מפספס.</p>
+    <button id="startAuto" class="secondary mt">⚖️ חלוקה לפי אורך הטקסט בלבד</button>
+    <div class="mt">
+      <label for="reaction">פיצוי זמן-תגובה בהקשה ידנית (אלפיות שנייה)</label>
+      <input id="reaction" type="number" step="50" min="0" max="1000" value="300">
+    </div>
+    <div id="timingMsg"></div>
+  </section>
+
+  <!-- שלב 4: בדיקה ותיקון -->
+  <section class="card locked" id="step4">
+    <h2><span class="n">4</span> בדיקה ותיקון</h2>
+    <p class="hint" style="margin:0 0 6px">הקשה על ▶ מנגנת מנקודת הכניסה של המקטע. חצים מזיזים ב-0.2 שניות.</p>
+    <div class="timelist" id="timeList"></div>
+  </section>
+
+  <!-- שלב 5: ייצוא -->
+  <section class="card locked" id="step5">
+    <h2><span class="n">5</span> ייצוא SRT</h2>
+    <button id="dlBtn">⬇️ הורדת קובץ SRT</button>
+    <button id="shareBtn" class="secondary mt" hidden>📤 שיתוף הקובץ…</button>
+    <button id="copyBtn" class="secondary mt">📋 העתקת התוכן</button>
+    <div id="exportMsg"></div>
+    <p class="hint">ההמשך: CapCut Web (מצב "אתר מחשב" בדפדפן) ← ייבוא ה-SRT ← עיצוב ← Cloud ← אפליקציית CapCut ← פרסום.</p>
+  </section>
+
+</main>
+
+<!-- מסך ההקשות במסך מלא -->
+<div id="tapOverlay">
+  <div id="tapTop">
+    <button class="small secondary" id="tapCancel">ביטול</button>
+    <span id="tapClock">0:00</span>
+    <span id="tapProgress"></span>
+  </div>
+  <div id="tapCurrent" class="bible">
+    <div id="tapNextText"></div>
+    <div id="tapNowText"></div>
+  </div>
+  <button id="tapBtn">המקטע מתחיל עכשיו 👆</button>
+  <div id="tapControls">
+    <button class="small secondary" id="tapUndo">↩︎ מקטע אחורה</button>
+    <button class="small secondary" id="tapPause">⏸ השהיה</button>
+    <button class="small secondary" id="tapRate">מהירות ×1</button>
+  </div>
+</div>
+
+<footer>
+  מסלול יישור AI מדויק (Colab + GPU):
+  <a href="https://colab.research.google.com/github/michaelnahmias1/Kriat-Hatora/blob/claude/poc-permanent-interface-lttvyo/notebooks/worker.ipynb" target="_blank" rel="noopener">worker.ipynb</a>
+  · <a href="https://github.com/michaelnahmias1/Kriat-Hatora" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
+<script src="/autotime.js"></script>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const STORE_KEY = "kriat-hatora-v1";
+
+const S = {
+  data: null,        // תשובת ה-API: ref, version, segments[]
+  times: null,       // זמן כניסה (שניות) לכל מקטע
+  endTime: null,     // סוף המקטע האחרון
+  audioName: null,
+};
+
+/* ---------- עזרי תצוגה ---------- */
+function fmtClock(t) {
+  t = Math.max(0, t || 0);
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return m + ":" + String(s).padStart(2, "0");
+}
+function fmtSrt(t) {
+  const ms = Math.max(0, Math.round(t * 1000));
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000);
+  const s = Math.floor(ms % 60000 / 1000), r = ms % 1000;
+  const p = (n, w) => String(n).padStart(w, "0");
+  return `${p(h,2)}:${p(m,2)}:${p(s,2)},${p(r,3)}`;
+}
+function setLocked(stepId, locked) {
+  $(stepId).classList.toggle("locked", locked);
+}
+function save() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      query: readQuery(), data: S.data, times: S.times,
+      endTime: S.endTime, audioName: S.audioName,
+      reaction: $("reaction").value,
+    }));
+  } catch (e) {}
+}
+
+/* ---------- שלב 1: טעינת הטקסט ---------- */
+function readQuery() {
+  return {
+    book: $("book").value,
+    chapter: $("chapter").value,
+    verse_start: $("verse_start").value,
+    verse_end: $("verse_end").value,
+    chapter_end: $("chapter_end").value,
+  };
+}
+async function loadText() {
+  const q = readQuery();
+  if (!q.chapter) { $("loadMsg").innerHTML = '<p class="error">חסר מספר פרק</p>'; return; }
+  $("loadBtn").disabled = true;
+  $("loadBtn").textContent = "טוען מ-Sefaria…";
+  $("loadMsg").innerHTML = "";
+  try {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) params.set(k, v);
+    const res = await fetch("/api/segments?" + params.toString());
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("שגיאה " + res.status));
+    S.data = data;
+    S.times = null; S.endTime = null;
+    renderTextLoaded();
+    save();
+  } catch (e) {
+    $("loadMsg").innerHTML = `<p class="error">הטעינה נכשלה: ${e.message}</p>`;
+  } finally {
+    $("loadBtn").disabled = false;
+    $("loadBtn").textContent = "טען את הטקסט";
+  }
+}
+function renderTextLoaded() {
+  const d = S.data;
+  $("loadOk").textContent =
+    `נטען: ${d.ref} · ${d.n_verses} פסוקים · ${d.segments.length} מקטעים · גרסה: ${d.version}`;
+  const list = $("segPreview");
+  list.innerHTML = "";
+  let lastVerse = null;
+  d.segments.forEach((seg, i) => {
+    const row = document.createElement("div");
+    row.className = "segrow";
+    const chip = seg.verse !== lastVerse ? `<span class="vchip">פסוק ${seg.verse}</span>` : "";
+    lastVerse = seg.verse;
+    row.innerHTML = `<span class="idx">${i + 1}</span>${chip}<span class="txt">${seg.display}</span>`;
+    list.appendChild(row);
+  });
+  $("segPreviewWrap").hidden = false;
+  $("done1").hidden = false;
+  setLocked("step2", false);
+  refreshTimingSteps();
+}
+
+/* ---------- שלב 2: ההקלטה ---------- */
+const player = $("player");
+let audioReady = false;
+let audioFileObj = null;   // הקובץ עצמו — נדרש לניתוח האוטומטי
+$("pickAudio").addEventListener("click", () => $("audioFile").click());
+$("audioFile").addEventListener("change", () => {
+  const f = $("audioFile").files[0];
+  if (!f) return;
+  audioFileObj = f;
+  player.src = URL.createObjectURL(f);
+  player.hidden = false;
+  S.audioName = f.name;
+  audioReady = false;
+  player.addEventListener("loadedmetadata", () => {
+    audioReady = isFinite(player.duration) && player.duration > 0;
+    $("audioInfo").hidden = false;
+    $("audioInfo").textContent = audioReady
+      ? `${f.name} · משך: ${fmtClock(player.duration)}`
+      : `${f.name} — לא הצלחתי לקרוא את משך הקובץ; נסה פורמט אחר (m4a/mp3/wav)`;
+    $("done2").hidden = !audioReady;
+    refreshTimingSteps();
+    save();
+  }, { once: true });
+});
+function refreshTimingSteps() {
+  const ready = !!(S.data && audioReady);
+  setLocked("step3", !ready);
+  const timed = !!(ready && S.times && S.times.length === S.data.segments.length && S.endTime != null);
+  setLocked("step4", !timed);
+  setLocked("step5", !timed);
+  if (timed) { $("done3").hidden = false; renderTimeList(); }
+}
+
+/* ---------- שלב 3א: תזמון בהקשות ---------- */
+const tap = { active: false, index: 0, wakeLock: null, rates: [1, 0.75, 1.25], rateIdx: 0 };
+
+async function tapStart() {
+  tap.active = true; tap.index = 0;
+  tap.backup = { times: S.times, endTime: S.endTime };
+  S.times = new Array(S.data.segments.length).fill(null);
+  S.endTime = null;
+  $("tapOverlay").classList.add("open");
+  player.currentTime = 0;
+  player.playbackRate = 1; tap.rateIdx = 0; $("tapRate").textContent = "מהירות ×1";
+  try { tap.wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+  await player.play().catch(() => {});
+  $("tapPause").textContent = "⏸ השהיה";
+  tapRender();
+  tapTick();
+}
+function tapRender() {
+  const segs = S.data.segments, n = segs.length;
+  if (tap.index < n) {
+    $("tapNextText").innerHTML = "הקש כשהקורא <b>מתחיל</b> את:";
+    $("tapNowText").textContent = segs[tap.index].display;
+    $("tapBtn").textContent = tap.index === 0 ? "הקריאה מתחילה עכשיו 👆" : "המקטע מתחיל עכשיו 👆";
+    $("tapProgress").textContent = `מקטע ${tap.index + 1} מתוך ${n}`;
+  } else {
+    $("tapNextText").textContent = "המקטע האחרון רץ…";
+    $("tapNowText").textContent = "הקש כשהקריאה מסתיימת";
+    $("tapBtn").textContent = "הקריאה הסתיימה 🏁";
+    $("tapProgress").textContent = `סוף (${n}/${n})`;
+  }
+}
+function tapTick() {
+  if (!tap.active) return;
+  $("tapClock").textContent = fmtClock(player.currentTime) + " / " + fmtClock(player.duration);
+  requestAnimationFrame(tapTick);
+}
+function reactionSec() {
+  const v = parseInt($("reaction").value, 10);
+  return (isFinite(v) ? Math.min(Math.max(v, 0), 1000) : 300) / 1000;
+}
+$("tapBtn").addEventListener("click", () => {
+  const t = Math.max(0, player.currentTime - reactionSec() * player.playbackRate);
+  const n = S.data.segments.length;
+  if (tap.index < n) {
+    // מונוטוניות: כניסה חדשה לא לפני הכניסה הקודמת
+    S.times[tap.index] = tap.index > 0 ? Math.max(t, S.times[tap.index - 1] + 0.05) : t;
+    tap.index++;
+    tapRender();
+  } else {
+    S.endTime = Math.max(t, S.times[n - 1] + 0.3);
+    tapFinish();
+  }
+});
+$("tapUndo").addEventListener("click", () => {
+  if (tap.index === 0) return;
+  tap.index--;
+  const back = tap.index > 0 ? S.times[tap.index - 1] : 0;
+  player.currentTime = Math.max(0, back - 1);
+  if (player.paused) player.play().catch(() => {});
+  $("tapPause").textContent = "⏸ השהיה";
+  tapRender();
+});
+$("tapPause").addEventListener("click", () => {
+  if (player.paused) { player.play(); $("tapPause").textContent = "⏸ השהיה"; }
+  else { player.pause(); $("tapPause").textContent = "▶️ המשך"; }
+});
+$("tapRate").addEventListener("click", () => {
+  tap.rateIdx = (tap.rateIdx + 1) % tap.rates.length;
+  player.playbackRate = tap.rates[tap.rateIdx];
+  $("tapRate").textContent = "מהירות ×" + tap.rates[tap.rateIdx];
+});
+$("tapCancel").addEventListener("click", () => {
+  S.times = tap.backup.times; S.endTime = tap.backup.endTime;
+  tapFinish(true); refreshTimingSteps();
+});
+player.addEventListener("ended", () => {
+  if (!tap.active) return;
+  const n = S.data.segments.length;
+  if (tap.index >= n && S.endTime == null) { S.endTime = player.duration; tapFinish(); }
+  else if (tap.index < n) {
+    $("tapNextText").textContent = "ההקלטה נגמרה לפני שסומנו כל המקטעים";
+    $("tapNowText").textContent = "חזור מקטע אחורה, או בטל ובדוק את טווח הפסוקים";
+  }
+});
+function tapFinish(cancelled) {
+  tap.active = false;
+  player.pause();
+  try { tap.wakeLock?.release(); } catch (e) {}
+  $("tapOverlay").classList.remove("open");
+  if (!cancelled) {
+    $("timingMsg").innerHTML = '<p class="okline">התזמון בהקשות הושלם ✓</p>';
+    refreshTimingSteps(); save();
+  }
+}
+$("startTap").addEventListener("click", tapStart);
+
+/* ---------- שלב 3: תזמון אוטומטי — ניתוח ההקלטה במכשיר ---------- */
+async function runSmartTiming() {
+  if (!audioFileObj) {
+    $("timingMsg").innerHTML = '<p class="error">יש לבחור את קובץ ההקלטה מחדש (הדפדפן לא שומר קבצים בין ביקורים).</p>';
+    return;
+  }
+  const btn = $("startSmart");
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = "מנתח את ההקלטה…";
+  $("timingMsg").innerHTML = "";
+  try {
+    const buf = await audioFileObj.arrayBuffer();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ac = new AC();
+    let audio;
+    try {
+      audio = await ac.decodeAudioData(buf);
+    } finally {
+      ac.close().catch(() => {});
+    }
+    const channels = [];
+    for (let c = 0; c < audio.numberOfChannels; c++) channels.push(audio.getChannelData(c));
+    const res = AutoTime.analyze(channels, audio.sampleRate, S.data.segments);
+    S.times = res.times;
+    S.endTime = res.endTime;
+    const d = res.diagnostics;
+    const anchors = d.anchorsTotal
+      ? `זוהו ${d.anchorsMatched} מתוך ${d.anchorsTotal} מעברי פסוק בהקלטה`
+      : "קטע של פסוק אחד — חולק לפי הפסקות ואורך הטקסט";
+    const quality = d.anchorsTotal && d.anchorsMatched < d.anchorsTotal * 0.6
+      ? ' <b>שים לב:</b> זוהו מעט הפסקות — כדאי לעבור בשלב 4 בעיון, או לתזמן ידנית.'
+      : " עוברים על התוצאה בשלב 4 ומכוונים ±0.2 איפה שצריך.";
+    $("timingMsg").innerHTML = `<p class="okline">התזמון האוטומטי הושלם ✓ ${anchors}.${quality}</p>`;
+    refreshTimingSteps(); save();
+  } catch (e) {
+    $("timingMsg").innerHTML =
+      `<p class="error">הניתוח נכשל (${e.message || e}) — נסה פורמט אחר (m4a/mp3/wav) או תזמון ידני בהקשות.</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+}
+$("startSmart").addEventListener("click", runSmartTiming);
+
+/* ---------- שלב 3ב: חלוקה לפי אורך הטקסט בלבד ---------- */
+$("startAuto").addEventListener("click", () => {
+  const segs = S.data.segments, dur = player.duration;
+  // משקל: אותיות + קבוע לנשימה בין מקטעים + תוספת להפסקת סוף-פסוק
+  const w = segs.map(s => s.letters + 2 + (s.verse_end ? 5 : 0));
+  const total = w.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  S.times = segs.map((s, i) => { const t = dur * acc / total; acc += w[i]; return t; });
+  S.endTime = dur;
+  $("timingMsg").innerHTML =
+    '<p class="okline">חולק אוטומטית לפי אורך הטקסט ✓ — כדאי לבדוק בשלב 4 ולתקן ב-CapCut</p>';
+  refreshTimingSteps(); save();
+});
+
+/* ---------- שלב 4: בדיקה ותיקון ---------- */
+function nudge(i, delta) {
+  const lo = i > 0 ? S.times[i - 1] + 0.05 : 0;
+  const hi = (i + 1 < S.times.length ? S.times[i + 1] : S.endTime) - 0.05;
+  S.times[i] = Math.min(Math.max(S.times[i] + delta, lo), hi);
+  renderTimeList(); save();
+}
+function renderTimeList() {
+  const list = $("timeList");
+  list.innerHTML = "";
+  S.data.segments.forEach((seg, i) => {
+    const row = document.createElement("div");
+    row.className = "timerow";
+    row.innerHTML =
+      `<span class="t">${fmtSrt(S.times[i]).slice(3, 11)}</span>` +
+      `<span class="txt bible">${seg.display}</span>` +
+      `<button class="small secondary" data-act="play" data-i="${i}">▶</button>` +
+      `<button class="small secondary" data-act="minus" data-i="${i}">−0.2</button>` +
+      `<button class="small secondary" data-act="plus" data-i="${i}">+0.2</button>`;
+    list.appendChild(row);
+  });
+  list.onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    const i = +b.dataset.i;
+    if (b.dataset.act === "play") { player.currentTime = S.times[i]; player.play(); }
+    else nudge(i, b.dataset.act === "plus" ? 0.2 : -0.2);
+  };
+}
+
+/* ---------- שלב 5: ייצוא SRT ---------- */
+function buildSrt() {
+  const segs = S.data.segments, n = segs.length, lines = [];
+  for (let i = 0; i < n; i++) {
+    const start = S.times[i];
+    let end = i + 1 < n ? S.times[i + 1] : S.endTime + 0.25;
+    end = Math.max(end, start + 0.3);
+    lines.push(String(i + 1), `${fmtSrt(start)} --> ${fmtSrt(end)}`, segs[i].display, "");
+  }
+  return "\uFEFF" + lines.join("\n");  // BOM — כמו utf-8-sig בצינור ה-Colab
+}
+function srtName() {
+  const q = readQuery();
+  let name = `${q.book}_${q.chapter}`;
+  if (q.verse_start) name += `_${q.verse_start}`;
+  if (q.chapter_end) name += `-${q.chapter_end}_${$("verse_end").value || 1}`;
+  else if (q.verse_end) name += `-${q.verse_end}`;
+  return name + ".srt";
+}
+function srtFile() {
+  return new File([buildSrt()], srtName(), { type: "application/x-subrip" });
+}
+$("dlBtn").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(srtFile());
+  a.download = srtName();
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  $("exportMsg").innerHTML = `<p class="okline">ירד הקובץ ${srtName()} ✓</p>`;
+});
+$("copyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(buildSrt());
+    $("exportMsg").innerHTML = '<p class="okline">התוכן הועתק ✓</p>';
+  } catch (e) {
+    $("exportMsg").innerHTML = '<p class="error">ההעתקה נכשלה — נסה את ההורדה</p>';
+  }
+});
+if (navigator.canShare && navigator.canShare({ files: [new File([""], "a.srt")] })) {
+  $("shareBtn").hidden = false;
+  $("shareBtn").addEventListener("click", () =>
+    navigator.share({ files: [srtFile()], title: srtName() }).catch(() => {}));
+}
+
+/* ---------- שחזור מ-localStorage ---------- */
+(function restore() {
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) {}
+  if (!st) return;
+  if (st.query) {
+    for (const k of ["book", "chapter", "verse_start", "verse_end", "chapter_end"])
+      if (st.query[k]) $(k).value = st.query[k];
+  }
+  if (st.reaction) $("reaction").value = st.reaction;
+  if (st.data) {
+    S.data = st.data; S.times = st.times; S.endTime = st.endTime; S.audioName = st.audioName;
+    renderTextLoaded();
+    if (st.audioName) {
+      $("audioInfo").hidden = false;
+      $("audioInfo").textContent = `בפעם הקודמת: ${st.audioName} — יש לבחור את הקובץ שוב (הדפדפן לא שומר קבצים)`;
+    }
+  }
+})();
+$("loadBtn").addEventListener("click", loadText);
+</script>
+</body>
+</html>

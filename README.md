@@ -4,33 +4,65 @@
 לייבוא ל-CapCut. הערך של המערכת הוא הטקסט המדויק — לא התזמון (שכלי עריכה כבר עושים, אבל
 תוך שיבוש העברית המקראית).
 
-**התוכנית המלאה: [PLAN.md](PLAN.md)** ‏(v5.1).
+**התוכנית המלאה: [PLAN.md](PLAN.md)** ‏(v6 — הפייפליין ההיברידי).
 
-## איך מפיקים כתוביות (הכל מהטלפון)
+## הממשק הקבוע — הכל מהטלפון, בלי Colab
 
-1. **הקלט** את הקריאה ושמור את הקובץ ב-Google Drive (למשל בתיקייה `kriat`).
+**‏https://kriat-hatora.vercel.app**
+
+1. **בחר קטע** — ספר, פרק, טווח פסוקים. הטקסט (גרסת MAM, מנוקד ומוטעם) נטען מ-Sefaria
+   ונחתך למקטעים לפי טעמי המקרא.
+2. **בחר את ההקלטה** מהטלפון — הקובץ נשאר במכשיר, שום דבר לא מועלה לשרת.
+3. **תזמן — אוטומטית**: המערכת מנתחת את ההקלטה במכשיר (זיהוי הפסקות הקריאה, התאמה
+   מונוטונית לגבולות הפסוקים וחלוקה משוקללת ביניהם — `autotime.js`) וממלאת את כל
+   הזמנים לבד. תזמון ידני בהקשות וחלוקה לפי אורך נשארו כגיבוי.
+4. **בדוק ותקן** — נגינה מכל נקודת כניסה, כוונון של ±0.2 שניות.
+5. **ייצא SRT** (הורדה / שיתוף / העתקה) ← CapCut Web ← Cloud ← אפליקציית CapCut ← פרסום.
+
+הממשק רץ על Vercel (פרויקט `kriat-hatora`): דף סטטי + פונקציית Python אחת
+(`api/segments.py`) שמושכת את הטקסט מ-Sefaria וחותכת אותו עם `src/chunker`.
+**אין צורך באחסון ענן** (Supabase וכד') — ההקלטה לא עוזבת את הטלפון והתזמון קורה בדפדפן.
+
+## מסלול היישור המדויק (AI, ‏Colab + GPU) — הפייפליין ההיברידי
+
+המסלול שנותן את הסנכרון הטוב ביותר, בשלוש שכבות שכל אחת מפצה על חולשת קודמתה:
+תמלול עברי (ivrit.ai) שמוצלב עם טקסט Sefaria ומייצר "עוגנים", יישור כפוי (MMS)
+על חלונות קצרים בין העוגנים, והצמדת גבולות לנשימות (VAD). לצד ה-SRT נוצר דוח
+איכות שמפרט אילו מקטעים בודדים כדאי לגרור ידנית.
+
+1. **הקלט** ושמור את הקובץ ב-Google Drive (למשל בתיקייה `kriat`).
 2. **פתח את המעבד ב-Colab:**
 
-   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/michaelnahmias1/Kriat-Hatora/blob/claude/project-action-plan-review-kyrf5x/notebooks/worker.ipynb)
+   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/michaelnahmias1/Kriat-Hatora/blob/main/notebooks/worker.ipynb)
 
    בפעם הראשונה: ‏Runtime ← Change runtime type ← **T4 GPU**.
 3. **מלא את תא הפרמטרים** (ספר, פרק, טווח פסוקים, נתיב ההקלטה) ← Runtime ← **Run all**.
 4. ה-SRT נשמר ב-Drive ליד ההקלטה (וגם מוצע להורדה ישירה).
-5. **CapCut Web** ← ייבוא ה-SRT ← עיצוב ותיקוני גרירה ← Cloud ← אפליקציית CapCut ← פרסום.
 
 ## מה יש בריפו
 
 | נתיב | מה זה |
 |---|---|
-| `PLAN.md` | תוכנית הפעולה המחייבת (v5.1) |
-| `notebooks/worker.ipynb` | **המעבד** — הקלטה מ-Drive ← SRT ל-Drive (זה מה שמריצים) |
+| `PLAN.md` | תוכנית הפעולה המחייבת (v6) |
+| `index.html` | **הממשק הקבוע** — דף אחד, עברית, מותאם לטלפון (נפרס ל-Vercel) |
+| `autotime.js` | מנוע התזמון בדפדפן — ניתוח ההקלטה במכשיר, בלי שרת ובלי העלאה |
+| `api/segments.py` | פונקציית ה-API: ‏Sefaria ← ניקוי ← חיתוך ← JSON (Vercel Python) |
+| `vercel.json` | תצורת הפריסה |
+| `notebooks/worker.ipynb` | **מסלול ה-AI ההיברידי** — הקלטה מ-Drive ← SRT + דוח איכות ל-Drive |
+| `notebooks/poc_eval.ipynb` | הערכה: סימון ground truth והשוואת שיטות הסנכרון |
 | `notebooks/shelav0_verification.ipynb` | notebook אבחון: אימות טקסט/טעמים/קרי-כתיב/הקלטה |
-| `src/chunker/` | חיתוך למקטעים לפי טעמי המקרא — Python טהור, אפס תלויות |
-| `src/aligner/` | הצינור המלא: Sefaria ← חיתוך ← יישור MMS ← SRT |
-| `tests/` | 28 בדיקות יחידה (רצות בלי רשת) |
+| `src/chunker/` | חיתוך למקטעים לפי טעמי המקרא — Python טהור, אפס תלויות (משרת את שני המסלולים) |
+| `src/aligner/` | הצינור ההיברידי ל-Colab: ‏Sefaria ← חיתוך ← תמלול+עוגנים ← יישור ממושכן ← VAD ← SRT |
+| `tests/` | בדיקות יחידה (רצות בלי רשת): ‏Python לצינור ול-API, ‏Node למנוע הדפדפן |
+
+## פריסה מחדש (למפתחים)
+
+הפריסה נעשית לפרויקט `kriat-hatora` ב-Vercel (לא לגעת בפרויקטים אחרים בחשבון).
+הקבצים שנפרסים: `index.html`, ‏`autotime.js`, ‏`api/segments.py`, ‏`vercel.json`, ‏`src/chunker/`.
 
 ## הרצת הבדיקות (למפתחים)
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v   # החיתוך וה-API
+node tests/test_autotime.mjs               # מנוע התזמון האוטומטי
 ```
