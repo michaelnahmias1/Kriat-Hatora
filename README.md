@@ -30,14 +30,15 @@
 על חלונות קצרים בין העוגנים, והצמדת גבולות לנשימות (VAD). לצד ה-SRT נוצר דוח
 איכות שמפרט אילו מקטעים בודדים כדאי לגרור ידנית.
 
-1. **הקלט** ושמור את הקובץ ב-Google Drive (למשל בתיקייה `kriat`).
-2. **פתח את המעבד ב-Colab:**
+1. **פתח את המעבד ב-Colab** (יש קישור גם בתחתית האפליקציה):
 
    [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/michaelnahmias1/Kriat-Hatora/blob/main/notebooks/worker.ipynb)
 
    בפעם הראשונה: ‏Runtime ← Change runtime type ← **T4 GPU**.
-3. **מלא את תא הפרמטרים** (ספר, פרק, טווח פסוקים, נתיב ההקלטה) ← Runtime ← **Run all**.
-4. ה-SRT נשמר ב-Drive ליד ההקלטה (וגם מוצע להורדה ישירה).
+2. **מלא את תא הפרמטרים** (ספר, פרק, טווח פסוקים) ← Runtime ← **Run all** ←
+   כשתא 2 מבקש, **בחר את קובץ ההקלטה ישירות מהטלפון** (לא צריך Google Drive;
+   מי שבכל זאת עובד מ-Drive — ממלא נתיב בתא 1 כמו קודם).
+3. ה-SRT ודוח האיכות מוצעים להורדה ישירה לטלפון.
 
 ## מה יש בריפו
 
