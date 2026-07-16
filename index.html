@@ -198,12 +198,13 @@
   <!-- שלב 3: תזמון -->
   <section class="card locked" id="step3">
     <h2><span class="n">3</span> תזמון <span class="done" id="done3" hidden>✓</span></h2>
-    <button id="startTap">🎯 תזמון בהקשות תוך כדי האזנה (מומלץ)</button>
-    <p class="hint" style="margin-top:4px">מאזינים להקלטה ומקישים ברגע שכל מקטע מתחיל. דיוק של עשיריות שנייה, בלי AI.</p>
-    <button id="startAuto" class="secondary mt">⚖️ חלוקה אוטומטית לפי אורך הטקסט</button>
-    <p class="hint" style="margin-top:4px">מהיר אבל מקורב — מתקנים גרירה ב-CapCut. מתאים כשההקלטה בקצב אחיד.</p>
+    <button id="startSmart">⚡ תזמון אוטומטי — המערכת מנתחת את ההקלטה</button>
+    <p class="hint" style="margin-top:4px">המערכת מזהה את הפסקות הקריאה (סופי פסוקים, נשימות) בתוך ההקלטה ומצמידה אליהן את המקטעים. הכל במכשיר — כלום לא מועלה. אחר-כך בודקים ומתקנים בשלב 4.</p>
+    <button id="startTap" class="secondary mt">🎯 תזמון ידני בהקשות (גיבוי)</button>
+    <p class="hint" style="margin-top:4px">מאזינים להקלטה ומקישים ברגע שכל מקטע מתחיל — למקרה שהתזמון האוטומטי מפספס.</p>
+    <button id="startAuto" class="secondary mt">⚖️ חלוקה לפי אורך הטקסט בלבד</button>
     <div class="mt">
-      <label for="reaction">פיצוי זמן-תגובה בהקשה (אלפיות שנייה)</label>
+      <label for="reaction">פיצוי זמן-תגובה בהקשה ידנית (אלפיות שנייה)</label>
       <input id="reaction" type="number" step="50" min="0" max="1000" value="300">
     </div>
     <div id="timingMsg"></div>
@@ -253,6 +254,7 @@
   · <a href="https://github.com/michaelnahmias1/Kriat-Hatora" target="_blank" rel="noopener">GitHub</a>
 </footer>
 
+<script src="/autotime.js"></script>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
@@ -348,10 +350,12 @@ function renderTextLoaded() {
 /* ---------- שלב 2: ההקלטה ---------- */
 const player = $("player");
 let audioReady = false;
+let audioFileObj = null;   // הקובץ עצמו — נדרש לניתוח האוטומטי
 $("pickAudio").addEventListener("click", () => $("audioFile").click());
 $("audioFile").addEventListener("change", () => {
   const f = $("audioFile").files[0];
   if (!f) return;
+  audioFileObj = f;
   player.src = URL.createObjectURL(f);
   player.hidden = false;
   S.audioName = f.name;
@@ -472,7 +476,52 @@ function tapFinish(cancelled) {
 }
 $("startTap").addEventListener("click", tapStart);
 
-/* ---------- שלב 3ב: חלוקה אוטומטית ---------- */
+/* ---------- שלב 3: תזמון אוטומטי — ניתוח ההקלטה במכשיר ---------- */
+async function runSmartTiming() {
+  if (!audioFileObj) {
+    $("timingMsg").innerHTML = '<p class="error">יש לבחור את קובץ ההקלטה מחדש (הדפדפן לא שומר קבצים בין ביקורים).</p>';
+    return;
+  }
+  const btn = $("startSmart");
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = "מנתח את ההקלטה…";
+  $("timingMsg").innerHTML = "";
+  try {
+    const buf = await audioFileObj.arrayBuffer();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ac = new AC();
+    let audio;
+    try {
+      audio = await ac.decodeAudioData(buf);
+    } finally {
+      ac.close().catch(() => {});
+    }
+    const channels = [];
+    for (let c = 0; c < audio.numberOfChannels; c++) channels.push(audio.getChannelData(c));
+    const res = AutoTime.analyze(channels, audio.sampleRate, S.data.segments);
+    S.times = res.times;
+    S.endTime = res.endTime;
+    const d = res.diagnostics;
+    const anchors = d.anchorsTotal
+      ? `זוהו ${d.anchorsMatched} מתוך ${d.anchorsTotal} מעברי פסוק בהקלטה`
+      : "קטע של פסוק אחד — חולק לפי הפסקות ואורך הטקסט";
+    const quality = d.anchorsTotal && d.anchorsMatched < d.anchorsTotal * 0.6
+      ? ' <b>שים לב:</b> זוהו מעט הפסקות — כדאי לעבור בשלב 4 בעיון, או לתזמן ידנית.'
+      : " עוברים על התוצאה בשלב 4 ומכוונים ±0.2 איפה שצריך.";
+    $("timingMsg").innerHTML = `<p class="okline">התזמון האוטומטי הושלם ✓ ${anchors}.${quality}</p>`;
+    refreshTimingSteps(); save();
+  } catch (e) {
+    $("timingMsg").innerHTML =
+      `<p class="error">הניתוח נכשל (${e.message || e}) — נסה פורמט אחר (m4a/mp3/wav) או תזמון ידני בהקשות.</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+}
+$("startSmart").addEventListener("click", runSmartTiming);
+
+/* ---------- שלב 3ב: חלוקה לפי אורך הטקסט בלבד ---------- */
 $("startAuto").addEventListener("click", () => {
   const segs = S.data.segments, dur = player.duration;
   // משקל: אותיות + קבוע לנשימה בין מקטעים + תוספת להפסקת סוף-פסוק
