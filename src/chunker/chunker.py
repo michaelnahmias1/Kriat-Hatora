@@ -17,6 +17,13 @@ from . import taamim
 
 # --- ניקוי טקסט שמגיע מ-Sefaria -------------------------------------------
 
+# הערות שוליים של Sefaria — מוסרות עם התוכן שלהן (טקסט זר, לא מהפסוק)
+_FOOTNOTE_RE = re.compile(
+    r"<sup[^>]*>.*?</sup>|<i\s+class=\"footnote\"[^>]*>.*?</i>", re.S | re.I)
+# מעברי שורה — כן הופכים לרווח (מפרידים בין מילים)
+_BR_RE = re.compile(r"<br\s*/?>", re.I)
+# שאר התגיות מוסרות בלי רווח: MAM עוטף אותיות בודדות בתוך מילה בתגיות
+# עיצוב (למשל האות הגדולה של בְּרֵאשִׁית) — רווח במקומן היה שובר את המילה.
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 # סימוני פרשה {פ} {ס} וכן (פ) (ס) על וריאציותיהם
 _PARASHA_RE = re.compile(r"[{(]\s*[פס]\s*[})]")
@@ -37,8 +44,10 @@ def clean_sefaria_text(text: str) -> str:
     תווי כיווניות בלתי-נראים, ומנרמל רווחים. לא נוגע בניקוד ובטעמים.
     """
     text = unicodedata.normalize("NFC", text)
+    text = _FOOTNOTE_RE.sub(" ", text)
+    text = _BR_RE.sub(" ", text)
+    text = _HTML_TAG_RE.sub("", text)
     text = html.unescape(text)
-    text = _HTML_TAG_RE.sub(" ", text)
     text = _PARASHA_RE.sub(" ", text)
     text = _INVISIBLE_RE.sub("", text)
     text = text.replace(" ", " ")

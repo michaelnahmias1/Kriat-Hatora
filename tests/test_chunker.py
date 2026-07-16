@@ -54,6 +54,17 @@ class TestClean(unittest.TestCase):
         self.assertEqual(clean_sefaria_text(raw), "אבג דהו")
 
 
+class TestCleanTags(unittest.TestCase):
+    def test_inline_tag_inside_word_does_not_split_it(self):
+        # MAM עוטף אותיות מיוחדות בתגית בתוך המילה (האות הגדולה של בראשית)
+        raw = "<big>בְּ</big>רֵאשִׁ֖ית בָּרָ֣א"
+        self.assertEqual(clean_sefaria_text(raw), "בְּרֵאשִׁ֖ית בָּרָ֣א")
+
+    def test_footnotes_removed_with_their_content(self):
+        raw = 'מִלָּה<sup>א</sup><i class="footnote">הערת נוסח</i> שְׁנִיָּה'
+        self.assertEqual(clean_sefaria_text(raw), "מִלָּה שְׁנִיָּה")
+
+
 class TestTokenize(unittest.TestCase):
     def test_maqaf_chain_is_one_prosodic_word(self):
         verse = "עַל" + MAQAF + "פְּנֵי תְהוֹם"
