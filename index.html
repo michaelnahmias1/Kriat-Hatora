@@ -135,6 +135,12 @@
     display: inline-block; background: var(--verse-chip); color: var(--muted);
     border-radius: 8px; padding: 2px 8px; font-size: .75rem; margin-inline-start: 6px;
   }
+  .report {
+    white-space: pre-wrap; font-size: .8rem; color: var(--ink);
+    background: var(--verse-chip); border-radius: 10px; padding: 10px;
+    max-height: 260px; overflow-y: auto; margin-top: 8px;
+  }
+  details summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
   footer { text-align: center; font-size: .78rem; color: var(--muted); padding: 10px 16px 26px; }
   footer a { color: var(--accent); }
 </style>
@@ -142,7 +148,7 @@
 <body>
 <header>
   <h1>קריאת התורה — כתוביות מסונכרנות</h1>
-  <p>טקסט מדויק מנוקד ומוטעם (MAM) · הכל בטלפון · ההקלטה לא עוזבת את המכשיר</p>
+  <p>טקסט מדויק מנוקד ומוטעם (MAM) · הכל מהטלפון — כולל מסלול ה-AI</p>
 </header>
 <main>
 
@@ -192,12 +198,14 @@
     <button id="pickAudio" class="secondary">בחירת הקלטה מהטלפון…</button>
     <div id="audioInfo" class="hint" hidden></div>
     <audio id="player" controls preload="metadata" hidden></audio>
-    <p class="hint">הקובץ נשאר במכשיר — שום דבר לא מועלה לשרת.</p>
+    <p class="hint">הקובץ נשאר במכשיר; הוא מועלה לשרת רק אם בוחרים בתזמון ה-AI בענן בשלב 3.</p>
   </section>
 
   <!-- שלב 3: תזמון -->
   <section class="card locked" id="step3">
     <h2><span class="n">3</span> תזמון <span class="done" id="done3" hidden>✓</span></h2>
+    <button id="startCloud" hidden>🛰️ תזמון AI מדויק בענן (המסלול ההיברידי)</button>
+    <p class="hint" id="cloudHint" hidden style="margin-top:4px">אותו מעבד היברידי של Colab (תמלול ← עוגנים ← יישור ← VAD), רץ על GPU בענן ישירות מכאן. ההקלטה מועלית לשרת העיבוד ונמחקת בסיומו. לוקח בדרך-כלל 2–5 דקות.</p>
     <button id="startSmart">⚡ תזמון אוטומטי — המערכת מנתחת את ההקלטה</button>
     <p class="hint" style="margin-top:4px">המערכת מזהה את הפסקות הקריאה (סופי פסוקים, נשימות) בתוך ההקלטה ומצמידה אליהן את המקטעים. הכל במכשיר — כלום לא מועלה. אחר-כך בודקים ומתקנים בשלב 4.</p>
     <button id="startTap" class="secondary mt">🎯 תזמון ידני בהקשות (גיבוי)</button>
@@ -252,8 +260,8 @@
 </div>
 
 <footer>
-  לסנכרון המדויק ביותר — <b>המסלול ההיברידי</b> (תמלול + הצלבה עם הטקסט + יישור,
-  ‏GPU חינמי ב-Colab, מעלים את ההקלטה ישירות מהטלפון — בלי Drive):
+  <b>המסלול ההיברידי</b> (תמלול + הצלבה עם הטקסט + יישור) זמין ככפתור "תזמון AI בענן"
+  בשלב 3. גיבוי: אותו מעבד בדיוק רץ גם ב-Colab —
   <a href="https://colab.research.google.com/github/michaelnahmias1/Kriat-Hatora/blob/main/notebooks/worker.ipynb" target="_blank" rel="noopener">פתח את המעבד</a>
   · <a href="https://github.com/michaelnahmias1/Kriat-Hatora" target="_blank" rel="noopener">GitHub</a>
 </footer>
@@ -263,6 +271,11 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const STORE_KEY = "kriat-hatora-v1";
+
+/* מסלול ה-AI בענן (Modal) — ממלאים אחרי `modal deploy` (ראה README).
+   כשה-URL ריק הכפתור מוסתר, והמסלול ההיברידי זמין דרך Colab בלבד. */
+const AI_ENDPOINT = "https://michaelnahmias1--kriat-hatora-web.modal.run";   // למשל: "https://<user>--kriat-hatora-web.modal.run"
+const AI_TOKEN = "hdkue38hf6Gfjl96XMre";      // אותו token שהוגדר ב-secret ‏kriat-hatora ב-Modal
 
 const S = {
   data: null,        // תשובת ה-API: ref, version, segments[]
@@ -286,6 +299,10 @@ function fmtSrt(t) {
 }
 function setLocked(stepId, locked) {
   $(stepId).classList.toggle("locked", locked);
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 function save() {
   try {
@@ -539,26 +556,29 @@ $("startAuto").addEventListener("click", () => {
   refreshTimingSteps(); save();
 });
 
-/* ---------- שלב 3ג: ייבוא זמנים מ-SRT (הפלט של מסלול ה-AI ב-Colab) ---------- */
+/* ---------- שלב 3ג: קליטת זמנים מ-SRT — משותף לענן ולייבוא הידני ---------- */
+function applySrtTimes(text, mismatchHint) {
+  const re = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/g;
+  const starts = [], ends = [];
+  let m;
+  while ((m = re.exec(text))) {
+    starts.push(+m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000);
+    ends.push(+m[5] * 3600 + +m[6] * 60 + +m[7] + +m[8] / 1000);
+  }
+  const n = S.data.segments.length;
+  if (!starts.length) throw new Error("לא נמצאו חותמות זמן בקובץ — ודא שזה קובץ SRT");
+  if (starts.length !== n)
+    throw new Error(`בקובץ ${starts.length} כתוביות אבל בקטע שנטען ${n} מקטעים — ${mismatchHint}`);
+  S.times = starts;
+  S.endTime = ends[ends.length - 1];
+}
 $("importSrt").addEventListener("click", () => $("srtFile").click());
 $("srtFile").addEventListener("change", async () => {
   const f = $("srtFile").files[0];
   if (!f) return;
   try {
-    const text = await f.text();
-    const re = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/g;
-    const starts = [], ends = [];
-    let m;
-    while ((m = re.exec(text))) {
-      starts.push(+m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000);
-      ends.push(+m[5] * 3600 + +m[6] * 60 + +m[7] + +m[8] / 1000);
-    }
-    const n = S.data.segments.length;
-    if (!starts.length) throw new Error("לא נמצאו חותמות זמן בקובץ — ודא שזה קובץ SRT");
-    if (starts.length !== n)
-      throw new Error(`בקובץ ${starts.length} כתוביות אבל בקטע שנטען ${n} מקטעים — ודא שנבחרו אותו ספר/פרק/טווח כמו ב-Colab`);
-    S.times = starts;
-    S.endTime = ends[ends.length - 1];
+    applySrtTimes(await f.text(),
+      "ודא שנבחרו אותו ספר/פרק/טווח כמו ב-Colab");
     $("timingMsg").innerHTML =
       '<p class="okline">הזמנים יובאו מה-SRT ✓ — בדוק בשלב 4, תקן אם צריך, וייצא מחדש</p>';
     refreshTimingSteps(); save();
@@ -568,6 +588,65 @@ $("srtFile").addEventListener("change", async () => {
     $("srtFile").value = "";
   }
 });
+
+/* ---------- שלב 3ד: תזמון AI בענן (Modal — אותו פייפליין היברידי של Colab) ---------- */
+const CLOUD_POLL_MS = 5000;
+const CLOUD_TIMEOUT_MS = 20 * 60 * 1000;
+if (AI_ENDPOINT) { $("startCloud").hidden = false; $("cloudHint").hidden = false; }
+
+async function runCloudTiming() {
+  if (!audioFileObj) {
+    $("timingMsg").innerHTML = '<p class="error">יש לבחור את קובץ ההקלטה מחדש (הדפדפן לא שומר קבצים בין ביקורים).</p>';
+    return;
+  }
+  const btn = $("startCloud");
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  const t0 = Date.now();
+  const tick = txt => { btn.textContent = `${txt} · ${fmtClock((Date.now() - t0) / 1000)}`; };
+  $("timingMsg").innerHTML = "";
+  try {
+    const fd = new FormData();
+    fd.append("file", audioFileObj, audioFileObj.name);
+    fd.append("token", AI_TOKEN);
+    for (const [k, v] of Object.entries(readQuery())) if (v) fd.append(k, v);
+
+    tick("מעלה את ההקלטה…");
+    const sub = await fetch(AI_ENDPOINT + "/submit", { method: "POST", body: fd });
+    const subData = await sub.json().catch(() => ({}));
+    if (!sub.ok) throw new Error(subData.error || "שגיאה " + sub.status);
+
+    // העיבוד לוקח דקות — לא מחזיקים בקשה פתוחה, שואלים לשלום כל כמה שניות
+    for (;;) {
+      if (Date.now() - t0 > CLOUD_TIMEOUT_MS)
+        throw new Error("העיבוד לוקח יותר מדי זמן — נסה שוב עוד כמה דקות");
+      tick("מעבד בענן (תמלול ← יישור)…");
+      await new Promise(r => setTimeout(r, CLOUD_POLL_MS));
+      let res;
+      try {
+        res = await fetch(AI_ENDPOINT + "/status?call_id=" + encodeURIComponent(subData.call_id));
+      } catch (e) { continue; }  // נפילת רשת רגעית בטלפון — ממשיכים לשאול
+      if (res.status === 202) continue;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "שגיאה " + res.status);
+
+      applySrtTimes(data.srt, "ודא שטווח הפסוקים תואם את ההקלטה");
+      const report = (data.report || "").trim();
+      $("timingMsg").innerHTML =
+        '<p class="okline">התזמון בענן הושלם ✓ — בדוק בשלב 4, במיוחד את המקטעים שבדוח</p>' +
+        (report ? `<details><summary>📋 דוח איכות — אילו מקטעים כדאי לבדוק</summary><div class="report">${escapeHtml(report)}</div></details>` : "");
+      refreshTimingSteps(); save();
+      return;
+    }
+  } catch (e) {
+    $("timingMsg").innerHTML =
+      `<p class="error">מסלול הענן נכשל: ${e.message || e}\nאפשר בינתיים לתזמן אוטומטית במכשיר, או במסלול Colab (הקישור למטה).</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+}
+$("startCloud").addEventListener("click", runCloudTiming);
 
 /* ---------- שלב 4: בדיקה ותיקון ---------- */
 function nudge(i, delta) {
