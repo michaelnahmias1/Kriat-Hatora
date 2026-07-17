@@ -1,0 +1,52 @@
+# פריסה אוטומטית של ה-worker ל-Modal.
+#
+# הרקע: האתר (Vercel) מתעדכן לבד מכל דחיפה ל-main, אבל ה-worker בענן
+# (Modal) נפרס רק ב-`modal deploy` — צעד ידני שקל לשכוח, ואז הענן ממשיך
+# להריץ קוד ישן (כך שגיאת ה-torchcodec חזרה גם אחרי שתוקנה בקוד).
+# ה-workflow הזה סוגר את הפער: כל שינוי בצינור או ב-worker שמגיע ל-main
+# נפרס ל-Modal אוטומטית.
+#
+# הפעלה חד-פעמית: ליצור token ב-Modal‏ (modal.com ← Settings ← API Tokens,
+# או `modal token new` במחשב) ולהוסיף בריפו ב-GitHub‏
+# (Settings ← Secrets and variables ← Actions) שני secrets:
+#   MODAL_TOKEN_ID, MODAL_TOKEN_SECRET
+name: deploy-modal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "modal_worker/**"
+      - ".github/workflows/deploy-modal.yml"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: בדיקה שה-secrets של Modal מוגדרים
+        env:
+          TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          if [ -z "$TOKEN_ID" ] || [ -z "$TOKEN_SECRET" ]; then
+            echo "::error::חסרים ה-secrets‏ MODAL_TOKEN_ID / MODAL_TOKEN_SECRET — " \
+                 "בלעדיהם ה-worker בענן לא מתעדכן. ראה ההוראות בראש הקובץ הזה."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: התקנת modal
+        run: pip install modal
+
+      - name: פריסת ה-worker
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal deploy modal_worker/app.py
