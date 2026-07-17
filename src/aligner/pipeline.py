@@ -12,6 +12,7 @@
 import re
 import subprocess
 import sys
+import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -101,20 +102,35 @@ def verses_to_segments(verses: list, max_words: int = 4) -> list:
 WAV16K_NAME = "aligned_input_16k.wav"
 
 
+def read_wav16k(wav_path: str):
+    """קורא את קובץ ה-wav הקבוע של הצינור (PCM 16bit מונו 16kHz) כ-tensor.
+
+    בכוונה עם המודול הסטנדרטי wave ולא torchaudio.load: מגרסה 2.9
+    torchaudio.load דורש את חבילת torchcodec שאינה מותקנת בכל הסביבות
+    (זו הייתה נפילת מסלול הענן), והפורמט כאן ממילא קבוע וידוע —
+    הפלט של ffmpeg בהמרה למטה.
+    """
+    import torch
+    with wave.open(wav_path, "rb") as f:
+        assert f.getframerate() == 16000, f"קצב דגימה: {f.getframerate()}"
+        assert f.getnchannels() == 1 and f.getsampwidth() == 2
+        frames = f.readframes(f.getnframes())
+    pcm = torch.frombuffer(bytearray(frames), dtype=torch.int16)
+    return (pcm.float() / 32768.0).unsqueeze(0)
+
+
 def load_audio_16k_mono(audio_path: str, work_dir: str = "."):
     """ממיר כל פורמט ל-wav 16kHz מונו (ffmpeg) וטוען כ-tensor.
 
     הקובץ נשמר בשם קבוע (WAV16K_NAME בתוך work_dir) כדי ששלבים נוספים
     (ASR, ‏VAD) יוכלו לקרוא את אותו הקובץ בלי המרה חוזרת.
     """
-    import torchaudio
     wav_path = str(Path(work_dir) / WAV16K_NAME)
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", audio_path,
-         "-ar", "16000", "-ac", "1", wav_path], check=True)
-    waveform, sr = torchaudio.load(wav_path)
-    assert sr == 16000
-    return waveform
+         "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path],
+        check=True)
+    return read_wav16k(wav_path)
 
 
 _NON_LATIN = re.compile(r"[^a-z' ]")

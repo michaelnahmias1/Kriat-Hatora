@@ -17,21 +17,20 @@ def detect_speech(wav_path: str, sample_rate: int = 16000) -> list:
     יבוא עצל: מנסה את חבילת pip‏ silero-vad, ואם אין — torch.hub.
     שמות ה-API מאומתים בפועל ב-Colab (לא מניחים מהזיכרון — PLAN.md).
     """
+    # את האודיו קוראים בעצמנו (wave סטנדרטי) ולא עם read_audio של silero —
+    # שבחלק מהגרסאות ממומש על torchaudio.load, שנופל בלי torchcodec
+    # (torchaudio 2.9+). הקובץ כאן הוא תמיד ה-wav הקבוע של הצינור.
+    from .pipeline import read_wav16k
+    audio = read_wav16k(wav_path).squeeze(0)
     try:
-        from silero_vad import (get_speech_timestamps, load_silero_vad,
-                                read_audio)
+        from silero_vad import get_speech_timestamps, load_silero_vad
         model = load_silero_vad()
-        audio = read_audio(wav_path, sampling_rate=sample_rate)
-        stamps = get_speech_timestamps(audio, model,
-                                       sampling_rate=sample_rate)
     except ImportError:
         import torch
         model, utils = torch.hub.load("snakers4/silero-vad", "silero_vad",
                                       trust_repo=True)
-        get_speech_timestamps, _, read_audio = utils[0], utils[1], utils[2]
-        audio = read_audio(wav_path, sampling_rate=sample_rate)
-        stamps = get_speech_timestamps(audio, model,
-                                       sampling_rate=sample_rate)
+        get_speech_timestamps = utils[0]
+    stamps = get_speech_timestamps(audio, model, sampling_rate=sample_rate)
     return [(s["start"] / sample_rate, s["end"] / sample_rate)
             for s in stamps]
 
