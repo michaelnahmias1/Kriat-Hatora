@@ -203,6 +203,9 @@
     <button id="startTap" class="secondary mt">🎯 תזמון ידני בהקשות (גיבוי)</button>
     <p class="hint" style="margin-top:4px">מאזינים להקלטה ומקישים ברגע שכל מקטע מתחיל — למקרה שהתזמון האוטומטי מפספס.</p>
     <button id="startAuto" class="secondary mt">⚖️ חלוקה לפי אורך הטקסט בלבד</button>
+    <input type="file" id="srtFile" accept=".srt,.txt,text/plain" hidden>
+    <button id="importSrt" class="secondary mt">📥 ייבוא זמנים מ-SRT (מסלול ה-AI ב-Colab)</button>
+    <p class="hint" style="margin-top:4px">הרצת את המעבד ההיברידי ב-Colab (הקישור למטה)? טען כאן את ה-SRT שירד לטלפון — הזמנים ייכנסו ישר לשלב הבדיקה והתיקון.</p>
     <div class="mt">
       <label for="reaction">פיצוי זמן-תגובה בהקשה ידנית (אלפיות שנייה)</label>
       <input id="reaction" type="number" step="50" min="0" max="1000" value="300">
@@ -534,6 +537,36 @@ $("startAuto").addEventListener("click", () => {
   $("timingMsg").innerHTML =
     '<p class="okline">חולק אוטומטית לפי אורך הטקסט ✓ — כדאי לבדוק בשלב 4 ולתקן ב-CapCut</p>';
   refreshTimingSteps(); save();
+});
+
+/* ---------- שלב 3ג: ייבוא זמנים מ-SRT (הפלט של מסלול ה-AI ב-Colab) ---------- */
+$("importSrt").addEventListener("click", () => $("srtFile").click());
+$("srtFile").addEventListener("change", async () => {
+  const f = $("srtFile").files[0];
+  if (!f) return;
+  try {
+    const text = await f.text();
+    const re = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/g;
+    const starts = [], ends = [];
+    let m;
+    while ((m = re.exec(text))) {
+      starts.push(+m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000);
+      ends.push(+m[5] * 3600 + +m[6] * 60 + +m[7] + +m[8] / 1000);
+    }
+    const n = S.data.segments.length;
+    if (!starts.length) throw new Error("לא נמצאו חותמות זמן בקובץ — ודא שזה קובץ SRT");
+    if (starts.length !== n)
+      throw new Error(`בקובץ ${starts.length} כתוביות אבל בקטע שנטען ${n} מקטעים — ודא שנבחרו אותו ספר/פרק/טווח כמו ב-Colab`);
+    S.times = starts;
+    S.endTime = ends[ends.length - 1];
+    $("timingMsg").innerHTML =
+      '<p class="okline">הזמנים יובאו מה-SRT ✓ — בדוק בשלב 4, תקן אם צריך, וייצא מחדש</p>';
+    refreshTimingSteps(); save();
+  } catch (e) {
+    $("timingMsg").innerHTML = `<p class="error">הייבוא נכשל: ${e.message}</p>`;
+  } finally {
+    $("srtFile").value = "";
+  }
 });
 
 /* ---------- שלב 4: בדיקה ותיקון ---------- */
