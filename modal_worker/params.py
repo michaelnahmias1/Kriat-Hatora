@@ -1,0 +1,63 @@
+# -*- coding: utf-8 -*-
+"""ולידציית הפרמטרים של ה-worker בענן — Python טהור, נבדק בלי modal.
+
+מקבל את שדות הטופס שהאפליקציה שולחת (מחרוזות) ומחזיר בדיוק את הארגומנטים
+ש-run_hybrid מצפה להם. ריק/0 = None, כמו בתא הפרמטרים של worker.ipynb.
+"""
+
+TORAH_BOOKS_HE = ("בראשית", "שמות", "ויקרא", "במדבר", "דברים")
+TORAH_BOOKS_EN = ("Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy")
+
+MAX_WORDS_DEFAULT = 4
+MAX_WORDS_RANGE = (1, 10)
+
+
+def _int_or_none(value, name, minimum=1):
+    """מחרוזת/מספר → int, או None עבור ריק/0 (מוסכמת "השאר 0" מה-notebook)."""
+    if value is None or str(value).strip() in ("", "0"):
+        return None
+    try:
+        n = int(str(value).strip())
+    except ValueError:
+        raise ValueError(f"{name} חייב להיות מספר שלם")
+    if n < minimum:
+        raise ValueError(f"{name} חייב להיות לפחות {minimum}")
+    return n
+
+
+def parse_params(form: dict) -> dict:
+    """שדות הטופס → ארגומנטים ל-run_hybrid. זורק ValueError עם הודעה בעברית."""
+    book = str(form.get("book") or "").strip()
+    if book not in TORAH_BOOKS_HE + TORAH_BOOKS_EN:
+        raise ValueError(
+            "ספר לא מוכר: " + (book or "(ריק)")
+            + " — הספרים הנתמכים: " + ", ".join(TORAH_BOOKS_HE))
+
+    chapter = _int_or_none(form.get("chapter"), "פרק")
+    if chapter is None:
+        raise ValueError("חסר מספר פרק")
+
+    verse_start = _int_or_none(form.get("verse_start"), "פסוק התחלה")
+    verse_end = _int_or_none(form.get("verse_end"), "פסוק סיום")
+    chapter_end = _int_or_none(form.get("chapter_end"), "פרק סיום")
+    if chapter_end is not None and chapter_end < chapter:
+        raise ValueError("פרק הסיום קטן מפרק ההתחלה")
+    if (verse_end is not None and chapter_end is None and verse_start is not None
+            and verse_end < verse_start):
+        raise ValueError("פסוק הסיום קטן מפסוק ההתחלה")
+
+    max_words = _int_or_none(form.get("max_words"), "מקסימום מילים במקטע")
+    if max_words is None:
+        max_words = MAX_WORDS_DEFAULT
+    lo, hi = MAX_WORDS_RANGE
+    if not lo <= max_words <= hi:
+        raise ValueError(f"מקסימום מילים במקטע חייב להיות בין {lo} ל-{hi}")
+
+    return {
+        "book": book,
+        "chapter": chapter,
+        "verse_start": verse_start,
+        "verse_end": verse_end,
+        "chapter_end": chapter_end,
+        "max_words": max_words,
+    }
