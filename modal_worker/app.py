@@ -69,9 +69,12 @@ _gpu_image = (
     .pip_install("torch", "torchaudio", "faster-whisper", "silero-vad",
                  "uroman", "requests")
     .env({"HF_HOME": "/models/hf", "TORCH_HOME": "/models/torch"})
+    # params חייב להיכנס ל-image *לפני* run_function ועם copy=True: פונקציית
+    # ה-build מייבאת מחדש את app.py, וזה מריץ את `from params import parse_params`
+    # ברמת המודול — בלי זה הבנייה נופלת ב-ModuleNotFoundError: No module named 'params'.
+    .add_local_python_source("params", copy=True)
     .run_function(_download_models)
     .add_local_dir(str(_REPO_ROOT / "src"), remote_path="/root/src")
-    .add_local_python_source("params")
 )
 
 _web_image = (
