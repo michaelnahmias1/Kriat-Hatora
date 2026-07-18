@@ -4,6 +4,10 @@
     "api/segments.py": {
       "maxDuration": 30,
       "excludeFiles": "{notebooks/**,tests/**,*.md}"
+    },
+    "api/structure.py": {
+      "maxDuration": 30,
+      "excludeFiles": "{notebooks/**,tests/**,*.md}"
     }
   },
   "headers": [

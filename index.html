@@ -100,6 +100,49 @@
   input:focus, select:focus { outline: 2px solid var(--accent); }
   .row { display: flex; gap: 8px; }
   .row > div { flex: 1; min-width: 0; }
+  .range-block {
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px;
+    position: relative; background: color-mix(in srgb, var(--verse-chip) 40%, transparent);
+  }
+  .range-title {
+    font-size: .8rem; font-weight: 700; color: var(--accent);
+    margin-bottom: 6px;
+  }
+  select#chapter, select#verse_start, select#chapter_end, select#verse_end {
+    font-size: 1.1rem; text-align: center; text-align-last: center;
+  }
+
+  /* שורת העיבוד בענן: טיימר חלק + הערכת זמן + כפתור ביטול */
+  .procrow {
+    display: flex; align-items: center; gap: 8px; margin-top: 10px;
+    padding: 9px 11px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--verse-chip);
+  }
+  .procrow .spin {
+    width: 15px; height: 15px; flex: none; border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    border-top-color: var(--accent); animation: procspin .8s linear infinite;
+  }
+  @keyframes procspin { to { transform: rotate(360deg); } }
+  .procrow .plabel { font-size: .85rem; flex: 1; min-width: 0; }
+  .procrow .ptime {
+    font-variant-numeric: tabular-nums; font-size: .82rem; color: var(--muted);
+    flex: none; white-space: nowrap;
+  }
+  .procrow .cancel {
+    flex: none; width: 30px; height: 30px; padding: 0; border-radius: 50%;
+    background: color-mix(in srgb, var(--err) 14%, var(--card));
+    color: var(--err); font-size: 1rem; line-height: 1; font-weight: 700;
+    border: 1px solid color-mix(in srgb, var(--err) 40%, transparent);
+  }
+  .procbar {
+    background: var(--verse-chip); border-radius: 99px; height: 6px;
+    margin-top: 8px; overflow: hidden;
+  }
+  .procbar > i {
+    display: block; height: 100%; width: 0; border-radius: 99px;
+    background: var(--accent); transition: width 1s linear;
+  }
   button {
     font: inherit; font-weight: 600; border: none; border-radius: 12px;
     padding: 13px 16px; cursor: pointer; touch-action: manipulation;
@@ -198,31 +241,37 @@
   <!-- שלב 1: הטקסט -->
   <section class="card" id="step1">
     <h2><span class="n">1</span> בחירת הקטע <span class="done" id="done1" hidden>✓</span></h2>
-    <div class="row">
-      <div>
-        <label for="book">ספר</label>
-        <select id="book">
-          <option>בראשית</option><option>שמות</option><option>ויקרא</option>
-          <option>במדבר</option><option>דברים</option>
-        </select>
-      </div>
-      <div>
-        <label for="chapter">פרק</label>
-        <input id="chapter" type="number" min="1" inputmode="numeric" value="1">
+    <div>
+      <label for="book">ספר</label>
+      <select id="book">
+        <option>בראשית</option><option>שמות</option><option>ויקרא</option>
+        <option>במדבר</option><option>דברים</option>
+      </select>
+    </div>
+    <div class="range-block mt">
+      <div class="range-title">מ־</div>
+      <div class="row">
+        <div>
+          <label for="chapter">פרק</label>
+          <select id="chapter"></select>
+        </div>
+        <div>
+          <label for="verse_start">פסוק</label>
+          <select id="verse_start"></select>
+        </div>
       </div>
     </div>
-    <div class="row mt">
-      <div>
-        <label for="verse_start">מפסוק (רשות)</label>
-        <input id="verse_start" type="number" min="1" inputmode="numeric" placeholder="1">
-      </div>
-      <div>
-        <label for="verse_end">עד פסוק</label>
-        <input id="verse_end" type="number" min="1" inputmode="numeric" placeholder="סוף הפרק">
-      </div>
-      <div>
-        <label for="chapter_end">עד פרק</label>
-        <input id="chapter_end" type="number" min="1" inputmode="numeric" placeholder="—">
+    <div class="range-block mt">
+      <div class="range-title">עד־</div>
+      <div class="row">
+        <div>
+          <label for="chapter_end">פרק</label>
+          <select id="chapter_end"></select>
+        </div>
+        <div>
+          <label for="verse_end">פסוק</label>
+          <select id="verse_end"></select>
+        </div>
       </div>
     </div>
     <button class="mt" id="loadBtn">טען את הטקסט</button>
@@ -248,6 +297,15 @@
   <section class="card locked" id="step3">
     <h2><span class="n">3</span> תזמון <span class="done" id="done3" hidden>✓</span></h2>
     <button id="startCloud" hidden>🛰️ תזמון AI מדויק בענן</button>
+    <div id="cloudProgress" hidden>
+      <div class="procrow">
+        <span class="spin"></span>
+        <span class="plabel" id="procLabel">מתחיל…</span>
+        <span class="ptime" id="procTime">0:00</span>
+        <button class="cancel" id="cancelCloud" title="עצור וביטול" aria-label="עצור וביטול">✕</button>
+      </div>
+      <div class="procbar"><i id="procBar"></i></div>
+    </div>
     <p class="hint" id="cloudHint" hidden style="margin-top:4px">המעבד ההיברידי (תמלול ← עוגנים ← יישור ← VAD) רץ על GPU בענן ישירות מכאן. ההקלטה מועלית לשרת העיבוד ונמחקת בסיומו; וידאו מומר לאודיו עוד במכשיר. לוקח בדרך-כלל 2–5 דקות.</p>
     <input type="file" id="srtFile" accept=".srt,.txt,text/plain" hidden>
     <button id="importSrt" class="secondary mt">📥 ייבוא זמנים מקובץ SRT</button>
@@ -297,6 +355,21 @@ const S = {
 };
 
 /* ---------- עזרי תצוגה ---------- */
+/* מספר → אותיות (גימטריה) לתצוגת פרק/פסוק: 15→ט״ו, 16→ט״ז, 25→כ״ה */
+function heNumeral(n) {
+  n = +n;
+  if (!Number.isInteger(n) || n < 1) return String(n);
+  const ones = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
+  const tens = ["", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ"];
+  const hundreds = ["", "ק", "ר", "ש", "ת", "תק", "תר", "תש", "תת", "תתק"];
+  let s = hundreds[Math.floor(n / 100)] || "";
+  const r = n % 100;
+  if (r === 15) s += "טו";
+  else if (r === 16) s += "טז";
+  else s += tens[Math.floor(r / 10)] + ones[r % 10];
+  if (s.length === 1) return s + "׳";              // גרש לאות בודדת
+  return s.slice(0, -1) + "״" + s.slice(-1);       // גרשיים לפני האות האחרונה
+}
 function fmtClock(t) {
   t = Math.max(0, t || 0);
   const m = Math.floor(t / 60), s = Math.floor(t % 60);
@@ -379,10 +452,68 @@ function renderTextLoaded() {
   refreshTimingSteps();
 }
 
+/* ---------- מבנה הספר: תפריטי פרק/פסוק באותיות ---------- */
+let bookChapters = null;    // מספר הפסוקים בכל פרק בספר הנבחר (מ-Sefaria)
+// גיבוי כשאין רשת: מספר הפרקים ידוע, טווח הפסוקים נדיב — הטעינה תאמת מול Sefaria
+const FALLBACK_CHAPTERS = { "בראשית": 50, "שמות": 40, "ויקרא": 27, "במדבר": 36, "דברים": 34 };
+
+function fillSelect(sel, count, prefer) {
+  const want = prefer != null && prefer !== "" ? +prefer : +sel.value;
+  sel.innerHTML = "";
+  for (let i = 1; i <= count; i++) {
+    const o = document.createElement("option");
+    o.value = i;
+    o.textContent = heNumeral(i);
+    sel.appendChild(o);
+  }
+  sel.value = String(want >= 1 && want <= count ? want : 1);
+}
+function versesInChapter(ch) {
+  if (!bookChapters) return 1;
+  return bookChapters[Math.max(1, +ch) - 1] || 1;
+}
+function populateVerseStart(prefer) { fillSelect($("verse_start"), versesInChapter($("chapter").value), prefer); }
+function populateVerseEnd(prefer)   { fillSelect($("verse_end"),   versesInChapter($("chapter_end").value), prefer); }
+function enforceOrder() {
+  // "עד" לא יכול להקדים את "מ"
+  if (bookChapters && +$("chapter_end").value < +$("chapter").value) {
+    fillSelect($("chapter_end"), bookChapters.length, $("chapter").value);
+    populateVerseEnd($("verse_start").value);
+  }
+  if (+$("chapter_end").value === +$("chapter").value &&
+      +$("verse_end").value < +$("verse_start").value) {
+    $("verse_end").value = $("verse_start").value;
+  }
+}
+async function loadStructure(book, prefer) {
+  try {
+    const res = await fetch("/api/structure?book=" + encodeURIComponent(book));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("שגיאה " + res.status));
+    bookChapters = data.chapters;
+  } catch (e) {
+    bookChapters = Array(FALLBACK_CHAPTERS[book] || 50).fill(90);
+  }
+  const p = prefer || {};
+  fillSelect($("chapter"),     bookChapters.length, p.chapter);
+  fillSelect($("chapter_end"), bookChapters.length, p.chapter_end != null && p.chapter_end !== "" ? p.chapter_end : p.chapter);
+  populateVerseStart(p.verse_start);
+  populateVerseEnd(p.verse_end != null && p.verse_end !== "" ? p.verse_end : p.verse_start);
+  enforceOrder();
+  save();
+}
+$("book").addEventListener("change", () =>
+  loadStructure($("book").value, { chapter: 1, verse_start: 1, chapter_end: 1, verse_end: 1 }));
+$("chapter").addEventListener("change", () => { populateVerseStart(1); enforceOrder(); save(); });
+$("chapter_end").addEventListener("change", () => { populateVerseEnd(1); enforceOrder(); save(); });
+$("verse_start").addEventListener("change", () => { enforceOrder(); save(); });
+$("verse_end").addEventListener("change", save);
+
 /* ---------- שלב 2: ההקלטה ---------- */
 const player = $("player");
 let audioReady = false;
 let audioFileObj = null;   // הקובץ עצמו — נדרש לניתוח האוטומטי
+let audioDurationSec = 0;  // משך ההקלטה — בסיס להערכת זמן העיבוד בענן
 $("pickAudio").addEventListener("click", () => $("audioFile").click());
 $("audioFile").addEventListener("change", () => {
   const f = $("audioFile").files[0];
@@ -394,6 +525,7 @@ $("audioFile").addEventListener("change", () => {
   audioReady = false;
   player.addEventListener("loadedmetadata", () => {
     audioReady = isFinite(player.duration) && player.duration > 0;
+    audioDurationSec = audioReady ? player.duration : 0;
     $("audioInfo").hidden = false;
     $("audioInfo").textContent = audioReady
       ? `${f.name} · משך: ${fmtClock(player.duration)}`
@@ -552,6 +684,51 @@ const CLOUD_POLL_MS = 5000;
 const CLOUD_TIMEOUT_MS = 65 * 60 * 1000;
 if (AI_ENDPOINT) { $("startCloud").hidden = false; $("cloudHint").hidden = false; }
 
+let cloudAbort = null;      // מאפשר לכפתור הביטול לעצור את הבקשות
+let cloudTimerInt = null;   // הטיימר החלק (מתעדכן כל שנייה)
+
+/* הערכת זמן מותאמת לקובץ שהועלה: חימום ה-GPU (קבוע) + עיבוד שגדל עם אורך
+   ההקלטה + זמן העלאה משוער לפי גודל הקובץ — ולא הערכה גסה קבועה. */
+function estimateCloudSeconds() {
+  const warmup = 40;                     // עליית ה-GPU וטעינת המודלים (cold start)
+  const perSecAudio = 0.75;              // תמלול+יישור+VAD לכל שניית אודיו (T4)
+  const dur = audioDurationSec || 180;   // אם המשך לא ידוע — בררת מחדל
+  let secs = warmup + perSecAudio * dur;
+  if (audioFileObj) {
+    // וידאו מומר ל-WAV 16k מונו (≈32KB/ש') לפני ההעלאה — לכן מעריכים לפי המשך, לא הגודל הגולמי
+    const isVideo = /^video\//i.test(audioFileObj.type || "");
+    const uploadBytes = isVideo ? dur * 32000 : audioFileObj.size;
+    secs += uploadBytes / (1.5 * 1024 * 1024);   // ~1.5MB/ש' — העלאה סלולרית טיפוסית
+  }
+  return Math.max(60, Math.round(secs));
+}
+function startCloudTimer(estSec) {
+  $("cloudProgress").hidden = false;
+  $("procBar").style.width = "0";
+  const t0 = Date.now();
+  const render = () => {
+    const el = (Date.now() - t0) / 1000;
+    $("procTime").textContent = `${fmtClock(el)} / ~${fmtClock(estSec)}`;
+    // התקדמות אסימפטוטית — מתקרבת ל-95% ולא עוברת, כדי לא "לשקר" שהסתיים
+    const frac = 1 - Math.exp(-el / (estSec * 0.7));
+    $("procBar").style.width = Math.min(95, frac * 100).toFixed(1) + "%";
+  };
+  render();
+  cloudTimerInt = setInterval(render, 1000);
+}
+function stopCloudTimer(done) {
+  if (cloudTimerInt) { clearInterval(cloudTimerInt); cloudTimerInt = null; }
+  if (done) $("procBar").style.width = "100%";
+  setTimeout(() => { $("cloudProgress").hidden = true; $("procBar").style.width = "0"; }, done ? 600 : 0);
+}
+function setProcLabel(t) { $("procLabel").textContent = t; }
+function cloudSleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const to = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => { clearTimeout(to); reject(new DOMException("בוטל", "AbortError")); }, { once: true });
+  });
+}
+
 async function runCloudTiming() {
   if (!audioFileObj) {
     $("timingMsg").innerHTML = '<p class="error">יש לבחור את קובץ ההקלטה מחדש (הדפדפן לא שומר קבצים בין ביקורים).</p>';
@@ -560,59 +737,73 @@ async function runCloudTiming() {
   const btn = $("startCloud");
   btn.disabled = true;
   const prevLabel = btn.textContent;
-  const t0 = Date.now();
-  const tick = txt => { btn.textContent = `${txt} · ${fmtClock((Date.now() - t0) / 1000)}`; };
+  btn.textContent = "⏳ מעבד בענן…";
+  cloudAbort = new AbortController();
+  const signal = cloudAbort.signal;
+  startCloudTimer(estimateCloudSeconds());
   $("timingMsg").innerHTML = "";
   try {
     // שכבת ההמרה: וידאו הופך לאודיו בלבד עוד במכשיר — מעלים רק את הקול
     let upload = audioFileObj;
     if (/^video\//i.test(audioFileObj.type || "")) {
-      tick("ממיר את הווידאו לאודיו במכשיר…");
+      setProcLabel("ממיר את הווידאו לאודיו במכשיר…");
       try { upload = await extractAudioForUpload(audioFileObj); }
       catch (e) { upload = audioFileObj; }  // ההמרה נכשלה — מעלים כמו שהוא, ffmpeg בשרת יסתדר
     }
+    if (signal.aborted) throw new DOMException("בוטל", "AbortError");
     const fd = new FormData();
     fd.append("file", upload, upload.name);
     fd.append("token", AI_TOKEN);
     for (const [k, v] of Object.entries(readQuery())) if (v) fd.append(k, v);
 
-    tick("מעלה את ההקלטה…");
-    const sub = await fetch(AI_ENDPOINT + "/submit", { method: "POST", body: fd });
+    setProcLabel("מעלה את ההקלטה…");
+    const sub = await fetch(AI_ENDPOINT + "/submit", { method: "POST", body: fd, signal });
     const subData = await sub.json().catch(() => ({}));
     if (!sub.ok) throw new Error(subData.error || "שגיאה " + sub.status);
 
     // העיבוד לוקח דקות — לא מחזיקים בקשה פתוחה, שואלים לשלום כל כמה שניות.
     // מונים מרגע שההעלאה הסתיימה, כדי שהעלאה איטית בסלולרי לא תאכל את התקציב.
     const pollStart = Date.now();
+    setProcLabel("מעבד בענן (תמלול ← עוגנים ← יישור ← VAD)…");
     for (;;) {
+      if (signal.aborted) throw new DOMException("בוטל", "AbortError");
       if (Date.now() - pollStart > CLOUD_TIMEOUT_MS)
         throw new Error("העיבוד לוקח יותר מדי זמן — נסה שוב עוד כמה דקות");
-      tick("מעבד בענן (תמלול ← יישור)…");
-      await new Promise(r => setTimeout(r, CLOUD_POLL_MS));
+      await cloudSleep(CLOUD_POLL_MS, signal);
       let res;
       try {
-        res = await fetch(AI_ENDPOINT + "/status?call_id=" + encodeURIComponent(subData.call_id));
-      } catch (e) { continue; }  // נפילת רשת רגעית בטלפון — ממשיכים לשאול
+        res = await fetch(AI_ENDPOINT + "/status?call_id=" + encodeURIComponent(subData.call_id), { signal });
+      } catch (e) {
+        if (signal.aborted) throw e;
+        continue;  // נפילת רשת רגעית בטלפון — ממשיכים לשאול
+      }
       if (res.status === 202) continue;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "שגיאה " + res.status);
 
       applySrtTimes(data.srt, "ודא שטווח הפסוקים תואם את ההקלטה");
       S.report = (data.report || "").trim() || null;
+      stopCloudTimer(true);
       $("timingMsg").innerHTML =
         '<p class="okline">התזמון בענן הושלם ✓ — הדוח מחכה בשלב 4, והתיקונים בשלב 5</p>';
       refreshTimingSteps(); save();
       return;
     }
   } catch (e) {
-    $("timingMsg").innerHTML =
-      `<p class="error">מסלול הענן נכשל: ${e.message || e}\nנסה שוב בעוד כמה דקות, או ייבא קובץ SRT מוכן.</p>`;
+    stopCloudTimer(false);
+    if (e && e.name === "AbortError")
+      $("timingMsg").innerHTML = '<p class="hint">התזמון בוטל. אפשר להתחיל מחדש בכל עת.</p>';
+    else
+      $("timingMsg").innerHTML =
+        `<p class="error">מסלול הענן נכשל: ${e.message || e}\nנסה שוב בעוד כמה דקות, או ייבא קובץ SRT מוכן.</p>`;
   } finally {
+    cloudAbort = null;
     btn.disabled = false;
     btn.textContent = prevLabel;
   }
 }
 $("startCloud").addEventListener("click", runCloudTiming);
+$("cancelCloud").addEventListener("click", () => { if (cloudAbort) cloudAbort.abort(); });
 
 /* ---------- שלב 4: בדיקה ותיקון ---------- */
 function nudge(i, delta) {
@@ -658,7 +849,7 @@ function srtName() {
   const q = readQuery();
   let name = `${q.book}_${q.chapter}`;
   if (q.verse_start) name += `_${q.verse_start}`;
-  if (q.chapter_end) name += `-${q.chapter_end}_${$("verse_end").value || 1}`;
+  if (q.chapter_end && +q.chapter_end !== +q.chapter) name += `-${q.chapter_end}_${q.verse_end || 1}`;
   else if (q.verse_end) name += `-${q.verse_end}`;
   return name + ".srt";
 }
@@ -683,11 +874,14 @@ if (navigator.canShare && navigator.canShare({ files: [new File([""], "a.srt")] 
 (function restore() {
   let st = null;
   try { st = JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) {}
+  const q = (st && st.query) || {};
+  if (q.book) $("book").value = q.book;
+  // טוען את מבנה הספר וממלא את התפריטים באותיות (עם הערכים השמורים אם יש)
+  loadStructure($("book").value, {
+    chapter: q.chapter, verse_start: q.verse_start,
+    chapter_end: q.chapter_end, verse_end: q.verse_end,
+  });
   if (!st) return;
-  if (st.query) {
-    for (const k of ["book", "chapter", "verse_start", "verse_end", "chapter_end"])
-      if (st.query[k]) $(k).value = st.query[k];
-  }
   if (st.data) {
     S.data = st.data; S.times = st.times; S.endTime = st.endTime; S.audioName = st.audioName;
     S.report = st.report || null;
