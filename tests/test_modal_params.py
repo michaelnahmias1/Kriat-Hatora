@@ -75,5 +75,37 @@ class TestParseParams(unittest.TestCase):
                                  "max_words": "-2"})
 
 
+class TestParsePushSub(unittest.TestCase):
+    """שדה ה-push_sub הוא best-effort: תקין → dict מצומצם, כל השאר → None."""
+
+    VALID = ('{"endpoint": "https://push.example.com/x", '
+             '"expirationTime": null, '
+             '"keys": {"p256dh": "PKEY", "auth": "AKEY"}}')
+
+    def test_valid_subscription_normalized(self):
+        got = params.parse_push_sub(self.VALID)
+        self.assertEqual(got, {"endpoint": "https://push.example.com/x",
+                               "keys": {"p256dh": "PKEY", "auth": "AKEY"}})
+
+    def test_empty_and_whitespace(self):
+        self.assertIsNone(params.parse_push_sub(""))
+        self.assertIsNone(params.parse_push_sub("   "))
+        self.assertIsNone(params.parse_push_sub(None))
+
+    def test_garbage_rejected_silently(self):
+        self.assertIsNone(params.parse_push_sub("לא JSON"))
+        self.assertIsNone(params.parse_push_sub("[1,2]"))
+        self.assertIsNone(params.parse_push_sub('{"endpoint": 5}'))
+
+    def test_non_https_endpoint_rejected(self):
+        self.assertIsNone(params.parse_push_sub(
+            '{"endpoint": "http://x", "keys": {"p256dh": "a", "auth": "b"}}'))
+
+    def test_missing_keys_rejected(self):
+        self.assertIsNone(params.parse_push_sub(
+            '{"endpoint": "https://x", "keys": {"p256dh": "a"}}'))
+        self.assertIsNone(params.parse_push_sub('{"endpoint": "https://x"}'))
+
+
 if __name__ == "__main__":
     unittest.main()

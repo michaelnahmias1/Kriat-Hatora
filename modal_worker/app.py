@@ -14,9 +14,17 @@ GPU T4 לפי-שימוש במקום notebook.
 ואז מדביקים את ה-URL וה-token בקבועים שבראש index.html.
 
 הפרוטוקול מול הדפדפן (עיבוד אורך דקות — לא מחזיקים בקשה פתוחה מהטלפון):
-    POST /submit  (multipart: file + book/chapter/טווח + token) → {"call_id"}
+    POST /submit  (multipart: file + book/chapter/טווח + token
+                   [+ push_sub — ‏JSON של PushSubscription])    → {"call_id"}
     GET  /status?call_id=…                                      → 202 בזמן ריצה,
                                                                   {"srt","report"} בסיום.
+    POST /cancel  (form: call_id + token)                       → עוצר עבודה רצה.
+
+אחרי שה-submit חוזר, העבודה רצה בענן בלי שום תלות בטלפון: הדפדפן יכול
+להיסגר, וה-call_id (שנשמר ב-localStorage בצד הלקוח) מאפשר למשוך את
+התוצאה בביקור הבא — Modal שומר תוצאות של spawn כשבוע. אם הלקוח צירף
+push_sub ומפתחות VAPID מוגדרים ב-secret‏ (VAPID_PRIVATE_KEY), נשלחת
+התראת Web Push בסיום העיבוד — גם כשהאפליקציה סגורה לגמרי.
 """
 
 import os
@@ -27,7 +35,7 @@ from pathlib import Path
 import modal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from params import parse_params  # noqa: E402
+from params import parse_params, parse_push_sub  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -67,7 +75,7 @@ _gpu_image = (
                               add_python="3.11")
     .apt_install("ffmpeg")
     .pip_install("torch", "torchaudio", "faster-whisper", "silero-vad",
-                 "uroman", "requests")
+                 "uroman", "requests", "pywebpush")
     .env({"HF_HOME": "/models/hf", "TORCH_HOME": "/models/torch"})
     # params חייב להיכנס ל-image *לפני* run_function ועם copy=True: פונקציית
     # ה-build מייבאת מחדש את app.py, וזה מריץ את `from params import parse_params`
@@ -84,10 +92,39 @@ _web_image = (
 )
 
 
-# מגבלת בטיחות בלבד (משלמים רק על זמן ריצה בפועל): הקלטה של ~40 דק' עם מודל
-# הגיבוי הלא-turbo יכולה לחצות 30 דק', והדפדפן (CLOUD_TIMEOUT_MS) מחכה יותר.
-@app.function(image=_gpu_image, gpu="T4", timeout=60 * 60)
-def process(audio_bytes: bytes, filename: str, params: dict) -> dict:
+# הזמן המרבי הוא מגבלת בטיחות בלבד (משלמים רק על זמן ריצה בפועל): שעתיים
+# מכסות בשפע גם הקלטה ארוכה עם מודל הגיבוי הלא-turbo. הדפדפן כבר לא מחכה —
+# העבודה רצה מנותקת מהטלפון, והתוצאה נמשכת לפי call_id בביקור הבא.
+WORKER_TIMEOUT_SEC = 2 * 60 * 60
+
+
+def _send_push(push_sub, payload: dict):
+    """התראת Web Push למכשיר — best-effort: כישלון לעולם לא מפיל את העיבוד.
+
+    דורש את VAPID_PRIVATE_KEY ב-secret‏ kriat-hatora (ראה README); בלעדיו
+    הפונקציה שותקת והמשתמש פשוט בודק את האפליקציה בעצמו.
+    """
+    import json
+
+    priv = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+    if not (push_sub and priv):
+        return
+    subject = os.environ.get("VAPID_SUBJECT", "").strip() or "mailto:admin@example.com"
+    try:
+        from pywebpush import webpush
+        webpush(subscription_info=push_sub,
+                data=json.dumps(payload, ensure_ascii=False),
+                vapid_private_key=priv,
+                vapid_claims={"sub": subject})
+        print("✅ נשלחה התראת push")
+    except Exception as e:
+        print(f"⚠️ שליחת ההתראה נכשלה ({type(e).__name__}): {e}")
+
+
+@app.function(image=_gpu_image, gpu="T4", timeout=WORKER_TIMEOUT_SEC,
+              secrets=[modal.Secret.from_name("kriat-hatora")])
+def process(audio_bytes: bytes, filename: str, params: dict,
+            push_sub: dict = None) -> dict:
     """הקלטה + פרמטרים → SRT + דוח איכות, דרך run_hybrid הקיים ללא שינוי."""
     import tempfile
 
@@ -98,25 +135,32 @@ def process(audio_bytes: bytes, filename: str, params: dict) -> dict:
     if not re.fullmatch(r"\.[A-Za-z0-9]{1,8}", suffix or ""):
         suffix = ".m4a"  # ffmpeg מזהה את הפורמט האמיתי מהתוכן ממילא
 
-    with tempfile.TemporaryDirectory() as td:
-        audio_path = Path(td) / f"recording{suffix}"
-        audio_path.write_bytes(audio_bytes)
-        out_srt = Path(td) / "out.srt"
+    ref = " ".join(str(params.get(k) or "") for k in ("book", "chapter")).strip()
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            audio_path = Path(td) / f"recording{suffix}"
+            audio_path.write_bytes(audio_bytes)
+            out_srt = Path(td) / "out.srt"
 
-        run_hybrid(book=params["book"],
-                   chapter=params["chapter"],
-                   audio_path=str(audio_path),
-                   out_srt_path=str(out_srt),
-                   verse_start=params["verse_start"],
-                   chapter_end=params["chapter_end"],
-                   verse_end=params["verse_end"],
-                   max_words=params["max_words"],
-                   work_dir=td)
+            run_hybrid(book=params["book"],
+                       chapter=params["chapter"],
+                       audio_path=str(audio_path),
+                       out_srt_path=str(out_srt),
+                       verse_start=params["verse_start"],
+                       chapter_end=params["chapter_end"],
+                       verse_end=params["verse_end"],
+                       max_words=params["max_words"],
+                       work_dir=td)
 
-        srt = out_srt.read_text(encoding="utf-8-sig")
-        report_path = out_srt.with_suffix(".report.txt")
-        report = (report_path.read_text(encoding="utf-8")
-                  if report_path.exists() else "")
+            srt = out_srt.read_text(encoding="utf-8-sig")
+            report_path = out_srt.with_suffix(".report.txt")
+            report = (report_path.read_text(encoding="utf-8")
+                      if report_path.exists() else "")
+    except Exception:
+        # מודיעים גם על כישלון — שהמשתמש לא יחכה להתראה שלא תגיע
+        _send_push(push_sub, {"ok": False, "ref": ref})
+        raise
+    _send_push(push_sub, {"ok": True, "ref": ref})
     return {"srt": srt, "report": report}
 
 
@@ -147,7 +191,8 @@ def web():
                      verse_start: str = Form(""),
                      verse_end: str = Form(""),
                      chapter_end: str = Form(""),
-                     max_words: str = Form("")):
+                     max_words: str = Form(""),
+                     push_sub: str = Form("")):
         if not _token_ok(token):
             return JSONResponse({"error": "גישה נדחתה — ה-token שגוי או שה-secret "
                                           "‏kriat-hatora לא הוגדר ב-Modal"},
@@ -169,7 +214,8 @@ def web():
                 {"error": f"הקובץ גדול מ-{MAX_UPLOAD_MB}MB — פצל את ההקלטה"},
                 status_code=413)
 
-        call = process.spawn(audio_bytes, file.filename or "", params)
+        call = process.spawn(audio_bytes, file.filename or "", params,
+                             parse_push_sub(push_sub))
         return {"call_id": call.object_id}
 
     @api.get("/status")
@@ -189,5 +235,18 @@ def web():
                 {"error": f"העיבוד נכשל ({type(e).__name__}): {e}"},
                 status_code=500)
         return result
+
+    @api.post("/cancel")
+    async def cancel(call_id: str = Form(""), token: str = Form("")):
+        """עצירת עבודה רצה — חוסך זמן GPU כשהמשתמש מוותר באמצע."""
+        if not _token_ok(token):
+            return JSONResponse({"error": "גישה נדחתה"}, status_code=401)
+        if not call_id:
+            return JSONResponse({"error": "חסר call_id"}, status_code=400)
+        try:
+            modal.FunctionCall.from_id(call_id).cancel()
+        except Exception:
+            return JSONResponse({"error": "call_id לא מוכר"}, status_code=404)
+        return {"cancelled": True}
 
     return api

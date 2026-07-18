@@ -5,6 +5,8 @@
 ש-run_hybrid מצפה להם. ריק/0 = None, כמו בתא הפרמטרים של worker.ipynb.
 """
 
+import json
+
 TORAH_BOOKS_HE = ("בראשית", "שמות", "ויקרא", "במדבר", "דברים")
 TORAH_BOOKS_EN = ("Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy")
 
@@ -61,3 +63,27 @@ def parse_params(form: dict) -> dict:
         "chapter_end": chapter_end,
         "max_words": max_words,
     }
+
+
+def parse_push_sub(raw):
+    """שדה ה-push_sub מהטופס → dict של PushSubscription, או None.
+
+    ההתראות הן best-effort: כל קלט שאינו subscription תקין פשוט מתעלמים
+    ממנו בשקט — העיבוד עצמו לעולם לא נכשל בגלל שדה ההתראה.
+    """
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        sub = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(sub, dict):
+        return None
+    endpoint = sub.get("endpoint")
+    if not isinstance(endpoint, str) or not endpoint.startswith("https://"):
+        return None
+    keys = sub.get("keys")
+    if not isinstance(keys, dict) or not keys.get("p256dh") or not keys.get("auth"):
+        return None
+    return {"endpoint": endpoint, "keys": {"p256dh": keys["p256dh"],
+                                           "auth": keys["auth"]}}

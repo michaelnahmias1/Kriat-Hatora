@@ -1,5 +1,7 @@
 /* Service Worker — הופך את האתר ל-PWA שאפשר להתקין.
-   מעטפת האפליקציה נשמרת ב-cache; ‏/api/ והענן תמיד מהרשת. */
+   מעטפת האפליקציה נשמרת ב-cache; ‏/api/ והענן תמיד מהרשת.
+   בנוסף: קליטת התראות Web Push מה-worker בענן — מוצגות גם כשהאפליקציה
+   סגורה (באייפון: רק כשהיא מותקנת למסך הבית, iOS 16.4+). */
 "use strict";
 
 const CACHE = "kriat-hatora-v1";
@@ -43,4 +45,34 @@ self.addEventListener("fetch", e => {
         caches.match(e.request).then(hit => hit ||
           (e.request.mode === "navigate" ? caches.match("/") : Promise.reject(new Error("offline")))))
   );
+});
+
+/* ---------- התראות מהעיבוד בענן ---------- */
+
+self.addEventListener("push", e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) {}
+  const ok = d.ok !== false;
+  const ref = d.ref ? `${d.ref} — ` : "";
+  e.waitUntil(self.registration.showNotification(
+    ok ? "התזמון בענן הושלם ✓" : "העיבוד בענן נכשל",
+    {
+      body: ok ? ref + "היכנס לאפליקציה — הזמנים והדוח מחכים בשלב הבדיקה"
+               : ref + "היכנס לאפליקציה לפרטים, ונסה שוב",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      dir: "rtl",
+      lang: "he",
+      tag: "kriat-hatora-cloud",   // התראה חדשה מחליפה ישנה, לא נערמות
+    }));
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  // אם האפליקציה כבר פתוחה — מתמקדים בה (הסקירה שם כבר רצה); אחרת פותחים
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+      for (const c of list) if ("focus" in c) return c.focus();
+      return self.clients.openWindow("/");
+    }));
 });
