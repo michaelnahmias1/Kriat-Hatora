@@ -547,7 +547,9 @@ $("srtFile").addEventListener("change", async () => {
 
 /* ---------- שלב 3א: תזמון AI בענן (Modal — הפייפליין ההיברידי) ---------- */
 const CLOUD_POLL_MS = 5000;
-const CLOUD_TIMEOUT_MS = 20 * 60 * 1000;
+// חייב לעלות על מגבלת ה-worker ‏(modal_worker/app.py: timeout) — אחרת הדפדפן
+// מוותר בזמן שהענן עוד מעבד, והתוצאה שכבר שולם עליה נזרקת. נמדד מסיום ההעלאה.
+const CLOUD_TIMEOUT_MS = 65 * 60 * 1000;
 if (AI_ENDPOINT) { $("startCloud").hidden = false; $("cloudHint").hidden = false; }
 
 async function runCloudTiming() {
@@ -579,9 +581,11 @@ async function runCloudTiming() {
     const subData = await sub.json().catch(() => ({}));
     if (!sub.ok) throw new Error(subData.error || "שגיאה " + sub.status);
 
-    // העיבוד לוקח דקות — לא מחזיקים בקשה פתוחה, שואלים לשלום כל כמה שניות
+    // העיבוד לוקח דקות — לא מחזיקים בקשה פתוחה, שואלים לשלום כל כמה שניות.
+    // מונים מרגע שההעלאה הסתיימה, כדי שהעלאה איטית בסלולרי לא תאכל את התקציב.
+    const pollStart = Date.now();
     for (;;) {
-      if (Date.now() - t0 > CLOUD_TIMEOUT_MS)
+      if (Date.now() - pollStart > CLOUD_TIMEOUT_MS)
         throw new Error("העיבוד לוקח יותר מדי זמן — נסה שוב עוד כמה דקות");
       tick("מעבד בענן (תמלול ← יישור)…");
       await new Promise(r => setTimeout(r, CLOUD_POLL_MS));

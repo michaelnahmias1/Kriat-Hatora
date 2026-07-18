@@ -84,7 +84,9 @@ _web_image = (
 )
 
 
-@app.function(image=_gpu_image, gpu="T4", timeout=30 * 60)
+# מגבלת בטיחות בלבד (משלמים רק על זמן ריצה בפועל): הקלטה של ~40 דק' עם מודל
+# הגיבוי הלא-turbo יכולה לחצות 30 דק', והדפדפן (CLOUD_TIMEOUT_MS) מחכה יותר.
+@app.function(image=_gpu_image, gpu="T4", timeout=60 * 60)
 def process(audio_bytes: bytes, filename: str, params: dict) -> dict:
     """הקלטה + פרמטרים → SRT + דוח איכות, דרך run_hybrid הקיים ללא שינוי."""
     import tempfile
