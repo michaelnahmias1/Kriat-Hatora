@@ -542,7 +542,9 @@ $("audioFile").addEventListener("change", () => {
   }, { once: true });
 });
 function refreshTimingSteps() {
-  const ready = !!(S.data && audioReady);
+  // עבודת ענן פעילה משאירה את שלב 3 פתוח גם בלי קובץ האודיו — אחרי סגירה
+  // מלאה של האפליקציה הקובץ אבד, אבל פס ההתקדמות וכפתור הביטול חייבים להגיב
+  const ready = !!(S.data && (audioReady || S.cloudJob));
   setLocked("step3", !ready);
   const timed = !!(ready && S.times && S.times.length === S.data.segments.length && S.endTime != null);
   setLocked("stepReport", !timed);
@@ -847,6 +849,12 @@ async function pollCloudJob(signal) {
         '<p class="okline">התזמון בענן הושלם ✓ — הדוח מחכה בשלב 4, והתיקונים בשלב 5</p>' +
         (audioReady ? "" :
           '<p class="hint">בחר שוב את קובץ ההקלטה בשלב 2 כדי לפתוח את שלבי הבדיקה והייצוא.</p>');
+      if (!audioReady) {
+        // ההנחיה גם בשלב 2 שנשאר פתוח — שלב 3 ננעל שוב כשאין קובץ אודיו
+        $("audioInfo").hidden = false;
+        $("audioInfo").textContent =
+          "העיבוד בענן הסתיים ✓ — בחר שוב את קובץ ההקלטה כדי לבדוק ולייצא";
+      }
       refreshTimingSteps(); save();
       return;
     }
@@ -878,7 +886,9 @@ async function trackCloudJob() {
 function resumeCloudJob() {
   if (!AI_ENDPOINT || !S.cloudJob) return;
   if (!S.data) { S.cloudJob = null; save(); return; }  // אין למה להצמיד זמנים
-  startCloudTimer(S.cloudJob.est || 300, S.cloudJob.t0);
+  refreshTimingSteps();  // פותח את שלב 3 — אחרת פס ההתקדמות והביטול נעולים
+  // ‏ts — תחילת הטיימר בלחיצה המקורית (כולל ההעלאה), שהזמן לא יקפוץ אחורה
+  startCloudTimer(S.cloudJob.est || 300, S.cloudJob.ts || S.cloudJob.t0);
   announceCloudProcessing(true);
   trackCloudJob();
 }
@@ -892,6 +902,7 @@ async function runCloudTiming() {
   cloudAbort = new AbortController();
   const signal = cloudAbort.signal;
   const est = estimateCloudSeconds();
+  const timerStart = Date.now();   // נשמר בעבודה — להמשכיות הטיימר אחרי סגירה
   startCloudTimer(est);
   $("timingMsg").innerHTML = "";
   holdWakeLock();
@@ -938,7 +949,8 @@ async function runCloudTiming() {
   cloudAbort = null;
 
   // ── שלב העיבוד: העבודה רשומה ב-localStorage — שורדת סגירה וחזרה ──
-  S.cloudJob = { id: subData.call_id, t0: Date.now(), est, push: !!pushSub };
+  // ‏t0 — סיום ההעלאה (בסיס למגבלת הזמן); ts — תחילת הטיימר בתצוגה
+  S.cloudJob = { id: subData.call_id, t0: Date.now(), ts: timerStart, est, push: !!pushSub };
   save();
   announceCloudProcessing(false);
   await trackCloudJob();
