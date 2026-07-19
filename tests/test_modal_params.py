@@ -46,9 +46,17 @@ class TestParseParams(unittest.TestCase):
         self.assertEqual(got["book"], "שמות")
         self.assertEqual(got["chapter"], 12)
 
+    def test_nakh_books_accepted(self):
+        """כל התנ״ך נתמך — כולל כתיב חלופי (תהילים) ושמות Sefaria באנגלית."""
+        for book in ("תהלים", "תהילים", "שמואל א", "דברי הימים ב", "I Samuel"):
+            got = params.parse_params({"book": book, "chapter": "1"})
+            self.assertEqual(got["book"], book)
+
     def test_unknown_book_rejected(self):
         with self.assertRaisesRegex(ValueError, "ספר לא מוכר"):
-            params.parse_params({"book": "תהילים", "chapter": "1"})
+            params.parse_params({"book": "ספר הישר", "chapter": "1"})
+        with self.assertRaisesRegex(ValueError, "חסר שם ספר"):
+            params.parse_params({"book": "  ", "chapter": "1"})
 
     def test_missing_chapter_rejected(self):
         with self.assertRaisesRegex(ValueError, "חסר מספר פרק"):

@@ -10,16 +10,18 @@ GET /api/structure?book=בראשית
 """
 
 import json
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from chunker.books import to_english  # noqa: E402
 
 SEFARIA_BASE = "https://www.sefaria.org"
-TORAH_BOOKS = {
-    "בראשית": "Genesis", "שמות": "Exodus", "ויקרא": "Leviticus",
-    "במדבר": "Numbers", "דברים": "Deuteronomy",
-}
 
 # cache ברמת המודול — שורד בין קריאות על אותה פונקציה חמה
 _shape_cache = {}
@@ -52,7 +54,7 @@ def build_payload(q: dict) -> dict:
     book = (q.get("book") or "").strip()
     if not book:
         raise ValueError("חסר שם ספר")
-    book_en = TORAH_BOOKS.get(book, book)
+    book_en = to_english(book)
     chapters = chapters_for_book(book_en)
     return {"book": book, "chapters": chapters}
 

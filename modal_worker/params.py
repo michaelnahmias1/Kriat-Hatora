@@ -6,9 +6,20 @@
 """
 
 import json
+import sys
+from pathlib import Path
 
-TORAH_BOOKS_HE = ("בראשית", "שמות", "ויקרא", "במדבר", "דברים")
-TORAH_BOOKS_EN = ("Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy")
+# רשימת הספרים חיה ב-src/chunker/books.py (מקור אמת יחיד). שני מיקומים:
+# פריסת הריפו (../src) והקונטיינר של Modal‏ (src/ לצד הקובץ, ראה app.py).
+for _cand in (Path(__file__).resolve().parent.parent / "src",
+              Path(__file__).resolve().parent / "src"):
+    if _cand.is_dir():
+        sys.path.insert(0, str(_cand))
+try:
+    from chunker.books import is_known as _book_is_known
+except ImportError:
+    # בלי הרשימה לא חוסמים: הצינור עצמו ייכשל עם הודעה ברורה מול Sefaria
+    _book_is_known = None
 
 MAX_WORDS_DEFAULT = 4
 MAX_WORDS_RANGE = (1, 10)
@@ -30,10 +41,12 @@ def _int_or_none(value, name, minimum=1):
 def parse_params(form: dict) -> dict:
     """שדות הטופס → ארגומנטים ל-run_hybrid. זורק ValueError עם הודעה בעברית."""
     book = str(form.get("book") or "").strip()
-    if book not in TORAH_BOOKS_HE + TORAH_BOOKS_EN:
+    if not book:
+        raise ValueError("חסר שם ספר")
+    if _book_is_known is not None and not _book_is_known(book):
         raise ValueError(
-            "ספר לא מוכר: " + (book or "(ריק)")
-            + " — הספרים הנתמכים: " + ", ".join(TORAH_BOOKS_HE))
+            "ספר לא מוכר: " + book
+            + " — נתמכים כל ספרי התנ״ך (בשמם העברי או בשם Sefaria באנגלית)")
 
     chapter = _int_or_none(form.get("chapter"), "פרק")
     if chapter is None:

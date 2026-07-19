@@ -20,9 +20,9 @@ from . import asr as asr_mod
 from . import confidence as conf_mod
 from . import vad as vad_mod
 from . import windows as win_mod
-from .pipeline import (TORAH_BOOKS, WAV16K_NAME, MmsAligner, build_ref,
-                       build_srt, fetch_verses, find_mam_version,
-                       load_audio_16k_mono, romanize_words, segment_bounds,
+from .pipeline import (WAV16K_NAME, MmsAligner, build_ref, build_srt,
+                       fetch_verses, find_mam_version, load_audio_16k_mono,
+                       romanize_words, segment_bounds, to_english,
                        verses_to_segments)
 
 _SAMPLE_RATE = 16000
@@ -95,7 +95,7 @@ def run_hybrid(book, chapter, audio_path, out_srt_path,
     לצד ה-SRT נכתב דוח איכות (<שם>.report.txt) שמפרט אילו מקטעים
     כדאי לגרור ידנית ב-CapCut.
     """
-    book = TORAH_BOOKS.get(book, book)
+    book = to_english(book)
     print(f"1/8 מאתר את גרסת MAM עבור {book}…")
     version = find_mam_version(book)
     ref = build_ref(book, chapter, verse_start, chapter_end, verse_end)

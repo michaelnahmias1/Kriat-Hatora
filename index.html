@@ -244,8 +244,27 @@
     <div>
       <label for="book">ספר</label>
       <select id="book">
-        <option>בראשית</option><option>שמות</option><option>ויקרא</option>
-        <option>במדבר</option><option>דברים</option>
+        <optgroup label="תורה">
+          <option>בראשית</option><option>שמות</option><option>ויקרא</option>
+          <option>במדבר</option><option>דברים</option>
+        </optgroup>
+        <optgroup label="נביאים">
+          <option>יהושע</option><option>שופטים</option>
+          <option>שמואל א</option><option>שמואל ב</option>
+          <option>מלכים א</option><option>מלכים ב</option>
+          <option>ישעיהו</option><option>ירמיהו</option><option>יחזקאל</option>
+          <option>הושע</option><option>יואל</option><option>עמוס</option>
+          <option>עובדיה</option><option>יונה</option><option>מיכה</option>
+          <option>נחום</option><option>חבקוק</option><option>צפניה</option>
+          <option>חגי</option><option>זכריה</option><option>מלאכי</option>
+        </optgroup>
+        <optgroup label="כתובים">
+          <option>תהלים</option><option>משלי</option><option>איוב</option>
+          <option>שיר השירים</option><option>רות</option><option>איכה</option>
+          <option>קהלת</option><option>אסתר</option><option>דניאל</option>
+          <option>עזרא</option><option>נחמיה</option>
+          <option>דברי הימים א</option><option>דברי הימים ב</option>
+        </optgroup>
       </select>
     </div>
     <div class="range-block mt">
@@ -462,7 +481,16 @@ function renderTextLoaded() {
 /* ---------- מבנה הספר: תפריטי פרק/פסוק באותיות ---------- */
 let bookChapters = null;    // מספר הפסוקים בכל פרק בספר הנבחר (מ-Sefaria)
 // גיבוי כשאין רשת: מספר הפרקים ידוע, טווח הפסוקים נדיב — הטעינה תאמת מול Sefaria
-const FALLBACK_CHAPTERS = { "בראשית": 50, "שמות": 40, "ויקרא": 27, "במדבר": 36, "דברים": 34 };
+const FALLBACK_CHAPTERS = {
+  "בראשית": 50, "שמות": 40, "ויקרא": 27, "במדבר": 36, "דברים": 34,
+  "יהושע": 24, "שופטים": 21, "שמואל א": 31, "שמואל ב": 24,
+  "מלכים א": 22, "מלכים ב": 25, "ישעיהו": 66, "ירמיהו": 52, "יחזקאל": 48,
+  "הושע": 14, "יואל": 4, "עמוס": 9, "עובדיה": 1, "יונה": 4, "מיכה": 7,
+  "נחום": 3, "חבקוק": 3, "צפניה": 3, "חגי": 2, "זכריה": 14, "מלאכי": 3,
+  "תהלים": 150, "משלי": 31, "איוב": 42, "שיר השירים": 8, "רות": 4,
+  "איכה": 5, "קהלת": 12, "אסתר": 10, "דניאל": 12, "עזרא": 10, "נחמיה": 13,
+  "דברי הימים א": 29, "דברי הימים ב": 36,
+};
 
 function fillSelect(sel, count, prefer) {
   const want = prefer != null && prefer !== "" ? +prefer : +sel.value;

@@ -19,12 +19,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from chunker import segments_for_pipeline  # noqa: E402
+from chunker.books import to_english  # noqa: E402
 
 SEFARIA_BASE = "https://www.sefaria.org"
-TORAH_BOOKS = {
-    "בראשית": "Genesis", "שמות": "Exodus", "ויקרא": "Leviticus",
-    "במדבר": "Numbers", "דברים": "Deuteronomy",
-}
 
 # cache ברמת המודול — שורד בין קריאות על אותה פונקציה חמה
 _version_cache = {}
@@ -42,18 +39,32 @@ def _get_json(url: str, params: dict = None):
 
 
 def find_mam_version(book: str) -> str:
-    """שם גרסת MAM המדויק בספר — לא מניחים שם מהזיכרון (PLAN, סעיף 2)."""
+    """שם גרסת MAM המדויק בספר — לא מניחים שם מהזיכרון (PLAN, סעיף 2).
+
+    ‏MAM מכסה את כל התנ״ך; ליתר ביטחון, אם בספר מסוים אין גרסת מסורה
+    נופלים לגרסה עברית מוטעמת אחרת (הצינור דורש טעמים).
+    """
     if book in _version_cache:
         return _version_cache[book]
     versions = _get_json(
         f"{SEFARIA_BASE}/api/texts/versions/{urllib.parse.quote(book)}")
-    for v in versions:
-        title = v.get("versionTitle", "")
-        if v.get("language") == "he" and (
-                "masorah" in title.lower() or "מסורה" in title):
-            _version_cache[book] = title
-            return title
-    raise LookupError(f"לא נמצאה גרסת MAM לספר {book}")
+    hebrew = [v for v in versions if v.get("language") == "he"]
+    title = None
+    for v in hebrew:
+        t = v.get("versionTitle", "")
+        if "masorah" in t.lower() or "מסורה" in t:
+            title = t
+            break
+    if title is None:
+        for v in hebrew:  # פולבק: מהדורה מוטעמת אחרת
+            t = v.get("versionTitle", "")
+            if "ta'amei hamikra" in t.lower() or "טעמי המקרא" in t:
+                title = t
+                break
+    if title is None:
+        raise LookupError(f"לא נמצאה גרסה מוטעמת לספר {book}")
+    _version_cache[book] = title
+    return title
 
 
 def _flatten(nested):
@@ -111,7 +122,7 @@ def build_payload(q: dict) -> dict:
     book = (q.get("book") or "").strip()
     if not book:
         raise ValueError("חסר שם ספר")
-    book_en = TORAH_BOOKS.get(book, book)
+    book_en = to_english(book)
 
     chapter = _read_int(q, "chapter", required=True)
     verse_start = _read_int(q, "verse_start")

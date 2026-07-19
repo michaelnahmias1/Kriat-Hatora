@@ -17,30 +17,37 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from chunker import segments_for_pipeline  # noqa: E402
+from chunker.books import HE_TO_EN, to_english  # noqa: E402
 
 SEFARIA_BASE = "https://www.sefaria.org"
-TORAH_BOOKS = {
-    "בראשית": "Genesis", "שמות": "Exodus", "ויקרא": "Leviticus",
-    "במדבר": "Numbers", "דברים": "Deuteronomy",
-}
+# תאימות לאחור לקוד שייבא את המילון מכאן — כיום כל התנ״ך (chunker/books.py)
+TORAH_BOOKS = HE_TO_EN
 
 
 # --- שלב 1: טקסט ------------------------------------------------------------
 
 def find_mam_version(book: str) -> str:
-    """מאתר את שם גרסת MAM המדויק בספר — לא מניחים שם מהזיכרון."""
+    """מאתר את שם גרסת MAM המדויק בספר — לא מניחים שם מהזיכרון.
+
+    ‏MAM מכסה את כל התנ״ך, אבל ליתר ביטחון: אם בספר מסוים אין גרסת
+    מסורה, נופלים לגרסה עברית אחרת עם טעמי המקרא (הצינור דורש טעמים).
+    """
     import requests
     versions = requests.get(
         f"{SEFARIA_BASE}/api/texts/versions/{book}", timeout=60).json()
-    for v in versions:
+    hebrew = [v for v in versions if v.get("language") == "he"]
+    for v in hebrew:
         title = v.get("versionTitle", "")
-        if v.get("language") == "he" and (
-                "masorah" in title.lower() or "מסורה" in title):
+        if "masorah" in title.lower() or "מסורה" in title:
+            return title
+    for v in hebrew:  # פולבק: מהדורה מוטעמת אחרת
+        title = v.get("versionTitle", "")
+        if "ta'amei hamikra" in title.lower() or "טעמי המקרא" in title:
+            print(f"אזהרה: אין גרסת MAM לספר {book} — משתמש ב-«{title}»")
             return title
     raise RuntimeError(
-        f"לא נמצאה גרסת MAM לספר {book}. גרסאות עבריות: "
-        + ", ".join(v.get("versionTitle", "?") for v in versions
-                    if v.get("language") == "he"))
+        f"לא נמצאה גרסה מוטעמת לספר {book}. גרסאות עבריות: "
+        + ", ".join(v.get("versionTitle", "?") for v in hebrew))
 
 
 def _flatten(nested):
@@ -256,7 +263,7 @@ def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25,
 def run(book, chapter, audio_path, out_srt_path,
         verse_start=None, chapter_end=None, verse_end=None, max_words=4):
     """הצינור המלא. מדפיס התקדמות בעברית ומחזיר את נתיב ה-SRT."""
-    book = TORAH_BOOKS.get(book, book)
+    book = to_english(book)
     print(f"1/5 מאתר את גרסת MAM עבור {book}…")
     version = find_mam_version(book)
     ref = build_ref(book, chapter, verse_start, chapter_end, verse_end)

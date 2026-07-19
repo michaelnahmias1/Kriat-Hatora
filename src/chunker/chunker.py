@@ -80,15 +80,33 @@ def word_accents(word: str) -> set:
     return {ch for ch in word if ch in taamim.ALL_ACCENTS and ch != taamim.METEG}
 
 
-def word_rank(word: str):
-    """דרגת המפסיק החזק ביותר על המילה, או None אם אין עליה מפסיק."""
-    ranks = [taamim.RANK_OF[cp] for cp in word_accents(word) if cp in taamim.RANK_OF]
+def word_rank(word: str, rank_of: dict = None):
+    """דרגת המפסיק החזק ביותר על המילה, או None אם אין עליה מפסיק.
+
+    rank_of — טבלת הדרגות (ברירת מחדל: כ״א ספרים; לספרי אמ״ת מועברת
+    taamim.RANK_OF_EMET — ראה rank_table_for).
+    """
+    if rank_of is None:
+        rank_of = taamim.RANK_OF
+    ranks = [rank_of[cp] for cp in word_accents(word) if cp in rank_of]
     return min(ranks) if ranks else None
+
+
+def rank_table_for(words: list) -> dict:
+    """בוחר את טבלת הדרגות לפסוק: אמ״ת אם מופיע בו סימן ייחודי-לאמ״ת.
+
+    הזיהוי פר-פסוק (ולא פר-ספר) מטפל אוטומטית באיוב המעורב, ובפסוקי
+    אמ״ת קצרים בלי סימן ייחודי הטבלה הרגילה ממילא נותנת חיתוך סביר.
+    """
+    for w in words:
+        if any(ch in taamim.EMET_MARKERS for ch in w):
+            return taamim.RANK_OF_EMET
+    return taamim.RANK_OF
 
 
 # --- אלגוריתם החיתוך -------------------------------------------------------
 
-def _best_cut_index(words: list):
+def _best_cut_index(words: list, rank_of: dict):
     """אינדקס המילה שאחריה חותכים, או None אם אין מפסיק פנימי.
 
     מועמדים: כל המילים חוץ מהאחרונה (המפסיק שעל המילה האחרונה חותם את
@@ -99,7 +117,7 @@ def _best_cut_index(words: list):
     candidates = []  # (rank, distance_from_middle, index)
     middle = (n - 1) / 2.0
     for i in range(n - 1):
-        rank = word_rank(words[i])
+        rank = word_rank(words[i], rank_of)
         if rank is not None:
             candidates.append((rank, abs(i - middle), i))
     if not candidates:
@@ -107,19 +125,22 @@ def _best_cut_index(words: list):
     return min(candidates)[2]
 
 
-def split_unit(words: list, max_words: int = 4) -> list:
+def split_unit(words: list, max_words: int = 4, rank_of: dict = None) -> list:
     """פיצול רקורסיבי של רשימת מילים פרוזודיות למקטעים של עד max_words.
 
     אין מפסיק פנימי ביחידה ארוכה מדי → פולבק: חלוקה שווה על גבולות
     המילים הפרוזודיות (לעולם לא בתוך שרשרת מקף, כי היא טוקן אחד).
     """
+    if rank_of is None:
+        rank_of = rank_table_for(words)
     if len(words) <= max_words:
         return [words]
-    cut = _best_cut_index(words)
+    cut = _best_cut_index(words, rank_of)
     if cut is None:
         cut = (len(words) // 2) - 1
     left, right = words[: cut + 1], words[cut + 1:]
-    return split_unit(left, max_words) + split_unit(right, max_words)
+    return (split_unit(left, max_words, rank_of)
+            + split_unit(right, max_words, rank_of))
 
 
 def verse_to_segments(verse_text: str, max_words: int = 4) -> list:
@@ -137,6 +158,20 @@ def verse_to_segments(verse_text: str, max_words: int = 4) -> list:
 # נדחה לשלב ה-POC (נדיר יחסית בתורה, ייבדק מול הפרקים שמוקלטים בפועל).
 _QERE_PERPETUUM_PLAIN = {"יהוה": "אדני"}
 _QERE_PERPETUUM_VOCALIZED = {"יהוה": "אֲדֹנָי"}
+
+# קרי/כתיב רגיל (נפוץ מאוד בנביאים ובכתובים): במהדורות מוטעמות ה"כתיב"
+# מודפס באותיות בלבד — בלי ניקוד — לצד ה"קרי" המנוקד שנקרא בפועל.
+# ב-MAM כל מילה נקראת היא מנוקדת, ולכן "יש בה אות עברית אך אפס סימני
+# ניקוד" הוא זיהוי בטוח לכתיב: המילה נשארת בתצוגה (כך היא מודפסת בחומש)
+# אבל לא נכנסת לרשימות היישור — הקורא אינו הוגה אותה.
+# ‏U+05B0–U+05BD (שווא..מתג), רפה, נקודות שי"ן/שׂי"ן, קמץ קטן — בלי סימני
+# הפיסוק שביניהם (מקף U+05BE, פסק U+05C0, סוף פסוק U+05C3).
+_NIQQUD_RE = re.compile("[\u05B0-\u05BD\u05BF\u05C1\u05C2\u05C7]")
+
+
+def is_ketiv(word: str) -> bool:
+    """מילה שמופיעה בטקסט אך אינה נקראת: יש אותיות, אין שום ניקוד."""
+    return bool(_HEBREW_LETTER_RE.search(word)) and not _NIQQUD_RE.search(word)
 
 
 def strip_taamim(word: str) -> str:
@@ -157,6 +192,8 @@ def to_alignment_words(prosodic_word: str, keep_niqqud: bool) -> list:
         plain = letters_only(piece)
         if not plain:
             continue
+        if is_ketiv(piece):
+            continue  # כתיב לא-נקרא: נשאר בתצוגה, לא ביישור
         if plain in _QERE_PERPETUUM_PLAIN:
             out.append(_QERE_PERPETUUM_VOCALIZED[plain] if keep_niqqud
                        else _QERE_PERPETUUM_PLAIN[plain])
@@ -183,4 +220,29 @@ def segments_for_pipeline(verse_text: str, max_words: int = 4) -> list:
             "align_plain": [w for pw in seg
                             for w in to_alignment_words(pw, keep_niqqud=False)],
         })
-    return result
+    return _merge_unalignable(result)
+
+
+def _merge_unalignable(segments: list) -> list:
+    """מקטע בלי אף מילת-יישור (למשל כולו כתיב) מוזג לשכנו.
+
+    שלבי היישור מניחים שלכל מקטע יש לפחות מילה אחת נשמעת — מקטע ריק היה
+    שובר את חישוב הגבולות. התצוגה נשמרת במלואה, רק מצטרפת לשכן.
+    """
+    merged = []
+    pending = ""  # תצוגה שממתינה למקטע נושא-מילים (כשאין עדיין קודם)
+    for seg in segments:
+        if not seg["align_vocalized"]:
+            if merged:
+                merged[-1]["display"] += " " + seg["display"]
+            else:
+                pending = (pending + " " + seg["display"]).strip()
+            continue
+        if pending:
+            seg["display"] = pending + " " + seg["display"]
+            pending = ""
+        merged.append(seg)
+    if pending and merged:
+        merged[-1]["display"] += " " + pending
+    # פסוק שכולו בלתי-נשמע (לא קיים ב-MAM) → ריק, כמו פסוק בלי מילים
+    return merged

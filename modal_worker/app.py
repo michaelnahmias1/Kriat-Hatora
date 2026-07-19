@@ -89,6 +89,9 @@ _web_image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install("fastapi[standard]")
     .add_local_python_source("params")
+    # רשימת הספרים לוולידציה: params.py מייבא את chunker.books מ-src/
+    # שלצד הקובץ (ראה החיפוש הדו-מיקומי שם)
+    .add_local_dir(str(_REPO_ROOT / "src"), remote_path="/root/src")
 )
 
 

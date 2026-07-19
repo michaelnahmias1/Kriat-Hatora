@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from chunker import (  # noqa: E402
     clean_sefaria_text,
+    is_ketiv,
+    rank_table_for,
     segments_for_pipeline,
     split_unit,
     taamim,
@@ -175,6 +177,72 @@ class TestSampleVerse(unittest.TestCase):
     def test_sof_pasuq_survives_display(self):
         segs = verse_to_segments(self.VERSE)
         self.assertIn(taamim.SOF_PASUQ, segs[-1])
+
+
+class TestEmetTaamim(unittest.TestCase):
+    """מערכת טעמי אמ״ת (תהלים, משלי, איוב) — טבלה נפרדת, זיהוי פר-פסוק."""
+
+    DEHI = "֭"
+    OLE = "֫"
+
+    def test_emet_verse_detected(self):
+        # תהלים כג:ב — דֶּ֭שֶׁא נושאת דחי, סימן ייחודי לאמ״ת
+        words = tokenize("בִּנְא֣וֹת דֶּ֭שֶׁא יַרְבִּיצֵ֑נִי")
+        self.assertIs(rank_table_for(words), taamim.RANK_OF_EMET)
+
+    def test_prose_verse_keeps_default_table(self):
+        words = tokenize("בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים")
+        self.assertIs(rank_table_for(words), taamim.RANK_OF)
+
+    def test_tipeha_is_not_disjunctive_in_emet(self):
+        # באמ״ת הקודפוינט של טפחא משמש כמשרת (טרחא) — אסור לחתוך עליו
+        word = w("אבג", TIPEHA)
+        self.assertIsNone(word_rank(word, taamim.RANK_OF_EMET))
+        self.assertEqual(word_rank(word), 2)  # בכ״א ספרים — מפסיק
+
+    def test_emet_ranks(self):
+        self.assertEqual(word_rank(w("אבג", self.OLE), taamim.RANK_OF_EMET), 1)
+        self.assertEqual(word_rank(w("אבג", self.DEHI), taamim.RANK_OF_EMET), 3)
+        self.assertEqual(word_rank(w("אבג", ETNAHTA), taamim.RANK_OF_EMET), 2)
+
+    def test_emet_verse_cuts_at_etnahta_not_tarha(self):
+        # 6 מילים, אתנחתא באמצע וטרחא (טפחא-קודפוינט) אחריה: החיתוך
+        # חייב ליפול על האתנחתא — הטבלה הרגילה הייתה שוקלת גם את הטרחא
+        verse = ("בִּנְא֣וֹת דֶּ֭שֶׁא יַרְבִּיצֵ֑נִי עַל־מֵ֖י "
+                 "מְנֻח֣וֹת יְנַהֲלֵֽנִי׃")
+        segs = verse_to_segments(verse, max_words=3)
+        self.assertEqual(segs[0], "בִּנְא֣וֹת דֶּ֭שֶׁא יַרְבִּיצֵ֑נִי")
+
+    def test_emet_marks_stripped_for_alignment(self):
+        word = "דֶּ" + self.DEHI + "שֶׁא"
+        (out,) = to_alignment_words(word, keep_niqqud=True)
+        self.assertNotIn(self.DEHI, out)
+
+
+class TestKetivQere(unittest.TestCase):
+    """קרי/כתיב רגיל: הכתיב (בלי ניקוד) מוצג אך אינו נכנס ליישור."""
+
+    def test_unvocalized_word_is_ketiv(self):
+        self.assertTrue(is_ketiv("ידו"))
+        self.assertTrue(is_ketiv("(ידו)"))
+        self.assertFalse(is_ketiv("יָדָיו"))
+        self.assertFalse(is_ketiv("דֶּֽשֶׁא"))  # מתג בלבד עדיין ניקוד
+
+    def test_ketiv_excluded_from_alignment_lists(self):
+        verse = "וְקָרְב֣וּ (ידו) יָדָ֔יו אֶל־הָעָֽם׃"
+        (seg,) = segments_for_pipeline(verse, max_words=8)
+        self.assertIn("(ידו)", seg["display"])          # התצוגה נאמנה למקור
+        self.assertNotIn("ידו", seg["align_plain"])     # אבל לא נקרא
+        self.assertEqual(seg["align_plain"],
+                         ["וקרבו", "ידיו", "אל", "העם"])
+
+    def test_all_ketiv_segment_merged_into_neighbor(self):
+        verse = "יָדָ֥יו (ידו) חָזָֽק׃"
+        segs = segments_for_pipeline(verse, max_words=1)
+        self.assertEqual(len(segs), 2)  # מקטע הכתיב מוזג אחורה
+        self.assertEqual(segs[0]["display"], "יָדָ֥יו (ידו)")
+        self.assertEqual(segs[0]["align_plain"], ["ידיו"])
+        self.assertTrue(all(s["align_vocalized"] for s in segs))
 
 
 if __name__ == "__main__":
