@@ -322,6 +322,7 @@
   <!-- שלב 5: בדיקה ותיקון -->
   <section class="card locked" id="step4">
     <h2><span class="n">5</span> בדיקה ותיקון</h2>
+    <p class="hint" id="noAudioHint" hidden style="margin:0 0 6px">🎧 כדי להאזין ולכוון — בחר שוב את קובץ ההקלטה בשלב 2. הורדת ה-SRT בשלב 6 זמינה גם בלי הקובץ.</p>
     <p class="hint" style="margin:0 0 6px">הקשה על ▶ מנגנת מנקודת הכניסה של המקטע. חצים מזיזים ב-0.2 שניות.</p>
     <div class="timelist" id="timeList"></div>
   </section>
@@ -546,10 +547,13 @@ function refreshTimingSteps() {
   // מלאה של האפליקציה הקובץ אבד, אבל פס ההתקדמות וכפתור הביטול חייבים להגיב
   const ready = !!(S.data && (audioReady || S.cloudJob));
   setLocked("step3", !ready);
-  const timed = !!(ready && S.times && S.times.length === S.data.segments.length && S.endTime != null);
+  // התוצאה לא תלויה בקובץ האודיו: דוח, זמנים וייצוא SRT נפתחים ברגע שיש
+  // זמנים — גם אחרי סגירה מלאה, כשהקובץ אבד. רק ההאזנה דורשת אותו מחדש.
+  const timed = !!(S.data && S.times && S.times.length === S.data.segments.length && S.endTime != null);
   setLocked("stepReport", !timed);
   setLocked("step4", !timed);
   setLocked("step5", !timed);
+  $("noAudioHint").hidden = !timed || audioReady;
   if (timed) { $("done3").hidden = false; renderReport(); renderTimeList(); }
 }
 
@@ -827,10 +831,6 @@ async function pollCloudJob(signal) {
   const job = S.cloudJob;
   for (;;) {
     if (signal.aborted) throw new DOMException("בוטל", "AbortError");
-    if (Date.now() - job.t0 > CLOUD_JOB_LIMIT_MS) {
-      S.cloudJob = null; save();
-      throw new Error("העיבוד חרג ממגבלת הזמן של הענן ובוטל — נסה להעלות שוב");
-    }
     let res = null;
     try {
       res = await fetch(AI_ENDPOINT + "/status?call_id=" + encodeURIComponent(job.id), { signal });
@@ -841,6 +841,8 @@ async function pollCloudJob(signal) {
     if (res && res.status !== 202) {
       const data = await res.json().catch(() => ({}));
       S.cloudJob = null; save();
+      if (res.status === 404)
+        throw new Error("התוצאה כבר לא שמורה בענן (נשמרת כשבוע מסיום העיבוד) — העלה את ההקלטה שוב");
       if (!res.ok) throw new Error(data.error || "שגיאה " + res.status);
       applySrtTimes(data.srt, "ודא שטווח הפסוקים תואם את ההקלטה");
       S.report = (data.report || "").trim() || null;
@@ -857,6 +859,12 @@ async function pollCloudJob(signal) {
       }
       refreshTimingSteps(); save();
       return;
+    }
+    // עדיין רץ (202) או שהרשת נפלה. תוצאה מוכנה נמשכת תמיד — גם ימים אחרי;
+    // מוותרים רק על עבודה ש"רצה" מעבר למגבלת ה-worker (זומבי) ולא תסתיים.
+    if (Date.now() - job.t0 > CLOUD_JOB_LIMIT_MS) {
+      S.cloudJob = null; save();
+      throw new Error("העיבוד נתקע בענן מעבר למגבלת הזמן — נסה להעלות שוב");
     }
     await cloudSleep(CLOUD_POLL_MS, signal);
   }
