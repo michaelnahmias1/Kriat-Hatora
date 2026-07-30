@@ -25,7 +25,8 @@ class TestParseParams(unittest.TestCase):
                                    "chapter_end": None})
         self.assertEqual(got, {"book": "בראשית", "chapter": 1,
                                "verse_start": None, "verse_end": None,
-                               "chapter_end": None, "max_words": 4})
+                               "chapter_end": None, "max_words": 4,
+                               "splits": None})
 
     def test_verse_range_and_cross_chapter(self):
         got = params.parse_params({"book": "דברים", "chapter": "3",
@@ -113,6 +114,35 @@ class TestParsePushSub(unittest.TestCase):
         self.assertIsNone(params.parse_push_sub(
             '{"endpoint": "https://x", "keys": {"p256dh": "a"}}'))
         self.assertIsNone(params.parse_push_sub('{"endpoint": "https://x"}'))
+
+
+class TestParseSplits(unittest.TestCase):
+    """חלוקת הכתוביות שהמשתמש ערך ידנית בממשק."""
+
+    def test_json_list_parsed(self):
+        self.assertEqual(params.parse_splits("[3, 4, 2]"), [3, 4, 2])
+        self.assertEqual(params.parse_splits([1, 1]), [1, 1])
+
+    def test_empty_is_none(self):
+        self.assertIsNone(params.parse_splits(""))
+        self.assertIsNone(params.parse_splits("   "))
+        self.assertIsNone(params.parse_splits(None))
+
+    def test_broken_input_raises(self):
+        """קלט פגום נכשל בקול — ריצה בחלוקה אחרת הייתה מבלבלת את המשתמש."""
+        for bad in ("לא JSON", "[]", "{}", "[0]", "[-1]", '["3"]', "[1.5]",
+                    "[true]"):
+            with self.assertRaises(ValueError):
+                params.parse_splits(bad)
+
+    def test_absurd_length_rejected(self):
+        with self.assertRaises(ValueError):
+            params.parse_splits([1] * (params.MAX_SPLIT_WORDS + 1))
+
+    def test_reaches_params_dict(self):
+        got = params.parse_params({"book": "בראשית", "chapter": "1",
+                                   "splits": "[2, 5]"})
+        self.assertEqual(got["splits"], [2, 5])
 
 
 if __name__ == "__main__":

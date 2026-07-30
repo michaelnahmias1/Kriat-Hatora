@@ -89,7 +89,7 @@ def _segment_interpolated(word_ranges: list, flags: list) -> list:
 
 def run_hybrid(book, chapter, audio_path, out_srt_path,
                verse_start=None, chapter_end=None, verse_end=None,
-               max_words=4, asr_model=None, work_dir="."):
+               max_words=4, asr_model=None, work_dir=".", splits=None):
     """הצינור ההיברידי המלא. מדפיס התקדמות בעברית ומחזיר את נתיב ה-SRT.
 
     לצד ה-SRT נכתב דוח איכות (<שם>.report.txt) שמפרט אילו מקטעים
@@ -103,7 +103,9 @@ def run_hybrid(book, chapter, audio_path, out_srt_path,
 
     print("2/8 מושך את הטקסט וחותך לפי טעמים…")
     verses = fetch_verses(ref, version)
-    segments = verses_to_segments(verses, max_words)
+    segments = verses_to_segments(verses, max_words, splits)
+    if splits:
+        print("    חלוקת הכתוביות נלקחה מהעריכה הידנית בממשק")
     flat_vocalized = [w for s in segments for w in s["align_vocalized"]]
     flat_plain = [w for s in segments for w in s["align_plain"]]
     print(f"    {len(verses)} פסוקים → {len(segments)} מקטעים "

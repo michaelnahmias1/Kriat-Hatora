@@ -63,6 +63,19 @@ class TestVersesToSegments(unittest.TestCase):
         self.assertEqual(segs[0]["verse"], 1)
         self.assertEqual(segs[-1]["verse"], 2)
 
+    def test_custom_splits_replace_the_taamim_cut(self):
+        """החלוקה שנערכה בממשק גוברת — כולל מקטע שחוצה פסוק."""
+        verses = ["בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים",
+                  "וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֑הוּ"]
+        segs = verses_to_segments(verses, splits=[2, 3, 2])
+        self.assertEqual([len(s["display"].split(" ")) for s in segs], [2, 3, 2])
+        self.assertEqual([s["verse"] for s in segs], [1, 1, 2])
+        self.assertEqual(segs[1]["display"], "אֱלֹהִ֑ים וְהָאָ֗רֶץ הָיְתָ֥ה")
+
+    def test_custom_splits_must_cover_every_word(self):
+        with self.assertRaises(ValueError):
+            verses_to_segments(["בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים"], splits=[2])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

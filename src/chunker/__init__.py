@@ -2,10 +2,12 @@
 """חיתוך פסוקי תנ״ך למקטעי כתוביות לפי טעמי המקרא. ראה PLAN.md."""
 
 from .chunker import (
+    build_segment,
     clean_sefaria_text,
     is_ketiv,
     letters_only,
     rank_table_for,
+    regroup_words,
     segments_for_pipeline,
     split_unit,
     to_alignment_words,
@@ -19,10 +21,12 @@ from . import taamim
 
 __all__ = [
     "books",
+    "build_segment",
     "clean_sefaria_text",
     "is_ketiv",
     "letters_only",
     "rank_table_for",
+    "regroup_words",
     "segments_for_pipeline",
     "split_unit",
     "taamim",

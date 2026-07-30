@@ -16,7 +16,8 @@ import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from chunker import segments_for_pipeline  # noqa: E402
+from chunker import (clean_sefaria_text, regroup_words,  # noqa: E402
+                     segments_for_pipeline, tokenize)
 from chunker.books import HE_TO_EN, to_english  # noqa: E402
 
 SEFARIA_BASE = "https://www.sefaria.org"
@@ -94,8 +95,20 @@ def fetch_verses(ref: str, version_title: str) -> list:
 
 # --- שלב 2: חיתוך -----------------------------------------------------------
 
-def verses_to_segments(verses: list, max_words: int = 4) -> list:
-    """כל הפסוקים → רשימה שטוחה של מקטעים (display + מילות יישור)."""
+def verses_to_segments(verses: list, max_words: int = 4, splits=None) -> list:
+    """כל הפסוקים → רשימה שטוחה של מקטעים (display + מילות יישור).
+
+    ‏splits — חלוקה מותאמת אישית שהמשתמש ערך בממשק (מספר המילים בכל
+    כתובית). כשהיא נתונה היא מחליפה את החיתוך לפי הטעמים; המילים
+    עצמן וסדרן זהים, ולכן שאר הצינור אינו מושפע.
+    """
+    if splits:
+        words, verse_of = [], []
+        for vi, verse in enumerate(verses, 1):
+            toks = tokenize(clean_sefaria_text(verse))
+            words.extend(toks)
+            verse_of.extend([vi] * len(toks))
+        return regroup_words(words, splits, verse_of)
     segments = []
     for vi, verse in enumerate(verses, 1):
         for seg in segments_for_pipeline(verse, max_words):

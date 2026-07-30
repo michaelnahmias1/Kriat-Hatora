@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from chunker import (  # noqa: E402
     clean_sefaria_text,
     is_ketiv,
+    regroup_words,
     rank_table_for,
     segments_for_pipeline,
     split_unit,
@@ -243,6 +244,43 @@ class TestKetivQere(unittest.TestCase):
         self.assertEqual(segs[0]["display"], "יָדָ֥יו (ידו)")
         self.assertEqual(segs[0]["align_plain"], ["ידיו"])
         self.assertTrue(all(s["align_vocalized"] for s in segs))
+
+
+class TestRegroupWords(unittest.TestCase):
+    """חלוקה מותאמת אישית — אותן מילים, קיבוץ שהמשתמש קבע בממשק."""
+
+    VERSE = "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃"
+
+    def words(self):
+        return tokenize(clean_sefaria_text(self.VERSE))
+
+    def test_sizes_respected_and_words_preserved(self):
+        segs = regroup_words(self.words(), [1, 5, 1])
+        self.assertEqual([len(s["display"].split(" ")) for s in segs], [1, 5, 1])
+        self.assertEqual(" ".join(s["display"] for s in segs),
+                         " ".join(self.words()))
+
+    def test_alignment_lists_follow_the_new_grouping(self):
+        segs = regroup_words(self.words(), [2, 5])
+        self.assertEqual(segs[0]["align_plain"], ["בראשית", "ברא"])
+        self.assertEqual(len(segs[1]["align_plain"]), 5)
+
+    def test_verse_labels_taken_from_first_word(self):
+        segs = regroup_words(["אָ֣ב", "בֵּ֑ן", "גַּ֖ד"], [2, 1], [1, 1, 2])
+        self.assertEqual([s["verse"] for s in segs], [1, 2])
+
+    def test_size_mismatch_raises(self):
+        with self.assertRaises(ValueError):
+            regroup_words(self.words(), [3, 3])
+        with self.assertRaises(ValueError):
+            regroup_words(self.words(), [7, 0])
+
+    def test_ketiv_only_group_merged_like_the_automatic_split(self):
+        """מקטע בלי מילה נשמעת מוזג — בדיוק כמו בחיתוך לפי הטעמים."""
+        words = tokenize(clean_sefaria_text("יָדָ֥יו (ידו) חָזָֽק׃"))
+        segs = regroup_words(words, [1, 1, 1])
+        self.assertEqual(len(segs), 2)
+        self.assertEqual(segs[0]["display"], "יָדָ֥יו (ידו)")
 
 
 if __name__ == "__main__":

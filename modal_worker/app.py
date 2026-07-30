@@ -15,6 +15,7 @@ GPU T4 לפי-שימוש במקום notebook.
 
 הפרוטוקול מול הדפדפן (עיבוד אורך דקות — לא מחזיקים בקשה פתוחה מהטלפון):
     POST /submit  (multipart: file + book/chapter/טווח + token
+                   [+ splits — ‏JSON של חלוקת הכתוביות הידנית]
                    [+ push_sub — ‏JSON של PushSubscription])    → {"call_id"}
     GET  /status?call_id=…                                      → 202 בזמן ריצה,
                                                                   {"srt","report"} בסיום.
@@ -153,7 +154,8 @@ def process(audio_bytes: bytes, filename: str, params: dict,
                        chapter_end=params["chapter_end"],
                        verse_end=params["verse_end"],
                        max_words=params["max_words"],
-                       work_dir=td)
+                       work_dir=td,
+                       splits=params.get("splits"))
 
             srt = out_srt.read_text(encoding="utf-8-sig")
             report_path = out_srt.with_suffix(".report.txt")
@@ -195,6 +197,7 @@ def web():
                      verse_end: str = Form(""),
                      chapter_end: str = Form(""),
                      max_words: str = Form(""),
+                     splits: str = Form(""),
                      push_sub: str = Form("")):
         if not _token_ok(token):
             return JSONResponse({"error": "גישה נדחתה — ה-token שגוי או שה-secret "
@@ -205,6 +208,7 @@ def web():
                 "book": book, "chapter": chapter,
                 "verse_start": verse_start, "verse_end": verse_end,
                 "chapter_end": chapter_end, "max_words": max_words,
+                "splits": splits,
             })
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)

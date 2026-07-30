@@ -43,6 +43,8 @@
     }
   }
   * { box-sizing: border-box; }
+  /* ‏display מפורש בכללי האתר גובר על ברירת המחדל של [hidden] בדפדפן */
+  [hidden] { display: none !important; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
@@ -54,15 +56,33 @@
     font-family: "David Libre", "Taamey David CLM", "SBL Hebrew", "Times New Roman", serif;
   }
   header {
-    background: var(--accent); color: #fff;
-    padding: 14px 16px calc(14px);
-    position: sticky; top: 0; z-index: 5;
+    background: linear-gradient(135deg, #101f38 0%, #1a365d 55%, #27476f 100%);
+    color: #fff; position: sticky; top: 0; z-index: 5;
+    padding: 15px 16px 14px;
+    border-bottom: 2px solid var(--gold);
+    box-shadow: 0 2px 16px rgba(0,0,0,.18);
   }
-  header h1 { margin: 0; font-size: 1.15rem; font-weight: 700; padding-left: 44px; }
-  header p { margin: 2px 0 0; font-size: .8rem; opacity: .85; }
+  .brand { display: flex; align-items: center; gap: 11px; padding-left: 46px; }
+  .brand .mark {
+    width: 42px; height: 42px; flex: none; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; line-height: 1; color: #16233a; padding-bottom: 3px;
+    background: linear-gradient(160deg, #f2dda0, var(--gold));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 2px 8px rgba(0,0,0,.25);
+  }
+  header h1 { margin: 0; font-size: 1.25rem; font-weight: 700; letter-spacing: .005em; }
+  header .tag {
+    margin: 2px 0 0; font-size: .74rem; font-weight: 600;
+    color: #e0cb96; letter-spacing: .07em;
+  }
+  header .lede {
+    margin: 11px 0 0; font-size: .8rem; line-height: 1.5; opacity: .9;
+    border-top: 1px solid rgba(255,255,255,.14); padding-top: 9px;
+  }
   #settingsBtn {
-    position: absolute; top: 10px; left: 12px; width: 38px; height: 38px;
-    padding: 0; border-radius: 10px; background: rgba(255,255,255,.14);
+    position: absolute; top: 14px; left: 14px; width: 38px; height: 38px;
+    padding: 0; border-radius: 11px; background: rgba(255,255,255,.13);
+    border: 1px solid rgba(255,255,255,.18);
     color: #fff; font-size: 1.15rem; line-height: 1;
   }
 
@@ -216,13 +236,114 @@
   .repItem.bad .repBar > i { background: var(--err); }
   .repItem .txt { margin-top: 8px; font-size: 1.02rem; }
   .repItem .why { margin-top: 6px; font-size: .78rem; color: var(--muted); }
+
+  /* שורת ההודעה של שלב 3 — אדומה בזמן העלאה, ירוקה כשמותר לצאת */
+  .notice {
+    display: flex; align-items: center; gap: 9px; margin-top: 10px;
+    border-radius: 12px; padding: 11px 12px; font-size: .9rem; font-weight: 600;
+    border: 1px solid; line-height: 1.4;
+  }
+  .notice .ico { font-size: 1.1rem; flex: none; }
+  .notice.warn {
+    color: var(--err); border-color: var(--err);
+    background: color-mix(in srgb, var(--err) 12%, var(--card));
+  }
+  .notice.ok {
+    color: var(--ok); border-color: var(--ok);
+    background: color-mix(in srgb, var(--ok) 13%, var(--card));
+  }
+
+  /* כרטיס ההקלטה: שם הקובץ האחרון */
+  .filechip {
+    display: flex; align-items: center; gap: 9px; margin-top: 10px;
+    border: 1px solid var(--line); border-radius: 12px; padding: 9px 11px;
+    background: var(--verse-chip); font-size: .85rem;
+  }
+  .filechip .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filechip .meta { flex: none; color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; }
+
+  /* כפתור קטן בפינת הכותרת (עריכת החלוקה) */
+  .cornerBtn {
+    margin-inline-start: auto; width: auto; padding: 5px 10px; font-size: .78rem;
+    border-radius: 9px; background: var(--verse-chip); color: var(--accent);
+    border: 1px solid var(--line); font-weight: 600; flex: none;
+  }
+
+  /* ---------- עורך חלוקת המילים ---------- */
+  #editOverlay {
+    position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.5);
+    display: none; align-items: stretch; justify-content: center;
+  }
+  #editOverlay.open { display: flex; }
+  #editSheet {
+    background: var(--bg); width: 100%; max-width: 640px;
+    display: flex; flex-direction: column;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sheetHead {
+    display: flex; align-items: center; gap: 10px; flex: none;
+    background: var(--accent); color: #fff; padding: 12px 14px;
+    padding-top: calc(12px + env(safe-area-inset-top));
+  }
+  .sheetHead h3 { margin: 0; font-size: 1.02rem; flex: 1; }
+  .sheetHead button {
+    width: auto; padding: 7px 11px; font-size: .82rem; border-radius: 9px;
+    background: rgba(255,255,255,.16); color: #fff;
+  }
+  .sheetHead button.primary { background: var(--gold); color: #16233a; }
+  #editHint { margin: 10px 12px 0; font-size: .78rem; color: var(--muted); line-height: 1.45; }
+  .editList { flex: 1; overflow-y: auto; padding: 10px 12px 12px; -webkit-overflow-scrolling: touch; }
+  .egroup {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 7px 9px; margin-bottom: 7px;
+  }
+  .egroup.target { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .egroup .gi { font-size: .7rem; color: var(--muted); flex: none; min-width: 1.6em; }
+  .egroup .vch {
+    font-size: .66rem; color: var(--muted); background: var(--verse-chip);
+    border-radius: 6px; padding: 1px 5px; flex: none;
+  }
+  .egroup .mrg {
+    width: auto; flex: none; padding: 2px 7px; font-size: .72rem; border-radius: 7px;
+    background: var(--verse-chip); color: var(--muted); border: 1px solid var(--line);
+    font-weight: 600;
+  }
+  .w {
+    font-size: 1.12rem; padding: 3px 8px; border-radius: 8px;
+    background: var(--verse-chip); border: 1px solid transparent;
+    cursor: grab; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; touch-action: manipulation;
+  }
+  .w.sel { background: color-mix(in srgb, var(--accent) 20%, var(--card)); border-color: var(--accent); }
+  .w.lift { opacity: .35; }
+  #dragGhost {
+    position: fixed; z-index: 90; pointer-events: none; font-size: 1.12rem;
+    padding: 4px 10px; border-radius: 9px; background: var(--accent);
+    color: var(--accent-ink); box-shadow: 0 6px 18px rgba(0,0,0,.3);
+    transform: translate(-50%, -140%);
+  }
+  .editBar {
+    flex: none; display: flex; gap: 7px; padding: 9px 12px;
+    padding-bottom: calc(9px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line); background: var(--card);
+  }
+  .editBar button { padding: 10px 8px; font-size: .82rem; border-radius: 10px; }
+  .editBar button.ghost { background: var(--verse-chip); color: var(--ink); }
+  #editCount { font-size: .78rem; color: var(--muted); padding: 0 12px 8px; flex: none; }
 </style>
 </head>
 <body>
 <header>
   <button id="settingsBtn" aria-label="הגדרות" title="הגדרות">⚙️</button>
-  <h1>קריאת התורה — כתוביות מסונכרנות</h1>
-  <p>טקסט מדויק מנוקד ומוטעם (MAM) · הכל מהטלפון — כולל מסלול ה-AI</p>
+  <div class="brand">
+    <span class="mark bible" aria-hidden="true">ת</span>
+    <div>
+      <h1>קריאת התורה</h1>
+      <p class="tag">סטודיו הכתוביות לבעלי הקריאה</p>
+    </div>
+  </div>
+  <p class="lede">טקסט מוטעם מדויק, סנכרון אוטומטי לקולו של הקורא וקובץ כתוביות מוכן להפקה — הכול מהטלפון.</p>
 </header>
 
 <!-- חלונית ההגדרות -->
@@ -240,7 +361,9 @@
 
   <!-- שלב 1: הטקסט -->
   <section class="card" id="step1">
-    <h2><span class="n">1</span> בחירת הקטע <span class="done" id="done1" hidden>✓</span></h2>
+    <h2><span class="n">1</span> בחירת הקטע <span class="done" id="done1" hidden>✓</span>
+      <button class="cornerBtn" id="editSplitBtn" hidden title="עריכת חלוקת המילים">✏️ עריכת החלוקה</button>
+    </h2>
     <div>
       <label for="book">ספר</label>
       <select id="book">
@@ -298,7 +421,7 @@
     <div id="segPreviewWrap" hidden>
       <p class="okline" id="loadOk"></p>
       <div class="seglist bible" id="segPreview"></div>
-      <p class="hint">בדיקת עיניים: החיתוך לפי טעמי המקרא — כל שורה תהיה כתובית אחת.</p>
+      <p class="hint">בדיקת עיניים: החיתוך לפי טעמי המקרא — כל שורה תהיה כתובית אחת. אפשר לשנות את החלוקה בכפתור העריכה שבפינה.</p>
     </div>
   </section>
 
@@ -306,16 +429,15 @@
   <section class="card locked" id="step2">
     <h2><span class="n">2</span> ההקלטה <span class="done" id="done2" hidden>✓</span></h2>
     <input type="file" id="audioFile" accept="audio/*,video/*" hidden>
-    <button id="pickAudio" class="secondary">בחירת הקלטה מהטלפון…</button>
-    <div id="audioInfo" class="hint" hidden></div>
+    <button id="pickAudio" class="secondary">בחירת קובץ אודיו או וידאו…</button>
+    <div id="audioInfo" class="filechip" hidden></div>
     <audio id="player" controls preload="metadata" hidden></audio>
-    <p class="hint">אפשר לבחור גם קובץ וידאו — האודיו יחולץ ממנו במכשיר לפני ההעלאה, כך שהשרת לא מעבד וידאו כבד. הקובץ נשאר במכשיר; הוא מועלה לשרת רק אם בוחרים בתזמון ה-AI בענן בשלב 3.</p>
   </section>
 
   <!-- שלב 3: תזמון -->
   <section class="card locked" id="step3">
     <h2><span class="n">3</span> תזמון <span class="done" id="done3" hidden>✓</span></h2>
-    <button id="startCloud" hidden>🛰️ תזמון AI מדויק בענן</button>
+    <button id="startCloud" hidden>✨ סנכרון אוטומטי של הכתוביות</button>
     <div id="cloudProgress" hidden>
       <div class="procrow">
         <span class="spin"></span>
@@ -325,10 +447,9 @@
       </div>
       <div class="procbar"><i id="procBar"></i></div>
     </div>
-    <p class="hint" id="cloudHint" hidden style="margin-top:4px">המעבד ההיברידי (תמלול ← עוגנים ← יישור ← VAD) רץ על GPU בענן ישירות מכאן. ההקלטה מועלית לשרת העיבוד ונמחקת בסיומו; וידאו מומר לאודיו עוד במכשיר. יש להשאיר את האפליקציה פתוחה רק עד סיום ההעלאה — העיבוד עצמו (2–5 דקות לקריאה קצרה, יותר להקלטה ארוכה) ממשיך בענן גם כשהאפליקציה סגורה, והזמנים ייטענו אוטומטית בכניסה הבאה.</p>
-    <input type="file" id="srtFile" accept=".srt,.txt,text/plain" hidden>
-    <button id="importSrt" class="secondary mt">📥 ייבוא זמנים מקובץ SRT</button>
-    <p class="hint" style="margin-top:4px">יש כבר קובץ SRT מוכן? טען אותו כאן — הזמנים ייכנסו ישר לשלב הבדיקה והתיקון.</p>
+    <div id="stayNotice" class="notice warn" hidden>
+      <span class="ico">⚠️</span><span id="stayText">אין לצאת מהאפליקציה עד סיום ההעלאה.</span>
+    </div>
     <div id="timingMsg"></div>
   </section>
 
@@ -341,7 +462,7 @@
   <!-- שלב 5: בדיקה ותיקון -->
   <section class="card locked" id="step4">
     <h2><span class="n">5</span> בדיקה ותיקון</h2>
-    <p class="hint" id="noAudioHint" hidden style="margin:0 0 6px">🎧 כדי להאזין ולכוון — בחר שוב את קובץ ההקלטה בשלב 2. הורדת ה-SRT בשלב 6 זמינה גם בלי הקובץ.</p>
+    <p class="hint" id="noAudioHint" hidden style="margin:0 0 6px">🎧 כדי להאזין ולכוון — בחר שוב את קובץ ההקלטה בשלב 2. הורדת הכתוביות בשלב 6 זמינה גם בלי הקובץ.</p>
     <p class="hint" style="margin:0 0 6px">הקשה על ▶ מנגנת מנקודת הכניסה של המקטע. חצים מזיזים ב-0.2 שניות.</p>
     <div class="timelist" id="timeList"></div>
   </section>
@@ -352,10 +473,32 @@
     <button id="dlBtn">⬇️ הורדת קובץ SRT</button>
     <button id="shareBtn" class="secondary mt" hidden>📤 שיתוף הקובץ…</button>
     <div id="exportMsg"></div>
-    <p class="hint">ההמשך: CapCut Web (מצב "אתר מחשב" בדפדפן) ← ייבוא ה-SRT ← עיצוב ← Cloud ← אפליקציית CapCut ← פרסום.</p>
+    <p class="hint">זהו קובץ כתוביות (SRT) — מכאן טוענים אותו על הסרטון בעורך וידאו חיצוני לבחירתך (למשל CapCut) והכתוביות יופיעו מסונכרנות.</p>
   </section>
 
 </main>
+
+<!-- עורך חלוקת המילים -->
+<div id="editOverlay">
+  <div id="editSheet">
+    <div class="sheetHead">
+      <h3>עריכת חלוקת הכתוביות</h3>
+      <button id="editCancel">ביטול</button>
+      <button id="editSave" class="primary">שמירה</button>
+    </div>
+    <p id="editHint">גררו מילה אל השורה שמעליה או שמתחתיה כדי להעביר אותה — או הקישו על מילה ובחרו פעולה בסרגל התחתון.</p>
+    <div class="editList bible" id="editList"></div>
+    <div id="editCount"></div>
+    <div class="editBar">
+      <button id="editUp" class="ghost" disabled>⬆ לכתובית שמעל</button>
+      <button id="editSplit" class="ghost" disabled>✂ פצל כאן</button>
+      <button id="editDown" class="ghost" disabled>⬇ לכתובית שמתחת</button>
+    </div>
+    <div class="editBar" style="border-top:none;padding-top:0">
+      <button id="editReset" class="ghost">🔄 חזרה לחלוקה לפי הטעמים</button>
+    </div>
+  </div>
+</div>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
@@ -377,6 +520,8 @@ const S = {
   audioName: null,
   report: null,      // דוח האיכות ממסלול ה-AI בענן (טקסט)
   cloudJob: null,    // עבודת ענן פעילה {id, t0, est, push} — שורדת סגירת האפליקציה
+  splits: null,      // חלוקה מותאמת אישית: גודל כל כתובית במילים (null = לפי הטעמים)
+  baseSplits: null,  // החלוקה המקורית לפי הטעמים — לכפתור האיפוס
 };
 
 /* ---------- עזרי תצוגה ---------- */
@@ -419,7 +564,7 @@ function save() {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       query: readQuery(), data: S.data, times: S.times,
       endTime: S.endTime, audioName: S.audioName, report: S.report,
-      cloudJob: S.cloudJob,
+      cloudJob: S.cloudJob, splits: S.splits, baseSplits: S.baseSplits,
     }));
   } catch (e) {}
 }
@@ -447,7 +592,9 @@ async function loadText() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || ("שגיאה " + res.status));
     S.data = data;
-    S.times = null; S.endTime = null;
+    S.times = null; S.endTime = null; S.report = null;
+    S.splits = null;
+    S.baseSplits = data.segments.map(s => tokensOf(s.display).length);
     renderTextLoaded();
     save();
   } catch (e) {
@@ -457,10 +604,72 @@ async function loadText() {
     $("loadBtn").textContent = "טען את הטקסט";
   }
 }
+/* ---------- חלוקת המילים לכתוביות ----------
+   מקור האמת הוא רצף המילים הפרוזודיות: כל חלוקה היא רשימת גדלים שסכומה
+   מספר המילים. אותו רצף בדיוק נבנה גם בשרת (chunker.tokenize), ולכן
+   מספיק לשלוח את הגדלים כדי שהעיבוד בענן ייצור בדיוק את אותן כתוביות. */
+const HE_LETTER_RE = /[א-ת]/;
+const NIQQUD_RE = /[ְ-ׇֽֿׁׂ]/;
+const MAQAF = "־";
+function tokensOf(display) { return display.split(" ").filter(Boolean); }
+/* מילה נשמעת = יש בה חלק מנוקד. חלק שיש בו אותיות בלי ניקוד הוא "כתיב"
+   שאינו נקרא — בדיוק ההגדרה שב-chunker.is_ketiv בצד השרת. */
+function isAudible(tok) {
+  return tok.split(MAQAF).some(p => HE_LETTER_RE.test(p) && NIQQUD_RE.test(p));
+}
+function flatWords() {
+  const out = [];
+  for (const s of S.data.segments)
+    for (const t of tokensOf(s.display)) out.push({ t, verse: s.verse });
+  return out;
+}
+/* רצף מילים + גדלים → כתוביות. כולל אותו מיזוג של מקטע בלי מילה נשמעת
+   שהשרת עושה (chunker._merge_unalignable) — אחרת ספירת הכתוביות תיפרד. */
+function segmentsFromSplits(words, sizes) {
+  const raw = [];
+  let i = 0;
+  for (const n of sizes) {
+    const part = words.slice(i, i + n);
+    i += n;
+    if (!part.length) continue;
+    raw.push({
+      display: part.map(w => w.t).join(" "), verse: part[0].verse,
+      audible: part.some(w => isAudible(w.t)),
+    });
+  }
+  const out = [];
+  let pending = "";
+  for (const seg of raw) {
+    if (!seg.audible) {
+      if (out.length) out[out.length - 1].display += " " + seg.display;
+      else pending = (pending + " " + seg.display).trim();
+      continue;
+    }
+    if (pending) { seg.display = pending + " " + seg.display; pending = ""; }
+    out.push(seg);
+  }
+  if (pending && out.length) out[out.length - 1].display += " " + pending;
+  return out.map(s => ({ display: s.display, verse: s.verse }));
+}
+function currentSplits() {
+  return S.data.segments.map(s => tokensOf(s.display).length);
+}
+/* החלת חלוקה חדשה — הזמנים הישנים כבר לא תקפים (מספר הכתוביות השתנה) */
+function applySplits(sizes) {
+  const words = flatWords();
+  S.data.segments = segmentsFromSplits(words, sizes);
+  S.splits = sizes.slice();
+  S.times = null; S.endTime = null; S.report = null;
+  renderTextLoaded();
+  refreshTimingSteps();
+  save();
+}
+
 function renderTextLoaded() {
   const d = S.data;
   $("loadOk").textContent =
-    `נטען: ${d.ref} · ${d.n_verses} פסוקים · ${d.segments.length} מקטעים · גרסה: ${d.version}`;
+    `נטען: ${d.ref} · ${d.n_verses} פסוקים · ${d.segments.length} כתוביות · גרסה: ${d.version}`;
+  $("editSplitBtn").hidden = false;
   const list = $("segPreview");
   list.innerHTML = "";
   let lastVerse = null;
@@ -549,27 +758,64 @@ const player = $("player");
 let audioReady = false;
 let audioFileObj = null;   // הקובץ עצמו — נדרש לניתוח האוטומטי
 let audioDurationSec = 0;  // משך ההקלטה — בסיס להערכת זמן העיבוד בענן
+let lastObjectUrl = null;
+
+function fmtSize(b) {
+  return b >= 1024 * 1024 * 1024 ? (b / 1073741824).toFixed(1) + "GB"
+       : b >= 1024 * 1024 ? Math.round(b / 1048576) + "MB"
+       : Math.max(1, Math.round(b / 1024)) + "KB";
+}
+function showFileChip(name, meta) {
+  $("audioInfo").hidden = false;
+  $("audioInfo").innerHTML =
+    `<span class="ico">🎧</span><span class="nm">${escapeHtml(name)}</span>` +
+    `<span class="meta">${escapeHtml(meta || "")}</span>`;
+}
 $("pickAudio").addEventListener("click", () => $("audioFile").click());
+/* הקובץ הנבחר מתקבל תמיד — גם כשהדפדפן מסרב לקרוא ממנו מטא-דאטה.
+   באייפון (Low Power Mode, וידאו בקודק שספארי לא מנגן) האירוע
+   loadedmetadata פשוט לא נורה לעולם; כשההמשך היה תלוי בו, שלב 3 נשאר
+   נעול בלי שום הודעה וזה נראה כאילו "אי אפשר להעלות קובץ". המשך
+   התהליך לא באמת צריך את המשך — הוא משמש רק להערכת זמן ולהאזנה. */
 $("audioFile").addEventListener("change", () => {
   const f = $("audioFile").files[0];
   if (!f) return;
   audioFileObj = f;
-  player.src = URL.createObjectURL(f);
-  player.hidden = false;
   S.audioName = f.name;
-  audioReady = false;
-  player.addEventListener("loadedmetadata", () => {
-    audioReady = isFinite(player.duration) && player.duration > 0;
-    audioDurationSec = audioReady ? player.duration : 0;
-    $("audioInfo").hidden = false;
-    $("audioInfo").textContent = audioReady
-      ? `${f.name} · משך: ${fmtClock(player.duration)}`
-      : `${f.name} — לא הצלחתי לקרוא את משך הקובץ; נסה פורמט אחר (m4a/mp3/wav)`;
-    $("done2").hidden = !audioReady;
-    refreshTimingSteps();
-    save();
-  }, { once: true });
+  audioReady = true;
+  audioDurationSec = 0;
+  $("done2").hidden = false;
+  showFileChip(f.name, fmtSize(f.size));
+  refreshTimingSteps();
+  save();
+  probeDuration(f);
 });
+/* קריאת המשך והנגן — best-effort לגמרי, עם טיימאאוט ועם טיפול בשגיאה */
+function probeDuration(f) {
+  if (lastObjectUrl) { URL.revokeObjectURL(lastObjectUrl); lastObjectUrl = null; }
+  lastObjectUrl = URL.createObjectURL(f);
+  player.hidden = true;
+  player.src = lastObjectUrl;
+  let settled = false;
+  const done = ok => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(to);
+    if (ok && isFinite(player.duration) && player.duration > 0) {
+      audioDurationSec = player.duration;
+      player.hidden = false;
+      showFileChip(f.name, `${fmtClock(player.duration)} · ${fmtSize(f.size)}`);
+    } else {
+      // אין תצוגה מקדימה — ההעלאה והסנכרון עובדים בדיוק כרגיל
+      showFileChip(f.name, fmtSize(f.size) + " · ללא נגן");
+    }
+    save();
+  };
+  const to = setTimeout(() => done(false), 8000);
+  player.addEventListener("loadedmetadata", () => done(true), { once: true });
+  player.addEventListener("error", () => done(false), { once: true });
+  try { player.load(); } catch (e) { done(false); }
+}
 function refreshTimingSteps() {
   // עבודת ענן פעילה משאירה את שלב 3 פתוח גם בלי קובץ האודיו — אחרי סגירה
   // מלאה של האפליקציה הקובץ אבד, אבל פס ההתקדמות וכפתור הביטול חייבים להגיב
@@ -588,6 +834,10 @@ function refreshTimingSteps() {
 /* ---------- המרה לאודיו בלבד לפני ההעלאה לענן ----------
    וידאו מפורק במכשיר ל-WAV מונו 16kHz (כל מה שהתמלול צריך) —
    ההעלאה קטנה והשרת לא נוגע בקובצי וידאו כבדים. */
+const MAX_UPLOAD_MB = 300;   // תואם ל-MAX_UPLOAD_MB ב-modal_worker/app.py
+// מעבר לגודל הזה פענוח הווידאו במכשיר מפיל את הלשונית באייפון (מגבלת
+// זיכרון קשיחה) — עדיף להגיד את זה מראש מאשר "להיתקע" באמצע ההעלאה.
+const MAX_DECODE_MB = 350;
 function encodeWav16(samples, rate) {
   const buf = new ArrayBuffer(44 + samples.length * 2);
   const v = new DataView(buf);
@@ -602,21 +852,47 @@ function encodeWav16(samples, rate) {
   }
   return buf;
 }
+/* ‏decodeAudioData: ספארי הישן מכיר רק את גרסת ה-callback */
+function decodeAudio(ac, buf) {
+  return new Promise((resolve, reject) => {
+    let p;
+    try { p = ac.decodeAudioData(buf, resolve, reject); }
+    catch (e) { reject(e); return; }
+    if (p && typeof p.then === "function") p.then(resolve, reject);
+  });
+}
+/* דגימה-מחדש פשוטה ל-16kHz — פולבק לספארי שלא בונה OfflineAudioContext
+   בקצב נמוך. התמלול ממילא לא מרוויח מיותר מזה. */
+function downsampleTo16k(data, rate) {
+  if (rate === 16000) return data;
+  const ratio = rate / 16000;
+  const out = new Float32Array(Math.floor(data.length / ratio));
+  for (let i = 0; i < out.length; i++) out[i] = data[Math.floor(i * ratio)];
+  return out;
+}
 async function extractAudioForUpload(file) {
   if (!/^video\//i.test(file.type || "")) return file;  // כבר אודיו — אין מה להמיר
   const buf = await file.arrayBuffer();
   const AC = window.AudioContext || window.webkitAudioContext;
   const ac = new AC();
   let decoded;
-  try { decoded = await ac.decodeAudioData(buf); }
-  finally { ac.close().catch(() => {}); }
-  const rate = 16000;
-  const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * rate), rate);
+  try { decoded = await decodeAudio(ac, buf); }
+  finally { ac.close && ac.close().catch(() => {}); }
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  let data, rate = 16000;
+  let off = null;
+  try { off = new OAC(1, Math.ceil(decoded.duration * 16000), 16000); }
+  catch (e) { off = null; }
+  if (!off) {  // קצב נמוך לא נתמך — מרנדרים בקצב המקורי ומדללים ידנית
+    rate = decoded.sampleRate;
+    off = new OAC(1, Math.ceil(decoded.duration * rate), rate);
+  }
   const src = off.createBufferSource();
   src.buffer = decoded; src.connect(off.destination); src.start();
   const rendered = await off.startRendering();
+  data = downsampleTo16k(rendered.getChannelData(0), rate);
   const name = (file.name || "recording").replace(/\.[^.]+$/, "") + ".wav";
-  return new File([encodeWav16(rendered.getChannelData(0), rate)], name, { type: "audio/wav" });
+  return new File([encodeWav16(data, 16000)], name, { type: "audio/wav" });
 }
 
 /* ---------- שלב 4: דוח איכות העיבוד ---------- */
@@ -637,8 +913,8 @@ function parseReport(text) {
 function renderReport() {
   const view = $("reportView");
   if (!S.report) {
-    view.innerHTML = '<p class="hint" style="margin:0">הדוח נוצר בתזמון ה-AI בענן ומראה באילו מקומות ' +
-      'ודאות הסנכרון נמוכה יותר. בייבוא SRT ידני אין דוח — פשוט עוברים לשלב 5 ובודקים בעין.</p>';
+    view.innerHTML = '<p class="hint" style="margin:0">הדוח נוצר בסיום הסנכרון ומראה באילו מקומות ' +
+      'ודאות הסנכרון נמוכה יותר.</p>';
     $("doneR").hidden = true;
     return;
   }
@@ -683,7 +959,7 @@ function renderReport() {
   $("doneR").hidden = false;
 }
 
-/* ---------- שלב 3ב: קליטת זמנים מ-SRT — משותף לענן ולייבוא הידני ---------- */
+/* ---------- קליטת הזמנים מה-SRT שחוזר מהענן ---------- */
 function applySrtTimes(text, mismatchHint) {
   const re = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/g;
   const starts = [], ends = [];
@@ -693,29 +969,12 @@ function applySrtTimes(text, mismatchHint) {
     ends.push(+m[5] * 3600 + +m[6] * 60 + +m[7] + +m[8] / 1000);
   }
   const n = S.data.segments.length;
-  if (!starts.length) throw new Error("לא נמצאו חותמות זמן בקובץ — ודא שזה קובץ SRT");
+  if (!starts.length) throw new Error("לא חזרו חותמות זמן מהעיבוד");
   if (starts.length !== n)
-    throw new Error(`בקובץ ${starts.length} כתוביות אבל בקטע שנטען ${n} מקטעים — ${mismatchHint}`);
+    throw new Error(`חזרו ${starts.length} כתוביות אבל בקטע שנטען ${n} — ${mismatchHint}`);
   S.times = starts;
   S.endTime = ends[ends.length - 1];
 }
-$("importSrt").addEventListener("click", () => $("srtFile").click());
-$("srtFile").addEventListener("change", async () => {
-  const f = $("srtFile").files[0];
-  if (!f) return;
-  try {
-    applySrtTimes(await f.text(),
-      "ודא שנבחרו אותו ספר/פרק/טווח כמו בקובץ");
-    S.report = null;
-    $("timingMsg").innerHTML =
-      '<p class="okline">הזמנים יובאו מה-SRT ✓ — בדוק בשלב 5, תקן אם צריך, וייצא מחדש</p>';
-    refreshTimingSteps(); save();
-  } catch (e) {
-    $("timingMsg").innerHTML = `<p class="error">הייבוא נכשל: ${e.message}</p>`;
-  } finally {
-    $("srtFile").value = "";
-  }
-});
 
 /* ---------- שלב 3א: תזמון AI בענן (Modal — הפייפליין ההיברידי) ----------
    שני שלבים נפרדים במכוון:
@@ -727,7 +986,20 @@ const CLOUD_POLL_MS = 5000;
 // גבול זהירות למעקב: מגבלת הריצה של ה-worker ‏(modal_worker/app.py:
 // WORKER_TIMEOUT_SEC, שעתיים) + מרווח — עבודה שעברה אותו כבר בוטלה בענן.
 const CLOUD_JOB_LIMIT_MS = (2 * 60 + 10) * 60 * 1000;
-if (AI_ENDPOINT) { $("startCloud").hidden = false; $("cloudHint").hidden = false; }
+if (AI_ENDPOINT) $("startCloud").hidden = false;
+
+/* האזהרה היחידה שנשארה בשלב 3: אדומה כל עוד ההעלאה רצה, ירוקה ברגע
+   שהיא נגמרה — מאותו רגע העיבוד ממשיך בענן בלי תלות בטלפון. */
+function setStayNotice(mode) {
+  const el = $("stayNotice");
+  if (!mode) { el.hidden = true; return; }
+  el.hidden = false;
+  el.className = "notice " + (mode === "ok" ? "ok" : "warn");
+  el.querySelector(".ico").textContent = mode === "ok" ? "✅" : "⚠️";
+  $("stayText").textContent = mode === "ok"
+    ? "ההעלאה הסתיימה — אפשר לצאת מהאפליקציה. העיבוד ממשיך בענן."
+    : "אין לצאת מהאפליקציה עד לסיום ההעלאה.";
+}
 
 let cloudAbort = null;      // מאפשר לכפתור הביטול לעצור את הבקשות
 let cloudTimerInt = null;   // הטיימר החלק (מתעדכן כל שנייה)
@@ -840,17 +1112,11 @@ function uploadToCloud(fd, signal, onProgress) {
   });
 }
 
-/* ההודעה שמסמנת למשתמש את קו פרשת המים: מכאן מותר לצאת מהאפליקציה */
-function announceCloudProcessing(resumed) {
-  setProcLabel("מעבד בענן (תמלול ← עוגנים ← יישור ← VAD)…");
-  const head = resumed
-    ? "העיבוד מהביקור הקודם עדיין רץ בענן — ממשיכים לעקוב."
-    : "ההעלאה הושלמה ✓ העיבוד רץ בענן בלי תלות בטלפון.";
-  $("timingMsg").innerHTML =
-    `<p class="okline">${head} אפשר לסגור את האפליקציה.</p>` +
-    `<p class="hint">${S.cloudJob && S.cloudJob.push
-      ? "🔔 תישלח התראה כשהעיבוד יסתיים, והזמנים ייטענו אוטומטית בכניסה הבאה."
-      : "בכניסה הבאה לאפליקציה הזמנים ייטענו אוטומטית (אם העיבוד הסתיים)."}</p>`;
+/* קו פרשת המים: מכאן מותר לצאת מהאפליקציה — האזהרה מתחלפת לירוקה */
+function announceCloudProcessing() {
+  setProcLabel("מסנכרן…");
+  $("timingMsg").innerHTML = "";
+  setStayNotice("ok");
 }
 
 /* לולאת המעקב: שואלת לשלום העבודה עד תוצאה/שגיאה. העבודה נמחקת מהזיכרון
@@ -875,15 +1141,12 @@ async function pollCloudJob(signal) {
       applySrtTimes(data.srt, "ודא שטווח הפסוקים תואם את ההקלטה");
       S.report = (data.report || "").trim() || null;
       stopCloudTimer(true);
-      $("timingMsg").innerHTML =
-        '<p class="okline">התזמון בענן הושלם ✓ — הדוח מחכה בשלב 4, והתיקונים בשלב 5</p>' +
-        (audioReady ? "" :
-          '<p class="hint">בחר שוב את קובץ ההקלטה בשלב 2 כדי לפתוח את שלבי הבדיקה והייצוא.</p>');
+      setStayNotice(null);
+      $("timingMsg").innerHTML = '<p class="okline">הסנכרון הושלם ✓</p>';
       if (!audioReady) {
         // ההנחיה גם בשלב 2 שנשאר פתוח — שלב 3 ננעל שוב כשאין קובץ אודיו
-        $("audioInfo").hidden = false;
-        $("audioInfo").textContent =
-          "העיבוד בענן הסתיים ✓ — בחר שוב את קובץ ההקלטה כדי לבדוק ולייצא";
+        showFileChip(S.audioName || "ההקלטה",
+          "בחר את הקובץ שוב כדי להאזין");
       }
       refreshTimingSteps(); save();
       return;
@@ -906,11 +1169,12 @@ async function trackCloudJob() {
     await pollCloudJob(cloudAbort.signal);
   } catch (e) {
     stopCloudTimer(false);
+    setStayNotice(null);
     if (e && e.name === "AbortError")
-      $("timingMsg").innerHTML = '<p class="hint">התזמון בוטל. אפשר להתחיל מחדש בכל עת.</p>';
+      $("timingMsg").innerHTML = '<p class="hint">הסנכרון בוטל.</p>';
     else
       $("timingMsg").innerHTML =
-        `<p class="error">מסלול הענן נכשל: ${e.message || e}\nנסה שוב בעוד כמה דקות, או ייבא קובץ SRT מוכן.</p>`;
+        `<p class="error">הסנכרון נכשל: ${e.message || e}\nנסה שוב בעוד כמה דקות.</p>`;
   } finally {
     cloudAbort = null;
     cloudBusy(false);
@@ -925,7 +1189,7 @@ function resumeCloudJob() {
   refreshTimingSteps();  // פותח את שלב 3 — אחרת פס ההתקדמות והביטול נעולים
   // ‏ts — תחילת הטיימר בלחיצה המקורית (כולל ההעלאה), שהזמן לא יקפוץ אחורה
   startCloudTimer(S.cloudJob.est || 300, S.cloudJob.ts || S.cloudJob.t0);
-  announceCloudProcessing(true);
+  announceCloudProcessing();
   trackCloudJob();
 }
 
@@ -941,6 +1205,7 @@ async function runCloudTiming() {
   const timerStart = Date.now();   // נשמר בעבודה — להמשכיות הטיימר אחרי סגירה
   startCloudTimer(est);
   $("timingMsg").innerHTML = "";
+  setStayNotice("warn");
   holdWakeLock();
   let subData, pushSub = null;
   try {
@@ -952,33 +1217,43 @@ async function runCloudTiming() {
     // שכבת ההמרה: וידאו הופך לאודיו בלבד עוד במכשיר — מעלים רק את הקול
     let upload = audioFileObj;
     if (/^video\//i.test(audioFileObj.type || "")) {
+      if (audioFileObj.size > MAX_DECODE_MB * 1048576)
+        throw new Error(
+          `הסרטון כבד מדי להמרה בטלפון (${fmtSize(audioFileObj.size)}). ` +
+          "אפשר לקצר אותו באפליקציית התמונות, או להקליט את הקריאה " +
+          "ב\"תזכורות קוליות\" ולהעלות את קובץ הקול.");
       setProcLabel("ממיר את הווידאו לאודיו במכשיר…");
       try { upload = await extractAudioForUpload(audioFileObj); }
       catch (e) { upload = audioFileObj; }  // ההמרה נכשלה — מעלים כמו שהוא, ffmpeg בשרת יסתדר
     }
     if (signal.aborted) throw new DOMException("בוטל", "AbortError");
+    if (upload.size > MAX_UPLOAD_MB * 1048576)
+      throw new Error(
+        `הקובץ גדול מ-${MAX_UPLOAD_MB}MB (${fmtSize(upload.size)}) — ` +
+        "פצל את ההקלטה לפי עליות והעלה כל חלק בנפרד.");
     const fd = new FormData();
     fd.append("file", upload, upload.name);
     fd.append("token", AI_TOKEN);
     if (pushSub) fd.append("push_sub", pushSub);
     for (const [k, v] of Object.entries(readQuery())) if (v) fd.append(k, v);
+    // חלוקה מותאמת אישית — השרת יקבץ את אותן מילים בדיוק לפי הגדלים האלה
+    if (S.splits) fd.append("splits", JSON.stringify(S.splits));
 
     // ── שלב ההעלאה: החלק היחיד שבו האפליקציה חייבת להישאר פתוחה ──
-    setProcLabel("מעלה את ההקלטה… השאר את האפליקציה פתוחה");
-    $("timingMsg").innerHTML =
-      '<p class="hint">⬆️ מעלה את ההקלטה — השאר את האפליקציה פתוחה עד סיום ההעלאה. מיד אחריה אפשר לצאת.</p>';
+    setProcLabel("מעלה את ההקלטה…");
     subData = await uploadToCloud(fd, signal, frac =>
-      setProcLabel(`מעלה את ההקלטה… ${Math.round(frac * 100)}% — השאר את האפליקציה פתוחה`));
+      setProcLabel(`מעלה את ההקלטה… ${Math.round(frac * 100)}%`));
   } catch (e) {
     releaseWakeLock();
     stopCloudTimer(false);
+    setStayNotice(null);
     cloudAbort = null;
     cloudBusy(false);
     if (e && e.name === "AbortError")
-      $("timingMsg").innerHTML = '<p class="hint">ההעלאה בוטלה. אפשר להתחיל מחדש בכל עת.</p>';
+      $("timingMsg").innerHTML = '<p class="hint">ההעלאה בוטלה.</p>';
     else
       $("timingMsg").innerHTML =
-        `<p class="error">ההעלאה לענן נכשלה: ${e.message || e}\nנסה שוב בעוד כמה דקות, או ייבא קובץ SRT מוכן.</p>`;
+        `<p class="error">ההעלאה נכשלה: ${e.message || e}\nנסה שוב בעוד כמה דקות.</p>`;
     return;
   }
   releaseWakeLock();
@@ -988,7 +1263,7 @@ async function runCloudTiming() {
   // ‏t0 — סיום ההעלאה (בסיס למגבלת הזמן); ts — תחילת הטיימר בתצוגה
   S.cloudJob = { id: subData.call_id, t0: Date.now(), ts: timerStart, est, push: !!pushSub };
   save();
-  announceCloudProcessing(false);
+  announceCloudProcessing();
   await trackCloudJob();
 }
 $("startCloud").addEventListener("click", runCloudTiming);
@@ -1002,8 +1277,198 @@ $("cancelCloud").addEventListener("click", () => {
     fetch(AI_ENDPOINT + "/cancel", { method: "POST", body: fd }).catch(() => {});
     S.cloudJob = null; save();
   }
+  setStayNotice(null);
   if (cloudAbort) cloudAbort.abort();
 });
+
+/* ---------- עורך חלוקת המילים ----------
+   העריכה עובדת על רצף המילים ועל גדלי הקבוצות בלבד — סדר המילים לעולם
+   לא משתנה, ולכן כל חלוקה שנוצרת כאן תקפה גם בעיבוד בענן. */
+const E = { words: [], sizes: [], sel: null };  // sel — אינדקס גלובלי של המילה הנבחרת
+
+function editGroupOf(wordIdx) {
+  let acc = 0;
+  for (let g = 0; g < E.sizes.length; g++) {
+    if (wordIdx < acc + E.sizes[g]) return { g, start: acc };
+    acc += E.sizes[g];
+  }
+  return { g: E.sizes.length - 1, start: acc - E.sizes[E.sizes.length - 1] };
+}
+function editRender() {
+  const list = $("editList");
+  list.innerHTML = "";
+  let wi = 0, lastVerse = null;
+  E.sizes.forEach((n, g) => {
+    const row = document.createElement("div");
+    row.className = "egroup";
+    row.dataset.g = g;
+    const verse = E.words[wi] ? E.words[wi].verse : "";
+    let html = `<span class="gi">${g + 1}</span>`;
+    if (verse !== lastVerse) html += `<span class="vch">פסוק ${heNumeral(verse)}</span>`;
+    lastVerse = verse;
+    if (g > 0) html += `<button class="mrg" data-mrg="${g}" title="איחוד עם הכתובית שמעל">🔗 איחוד</button>`;
+    for (let k = 0; k < n; k++, wi++)
+      html += `<span class="w${E.sel === wi ? " sel" : ""}" data-i="${wi}">${escapeHtml(E.words[wi].t)}</span>`;
+    row.innerHTML = html;
+    list.appendChild(row);
+  });
+  $("editCount").textContent = `${E.sizes.length} כתוביות · ${E.words.length} מילים`;
+  const has = E.sel != null;
+  const { g, start } = has ? editGroupOf(E.sel) : {};
+  $("editUp").disabled = !has || g === 0;
+  $("editDown").disabled = !has || g === E.sizes.length - 1;
+  $("editSplit").disabled = !has || E.sel === start;
+}
+/* העברת המילה הנבחרת (עם כל מה שביניה לבין הגבול) לקבוצה השכנה */
+function editMove(dir) {
+  if (E.sel == null) return;
+  const { g, start } = editGroupOf(E.sel);
+  const end = start + E.sizes[g] - 1;
+  if (dir < 0) {
+    if (g === 0) return;
+    const move = E.sel - start + 1;
+    E.sizes[g - 1] += move; E.sizes[g] -= move;
+  } else {
+    if (g === E.sizes.length - 1) return;
+    const move = end - E.sel + 1;
+    E.sizes[g + 1] += move; E.sizes[g] -= move;
+  }
+  E.sizes = E.sizes.filter(n => n > 0);
+  editRender();
+}
+function editSplitAt(wordIdx) {
+  const { g, start } = editGroupOf(wordIdx);
+  const off = wordIdx - start;
+  if (off <= 0) return;
+  E.sizes.splice(g, 1, off, E.sizes[g] - off);
+  editRender();
+}
+function editMerge(g) {
+  if (g < 1) return;
+  E.sizes[g - 1] += E.sizes[g];
+  E.sizes.splice(g, 1);
+  editRender();
+}
+function openSplitEditor() {
+  if (!S.data) return;
+  if (S.cloudJob) {   // הסנכרון שרץ עכשיו יחזיר את החלוקה הישנה
+    $("loadMsg").innerHTML =
+      '<p class="hint">אי אפשר לשנות את החלוקה בזמן שהסנכרון רץ — בטלו אותו תחילה.</p>';
+    return;
+  }
+  E.words = flatWords();
+  E.sizes = currentSplits();
+  E.sel = null;
+  editRender();
+  $("editOverlay").classList.add("open");
+}
+function closeSplitEditor() { $("editOverlay").classList.remove("open"); }
+$("editSplitBtn").addEventListener("click", openSplitEditor);
+$("editCancel").addEventListener("click", closeSplitEditor);
+$("editUp").addEventListener("click", () => editMove(-1));
+$("editDown").addEventListener("click", () => editMove(1));
+$("editSplit").addEventListener("click", () => { if (E.sel != null) editSplitAt(E.sel); });
+$("editReset").addEventListener("click", () => {
+  E.sizes = (S.baseSplits || currentSplits()).slice();
+  E.sel = null;
+  editRender();
+});
+$("editSave").addEventListener("click", () => {
+  const changed = JSON.stringify(E.sizes) !== JSON.stringify(currentSplits());
+  closeSplitEditor();
+  if (!changed) return;
+  const hadTimes = !!S.times;
+  applySplits(E.sizes);
+  $("loadMsg").innerHTML =
+    '<p class="okline">החלוקה עודכנה ✓' +
+    (hadTimes ? " — הזמנים אופסו, יש להריץ את הסנכרון מחדש" : "") + "</p>";
+});
+
+/* בחירה בהקשה + גרירה במגע (Pointer Events — עובד גם באייפון) */
+(function editorGestures() {
+  const list = $("editList");
+  let press = null, ghost = null, targetRow = null;
+
+  const clearTarget = () => {
+    if (targetRow) targetRow.classList.remove("target");
+    targetRow = null;
+  };
+  const stopScroll = e => { if (ghost) e.preventDefault(); };
+  document.addEventListener("touchmove", stopScroll, { passive: false });
+
+  function beginDrag() {
+    if (!press) return;
+    press.dragging = true;
+    press.el.classList.add("lift");
+    ghost = document.createElement("div");
+    ghost.id = "dragGhost";
+    ghost.textContent = press.el.textContent;
+    ghost.className = "bible";
+    document.body.appendChild(ghost);
+    moveGhost(press.x, press.y);
+  }
+  function moveGhost(x, y) {
+    if (!ghost) return;
+    ghost.style.left = x + "px";
+    ghost.style.top = y + "px";
+    ghost.style.display = "none";
+    const under = document.elementFromPoint(x, y);
+    ghost.style.display = "";
+    const row = under && under.closest ? under.closest(".egroup") : null;
+    clearTarget();
+    if (row) {
+      const g = +row.dataset.g;
+      if (Math.abs(g - press.g) === 1) { targetRow = row; row.classList.add("target"); }
+    }
+  }
+  function endDrag(apply) {
+    if (ghost) { ghost.remove(); ghost = null; }
+    if (press && press.el) press.el.classList.remove("lift");
+    if (apply && targetRow) {
+      E.sel = press.i;
+      editMove(+targetRow.dataset.g - press.g);
+    }
+    clearTarget();
+    press = null;
+  }
+
+  list.addEventListener("pointerdown", e => {
+    const chip = e.target.closest(".w");
+    if (!chip) return;
+    const i = +chip.dataset.i;
+    press = { i, g: editGroupOf(i).g, el: chip, x: e.clientX, y: e.clientY,
+              x0: e.clientX, y0: e.clientY, dragging: false };
+    press.timer = setTimeout(beginDrag, 220);
+    // תפיסת המצביע — כך גם תזוזה/שחרור מחוץ לרשימה מגיעים לכאן
+    try { list.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  list.addEventListener("pointermove", e => {
+    if (!press) return;
+    press.x = e.clientX; press.y = e.clientY;
+    if (press.dragging) { moveGhost(e.clientX, e.clientY); return; }
+    // תזוזה גדולה לפני שהלחיצה "נתפסה" = גלילה, לא גרירה
+    if (Math.abs(e.clientX - press.x0) > 10 || Math.abs(e.clientY - press.y0) > 10) {
+      clearTimeout(press.timer);
+      press = null;
+    }
+  });
+  const finish = e => {
+    if (!press) return;
+    clearTimeout(press.timer);
+    if (press.dragging) { endDrag(e.type === "pointerup"); return; }
+    const i = press.i;
+    press = null;
+    E.sel = E.sel === i ? null : i;   // הקשה = בחירה/ביטול בחירה
+    editRender();
+  };
+  list.addEventListener("pointerup", finish);
+  list.addEventListener("pointercancel", finish);
+
+  list.addEventListener("click", e => {
+    const m = e.target.closest("[data-mrg]");
+    if (m) { E.sel = null; editMerge(+m.dataset.mrg); }
+  });
+})();
 
 /* ---------- שלב 4: בדיקה ותיקון ---------- */
 function nudge(i, delta) {
@@ -1085,11 +1550,10 @@ if (navigator.canShare && navigator.canShare({ files: [new File([""], "a.srt")] 
   if (st.data) {
     S.data = st.data; S.times = st.times; S.endTime = st.endTime; S.audioName = st.audioName;
     S.report = st.report || null;
+    S.splits = st.splits || null;
+    S.baseSplits = st.baseSplits || null;
     renderTextLoaded();
-    if (st.audioName) {
-      $("audioInfo").hidden = false;
-      $("audioInfo").textContent = `בפעם הקודמת: ${st.audioName} — יש לבחור את הקובץ שוב (הדפדפן לא שומר קבצים)`;
-    }
+    if (st.audioName) showFileChip(st.audioName, "בחר את הקובץ שוב");
   }
   // עבודת ענן שנשארה מהביקור הקודם — ממשיכים לעקוב / מושכים את התוצאה
   S.cloudJob = st.cloudJob || null;

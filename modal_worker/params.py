@@ -38,6 +38,37 @@ def _int_or_none(value, name, minimum=1):
     return n
 
 
+MAX_SPLIT_WORDS = 20000  # תקרת שפיות: הרבה מעבר לכל טווח קריאה אמיתי
+
+
+def parse_splits(raw):
+    """שדה ה-splits מהטופס → רשימת גדלי כתוביות (int), או None.
+
+    זו החלוקה שהמשתמש ערך ידנית בממשק. חלוקה פגומה היא שגיאת קלט ולא
+    "מתעלמים ממנה בשקט": ריצה עם החלוקה האוטומטית הייתה מחזירה כתוביות
+    שלא תואמות את מה שהמשתמש רואה על המסך.
+    """
+    if raw is None or not str(raw).strip():
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            raise ValueError("חלוקת הכתוביות שנשלחה אינה תקינה")
+    if not isinstance(raw, (list, tuple)) or not raw:
+        raise ValueError("חלוקת הכתוביות שנשלחה אינה תקינה")
+    sizes = []
+    for n in raw:
+        if isinstance(n, bool) or not isinstance(n, int):
+            raise ValueError("חלוקת הכתוביות שנשלחה אינה תקינה")
+        if n < 1:
+            raise ValueError("כל כתובית חייבת לכלול לפחות מילה אחת")
+        sizes.append(n)
+    if sum(sizes) > MAX_SPLIT_WORDS:
+        raise ValueError("חלוקת הכתוביות ארוכה מדי")
+    return sizes
+
+
 def parse_params(form: dict) -> dict:
     """שדות הטופס → ארגומנטים ל-run_hybrid. זורק ValueError עם הודעה בעברית."""
     book = str(form.get("book") or "").strip()
@@ -75,6 +106,7 @@ def parse_params(form: dict) -> dict:
         "verse_end": verse_end,
         "chapter_end": chapter_end,
         "max_words": max_words,
+        "splits": parse_splits(form.get("splits")),
     }
 
 

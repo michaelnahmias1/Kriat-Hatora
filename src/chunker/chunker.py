@@ -204,22 +204,50 @@ def to_alignment_words(prosodic_word: str, keep_niqqud: bool) -> list:
     return out
 
 
-def segments_for_pipeline(verse_text: str, max_words: int = 4) -> list:
-    """הפלט המלא לשלבי ההמשך: לכל מקטע — טקסט תצוגה ושתי גרסאות יישור.
+def build_segment(words: list) -> dict:
+    """רשימת מילים פרוזודיות → מקטע: טקסט תצוגה ושתי גרסאות יישור.
 
     זהו האינווריאנט הקריטי של ה-pipeline: שלוש הגרסאות נגזרות מאותם
     טוקנים, ולכן מיושרות מקטע-למקטע מבנייתן.
     """
+    return {
+        "display": " ".join(words),
+        "align_vocalized": [w for pw in words
+                            for w in to_alignment_words(pw, keep_niqqud=True)],
+        "align_plain": [w for pw in words
+                        for w in to_alignment_words(pw, keep_niqqud=False)],
+    }
+
+
+def segments_for_pipeline(verse_text: str, max_words: int = 4) -> list:
+    """הפלט המלא לשלבי ההמשך — חיתוך פסוק יחיד לפי הטעמים."""
     words = tokenize(clean_sefaria_text(verse_text))
-    result = []
-    for seg in split_unit(words, max_words) if words else []:
-        result.append({
-            "display": " ".join(seg),
-            "align_vocalized": [w for pw in seg
-                                for w in to_alignment_words(pw, keep_niqqud=True)],
-            "align_plain": [w for pw in seg
-                            for w in to_alignment_words(pw, keep_niqqud=False)],
-        })
+    result = [build_segment(seg)
+              for seg in (split_unit(words, max_words) if words else [])]
+    return _merge_unalignable(result)
+
+
+def regroup_words(words: list, sizes: list, verse_of: list = None) -> list:
+    """חלוקה מותאמת אישית: אותן מילים פרוזודיות, קיבוץ שהמשתמש קבע.
+
+    ‏sizes הוא מספר המילים בכל מקטע (סכומו = מספר המילים). סדר המילים
+    לעולם אינו משתנה — העריכה בממשק מזיזה גבולות בלבד — ולכן החלוקה
+    שנשלחת מהטלפון נבנית כאן מחדש בדיוק כפי שנראתה שם.
+    """
+    total = sum(sizes)
+    if total != len(words):
+        raise ValueError(
+            f"החלוקה המותאמת אישית מכסה {total} מילים אבל בטקסט {len(words)} — "
+            "טען את הקטע מחדש ונסה שוב")
+    result, i = [], 0
+    for n in sizes:
+        if n < 1:
+            raise ValueError("כל כתובית חייבת לכלול לפחות מילה אחת")
+        seg = build_segment(words[i:i + n])
+        if verse_of is not None:
+            seg["verse"] = verse_of[i]
+        result.append(seg)
+        i += n
     return _merge_unalignable(result)
 
 
