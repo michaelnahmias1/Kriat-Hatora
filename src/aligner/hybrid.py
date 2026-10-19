@@ -23,7 +23,7 @@ from . import windows as win_mod
 from .pipeline import (WAV16K_NAME, MmsAligner, build_ref, build_srt,
                        fetch_verses, find_mam_version, load_audio_16k_mono,
                        romanize_words, segment_bounds, to_english,
-                       verses_to_segments)
+                       units_to_segments, verse_units)
 
 _SAMPLE_RATE = 16000
 _FRAME_STRIDE = 320    # MMS: פריים כל 20ms ב-16kHz
@@ -42,13 +42,21 @@ def _segment_word_ranges(segments: list) -> list:
     return ranges
 
 
-def _verse_start_flags(segments: list) -> list:
-    """האם המקטע פותח פסוק חדש (שם הקורא כמעט תמיד נושם)."""
+def _unit_of(seg: dict):
+    """יחידת הטקסט של המקטע — unit במסלול היחידות, verse במקטעים הישנים."""
+    return seg["unit"] if "unit" in seg else seg.get("verse")
+
+
+def _unit_start_flags(segments: list) -> list:
+    """האם המקטע פותח יחידה חדשה — פסוק/שורה/בית (שם הקורא כמעט תמיד נושם)."""
     flags, prev = [], None
     for seg in segments:
-        flags.append(seg.get("verse") != prev)
-        prev = seg.get("verse")
+        flags.append(_unit_of(seg) != prev)
+        prev = _unit_of(seg)
     return flags
+
+
+_verse_start_flags = _unit_start_flags  # תאימות לאחור (השם מלפני היחידות)
 
 
 def _anchor_dists(word_ranges: list, anchor_refs: list) -> list:
@@ -85,15 +93,16 @@ def _segment_interpolated(word_ranges: list, flags: list) -> list:
     return [any(flags[lo:hi + 1]) for lo, hi in word_ranges]
 
 
-# --- הפונקציה הראשית -----------------------------------------------------------
+# --- הפונקציות הראשיות ---------------------------------------------------------
 
 def run_hybrid(book, chapter, audio_path, out_srt_path,
                verse_start=None, chapter_end=None, verse_end=None,
                max_words=4, asr_model=None, work_dir=".", splits=None):
-    """הצינור ההיברידי המלא. מדפיס התקדמות בעברית ומחזיר את נתיב ה-SRT.
+    """הצינור ההיברידי המלא לתנ״ך. מדפיס התקדמות בעברית ומחזיר את נתיב ה-SRT.
 
     לצד ה-SRT נכתב דוח איכות (<שם>.report.txt) שמפרט אילו מקטעים
-    כדאי לגרור ידנית ב-CapCut.
+    כדאי לגרור ידנית ב-CapCut. מושך את הפסוקים, בונה מהם יחידות
+    verse/taamim, ומכאן — אותו צינור יחידות של run_hybrid_units.
     """
     book = to_english(book)
     print(f"1/8 מאתר את גרסת MAM עבור {book}…")
@@ -103,12 +112,48 @@ def run_hybrid(book, chapter, audio_path, out_srt_path,
 
     print("2/8 מושך את הטקסט וחותך לפי טעמים…")
     verses = fetch_verses(ref, version)
-    segments = verses_to_segments(verses, max_words, splits)
+    return _run_units(verse_units(verses), audio_path, out_srt_path,
+                      max_words=max_words, splits=splits, mode="tanakh",
+                      work_dir=work_dir, asr_model=asr_model)
+
+
+def run_hybrid_units(units, audio_path, out_srt_path, *, max_words=4,
+                     splits=None, performance=None, profile="reading",
+                     mode="tanakh", work_dir=".", asr_model=None):
+    """הצינור ההיברידי על יחידות טקסט (PLAN_TEFILA.md סעיף 3.1).
+
+    ‏units — רשימת {text, label, kind, chunk}; יחידות instruction לא
+    נכנסות לכתוביות וליישור. מחזיר את נתיב ה-SRT ומשאיר לצדו דוח איכות.
+    ‏performance (סדר ביצוע — חזרות/דילוגים) ו-profile (קריאה/שירה) הם
+    משימות 4.3.x; עד אז רק ערכי ברירת המחדל נתמכים.
+    """
+    if performance is not None:
+        raise NotImplementedError(
+            "תסריט ביצוע (performance) עוד לא נתמך — משימה 4.3")
+    if profile != "reading":
+        raise NotImplementedError(
+            f"פרופיל {profile!r} עוד לא נתמך — רק \"reading\" (משימה 4.3.5)")
+    print("2/8 חותך את הטקסט למקטעים…")
+    return _run_units(units, audio_path, out_srt_path, max_words=max_words,
+                      splits=splits, mode=mode, work_dir=work_dir,
+                      asr_model=asr_model)
+
+
+def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
+               work_dir, asr_model):
+    """גוף הצינור מהחיתוך והלאה — משותף לתנ״ך וליחידות.
+
+    כותרת שלב 2 מודפסת אצל הקורא, כדי שיומן התנ״ך יישאר כפי שהיה.
+    """
+    segments = units_to_segments(units, max_words, splits, mode)
     if splits:
         print("    חלוקת הכתוביות נלקחה מהעריכה הידנית בממשק")
     flat_vocalized = [w for s in segments for w in s["align_vocalized"]]
     flat_plain = [w for s in segments for w in s["align_plain"]]
-    print(f"    {len(verses)} פסוקים → {len(segments)} מקטעים "
+    n_units = sum(1 for u in units if u.get("kind") != "instruction")
+    noun = ("פסוקים" if all(u.get("kind") == "verse" for u in units)
+            else "יחידות")
+    print(f"    {n_units} {noun} → {len(segments)} מקטעים "
           f"({len(flat_plain)} מילים)")
 
     print("3/8 טוען וממיר את ההקלטה (16kHz מונו)…")
@@ -161,12 +206,12 @@ def run_hybrid(book, chapter, audio_path, out_srt_path,
     print("7/8 הצמדת גבולות לנשימות (VAD)…")
     word_spans = [(s, e) for s, e, _ in spans]
     starts, _ends = segment_bounds(segments, word_spans)
-    verse_flags = _verse_start_flags(segments)
+    unit_flags = _unit_start_flags(segments)
     vad_ran = True
     try:
         speech = vad_mod.detect_speech(wav_path)
         starts, snap_dists = vad_mod.snap_boundaries(starts, speech,
-                                                     verse_flags)
+                                                     unit_flags)
         print(f"    הוצמדו {sum(1 for d in snap_dists if d is not None)}"
               f"/{len(starts)} גבולות")
     except Exception as e:
