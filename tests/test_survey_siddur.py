@@ -3,7 +3,7 @@
 
 ⚠️ כל ה-fixtures כאן **סינתטיים** ונכתבו ביד לצורך הבדיקה: עץ תוכן מזויף,
 schema מזויף וטקסטים מזויפים. הם לא משקפים את המבנה האמיתי של Sefaria
-(שלא נבדק עדיין — שאלה 8.1) ואין להסיק מהם דבר על הסידור ב-Sefaria.
+ואין להסיק מהם דבר על הסידור ב-Sefaria — הממצאים האמיתיים ב-docs/siddur_survey.md.
 """
 
 import contextlib
@@ -271,6 +271,36 @@ class TestEndToEndOffline(unittest.TestCase):
         self.assertIn("synthetic: ranges unsupported", md)
         self.assertIn("## הכרעות", md)
 
+    def test_probes_prefer_siddur_category(self):
+        # סינתטי: ספר לא-סידור מתגלה ראשון (כמו בריצה האמיתית, שבה פירושים
+        # על משנה תורה הופיעו לפני הסידורים) — הבדיקות צריכות לרוץ על הסידור.
+        client = FakeClient()
+        toc = [{"category": "Liturgy", "contents": [
+            {"title": "Fake Prayer Commentary", "categories": ["Halakhah"]},
+            {"category": "Siddur", "contents": [
+                {"title": "Fake Siddur Ashkenaz",
+                 "categories": ["Liturgy", "Siddur"]}]}]}]
+        orig = client.get
+        client.get = lambda path, params=None: (
+            (200, toc) if path == sv.ENDPOINTS["toc"] else orig(path, params))
+        snap = sv.run_survey(client, samples=1, log=lambda *_: None)
+        self.assertEqual(list(snap["indexes"])[0], "Fake Prayer Commentary")
+        self.assertEqual(snap["v3_probes"][0]["index"], "Fake Siddur Ashkenaz")
+
+    def test_sample_without_text_in_version_is_reported(self):
+        # סינתטי: 200 עם versions ריק ואזהרה — כך עונה v3 לגרסה בלי טקסט בצומת
+        client = FakeClient()
+        orig = client.get
+        client.get = lambda path, params=None: (
+            (200, {"ref": "x", "versions": [], "warnings": [{"w": "synthetic"}]})
+            if path.startswith("/api/v3/texts/") else orig(path, params))
+        snap = sv.run_survey(client, limit=1, samples=1, log=lambda *_: None)
+        rec = snap["indexes"]["Fake Siddur Ashkenaz"]
+        self.assertIn("synthetic", rec["samples"][0]["warnings"])
+        md = sv.render_report(snap)
+        self.assertIn("אין טקסט בגרסה הזו", md)
+        self.assertIn("דגימות בלי טקסט בגרסה המבוקשת", md)
+
     def test_nusach_filter(self):
         snap = sv.run_survey(FakeClient(), nusach="Ashkenaz", samples=1,
                              log=lambda *_: None)
@@ -286,6 +316,13 @@ class TestEndToEndOffline(unittest.TestCase):
                 encoding="utf-8")
             self.assertEqual(client.get("/api/index"), (200, [1]))
             self.assertEqual(client.n_network, 0)
+            self.assertEqual(client.errors, [])
+            url = "https://synthetic.invalid/api/name/x"
+            client._cache_path(url).write_text(
+                json.dumps({"url": url, "status": 404, "data": {}}),
+                encoding="utf-8")
+            self.assertEqual(client.get("/api/name/x"), (404, {}))
+            self.assertEqual(client.errors, [{"url": url, "error": "HTTP 404"}])
 
     def test_main_writes_nothing_without_data(self):
         with tempfile.TemporaryDirectory() as d:
