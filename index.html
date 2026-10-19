@@ -19,6 +19,7 @@
 <script defer src="/js/config.js"></script>
 <script defer src="/js/state.js"></script>
 <script defer src="/js/source-tanakh.js"></script>
+<script defer src="/js/source-text.js"></script>
 <script defer src="/js/segments.js"></script>
 <script defer src="/js/split-editor.js"></script>
 <script defer src="/js/audio.js"></script>
@@ -59,64 +60,81 @@
     <h2><span class="n">1</span> בחירת הקטע <span class="done" id="done1" hidden>✓</span>
       <button class="cornerBtn" id="editSplitBtn" hidden title="עריכת חלוקת המילים">✏️ עריכת החלוקה</button>
     </h2>
-    <div>
-      <label for="book">ספר</label>
-      <select id="book">
-        <optgroup label="תורה">
-          <option>בראשית</option><option>שמות</option><option>ויקרא</option>
-          <option>במדבר</option><option>דברים</option>
-        </optgroup>
-        <optgroup label="נביאים">
-          <option>יהושע</option><option>שופטים</option>
-          <option>שמואל א</option><option>שמואל ב</option>
-          <option>מלכים א</option><option>מלכים ב</option>
-          <option>ישעיהו</option><option>ירמיהו</option><option>יחזקאל</option>
-          <option>הושע</option><option>יואל</option><option>עמוס</option>
-          <option>עובדיה</option><option>יונה</option><option>מיכה</option>
-          <option>נחום</option><option>חבקוק</option><option>צפניה</option>
-          <option>חגי</option><option>זכריה</option><option>מלאכי</option>
-        </optgroup>
-        <optgroup label="כתובים">
-          <option>תהלים</option><option>משלי</option><option>איוב</option>
-          <option>שיר השירים</option><option>רות</option><option>איכה</option>
-          <option>קהלת</option><option>אסתר</option><option>דניאל</option>
-          <option>עזרא</option><option>נחמיה</option>
-          <option>דברי הימים א</option><option>דברי הימים ב</option>
-        </optgroup>
-      </select>
+    <!-- מקור הטקסט: תנ״ך או טקסט חופשי ("תפילה" — בשלב הבא, מוסתר) -->
+    <div class="srcTabs" role="tablist" aria-label="מקור הטקסט">
+      <button type="button" role="tab" data-src="tanakh" aria-selected="true">תנ״ך</button>
+      <button type="button" role="tab" data-src="siddur" aria-selected="false" hidden>תפילה</button>
+      <button type="button" role="tab" data-src="text" aria-selected="false">טקסט חופשי</button>
     </div>
-    <div class="range-block mt">
-      <div class="range-title">מ־</div>
-      <div class="row">
-        <div>
-          <label for="chapter">פרק</label>
-          <select id="chapter"></select>
-        </div>
-        <div>
-          <label for="verse_start">פסוק</label>
-          <select id="verse_start"></select>
+    <div id="srcTanakh">
+      <div>
+        <label for="book">ספר</label>
+        <select id="book">
+          <optgroup label="תורה">
+            <option>בראשית</option><option>שמות</option><option>ויקרא</option>
+            <option>במדבר</option><option>דברים</option>
+          </optgroup>
+          <optgroup label="נביאים">
+            <option>יהושע</option><option>שופטים</option>
+            <option>שמואל א</option><option>שמואל ב</option>
+            <option>מלכים א</option><option>מלכים ב</option>
+            <option>ישעיהו</option><option>ירמיהו</option><option>יחזקאל</option>
+            <option>הושע</option><option>יואל</option><option>עמוס</option>
+            <option>עובדיה</option><option>יונה</option><option>מיכה</option>
+            <option>נחום</option><option>חבקוק</option><option>צפניה</option>
+            <option>חגי</option><option>זכריה</option><option>מלאכי</option>
+          </optgroup>
+          <optgroup label="כתובים">
+            <option>תהלים</option><option>משלי</option><option>איוב</option>
+            <option>שיר השירים</option><option>רות</option><option>איכה</option>
+            <option>קהלת</option><option>אסתר</option><option>דניאל</option>
+            <option>עזרא</option><option>נחמיה</option>
+            <option>דברי הימים א</option><option>דברי הימים ב</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="range-block mt">
+        <div class="range-title">מ־</div>
+        <div class="row">
+          <div>
+            <label for="chapter">פרק</label>
+            <select id="chapter"></select>
+          </div>
+          <div>
+            <label for="verse_start">פסוק</label>
+            <select id="verse_start"></select>
+          </div>
         </div>
       </div>
-    </div>
-    <div class="range-block mt">
-      <div class="range-title">עד־</div>
-      <div class="row">
-        <div>
-          <label for="chapter_end">פרק</label>
-          <select id="chapter_end"></select>
-        </div>
-        <div>
-          <label for="verse_end">פסוק</label>
-          <select id="verse_end"></select>
+      <div class="range-block mt">
+        <div class="range-title">עד־</div>
+        <div class="row">
+          <div>
+            <label for="chapter_end">פרק</label>
+            <select id="chapter_end"></select>
+          </div>
+          <div>
+            <label for="verse_end">פסוק</label>
+            <select id="verse_end"></select>
+          </div>
         </div>
       </div>
+      <button class="mt" id="loadBtn">טען את הטקסט</button>
     </div>
-    <button class="mt" id="loadBtn">טען את הטקסט</button>
+    <div id="srcText" hidden>
+      <label for="freeText">הטקסט המנוקד</label>
+      <textarea id="freeText" class="bible" rows="7" dir="rtl" spellcheck="false" autocomplete="off"
+        placeholder="הדביקו כאן תפילה, פיוט או שיר — שורה אחר שורה"></textarea>
+      <label for="textTitle" class="mt">כותרת (לא חובה)</label>
+      <input type="text" id="textTitle" maxlength="120" autocomplete="off" placeholder="למשל: אשרי">
+      <p class="hint">כל שורה נחתכת לכתוביות בנפרד, וכתובית לא חוצה שורה. הכותרת משמשת לשם קובץ הכתוביות ולהתראת הסיום.</p>
+      <button class="mt" id="textLoadBtn">טען את הטקסט</button>
+    </div>
     <div id="loadMsg"></div>
     <div id="segPreviewWrap" hidden>
       <p class="okline" id="loadOk"></p>
       <div class="seglist bible" id="segPreview"></div>
-      <p class="hint">בדיקת עיניים: החיתוך לפי טעמי המקרא — כל שורה תהיה כתובית אחת. אפשר לשנות את החלוקה בכפתור העריכה שבפינה.</p>
+      <p class="hint" id="segHint">בדיקת עיניים: החיתוך לפי טעמי המקרא — כל שורה תהיה כתובית אחת. אפשר לשנות את החלוקה בכפתור העריכה שבפינה.</p>
     </div>
   </section>
 

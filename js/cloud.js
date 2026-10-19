@@ -180,7 +180,8 @@ async function pollCloudJob(signal) {
       if (res.status === 404)
         throw new Error("התוצאה כבר לא שמורה בענן (נשמרת כשבוע מסיום העיבוד) — העלה את ההקלטה שוב");
       if (!res.ok) throw new Error(data.error || "שגיאה " + res.status);
-      applySrtTimes(data.srt, "ודא שטווח הפסוקים תואם את ההקלטה");
+      applySrtTimes(data.srt, isFreeText() ? "ודא שהטקסט תואם את ההקלטה"
+                                           : "ודא שטווח הפסוקים תואם את ההקלטה");
       S.report = (data.report || "").trim() || null;
       stopCloudTimer(true);
       setStayNotice(null);
@@ -277,7 +278,17 @@ async function runCloudTiming() {
     fd.append("file", upload, upload.name);
     fd.append("token", AI_TOKEN);
     if (pushSub) fd.append("push_sub", pushSub);
-    for (const [k, v] of Object.entries(readQuery())) if (v) fd.append(k, v);
+    if (isFreeText()) {
+      // טקסט חופשי: היחידות עצמן, בדיוק כפי שחזרו מה-API והוצגו (PLAN_TEFILA.md 3.3).
+      // ה-mode נגזר בשרת מ-source (text ⇒ tefila)
+      fd.append("source", "text");
+      fd.append("units", JSON.stringify(S.data.units));
+      if (S.data.max_words) fd.append("max_words", String(S.data.max_words));
+      const title = readFreeText().title;
+      if (title) fd.append("title", title);
+    } else {
+      for (const [k, v] of Object.entries(readQuery())) if (v) fd.append(k, v);
+    }
     // חלוקה מותאמת אישית — השרת יקבץ את אותן מילים בדיוק לפי הגדלים האלה
     if (S.splits) fd.append("splits", JSON.stringify(S.splits));
 

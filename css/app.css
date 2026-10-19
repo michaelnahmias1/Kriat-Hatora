@@ -99,7 +99,27 @@ input, select {
   width: 100%; padding: 11px 10px; font-size: 1rem; color: var(--ink);
   background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
 }
-input:focus, select:focus { outline: 2px solid var(--accent); }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); }
+/* תיבת הטקסט החופשי — 16px ומעלה, אחרת ספארי באייפון מגדיל את המסך בהקשה */
+textarea {
+  width: 100%; padding: 10px; font-size: 1.12rem; line-height: 1.7; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  resize: vertical; min-height: 9em; display: block;
+}
+
+/* לשוניות מקור הטקסט (שלב 1) */
+.srcTabs {
+  display: flex; gap: 4px; padding: 4px; margin-bottom: 12px;
+  background: var(--verse-chip); border-radius: 12px;
+}
+.srcTabs button {
+  flex: 1; padding: 9px 8px; font-size: .9rem; border-radius: 9px;
+  background: transparent; color: var(--muted);
+}
+.srcTabs button[aria-selected="true"] {
+  background: var(--card); color: var(--accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,.12);
+}
 .row { display: flex; gap: 8px; }
 .row > div { flex: 1; min-width: 0; }
 .range-block {

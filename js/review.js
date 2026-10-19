@@ -6,11 +6,12 @@ function parseReport(text) {
   const head = text.match(/מקטעים:\s*(\d+)\s*\|\s*ביטחון חציוני:\s*([\d.]+)\s*\|\s*לבדיקה ידנית:\s*(\d+)/);
   if (!head) return null;
   const items = [];
-  const re = /\[(\d+):(\d+)\]\s*פסוק\s*(\S+)\s*\|\s*ביטחון\s*([\d.]+)\s*\|\s*([^\n]*)(?:\n\s*סיבה:\s*([^\n]*))?/g;
+  // התווית: "פסוק 4" בתנ״ך, "שורה 3" בטקסט חופשי (confidence.format_report)
+  const re = /\[(\d+):(\d+)\]\s*([^|\n]*?)\s*\|\s*ביטחון\s*([\d.]+)\s*\|\s*([^\n]*)(?:\n\s*סיבה:\s*([^\n]*))?/g;
   let m;
   while ((m = re.exec(text))) {
     items.push({
-      t: (+m[1]) * 60 + (+m[2]), verse: m[3], conf: +m[4],
+      t: (+m[1]) * 60 + (+m[2]), label: m[3], conf: +m[4],
       text: m[5].trim(), reason: (m[6] || "").trim(),
     });
   }
@@ -48,7 +49,7 @@ function renderReport() {
       return `<div class="repItem${it.conf < 0.3 ? " bad" : ""}">
         <div class="head">
           <button class="time" data-t="${it.t}" title="נגן מכאן">▶ ${fmtClock(it.t)}</button>
-          <span class="badge">פסוק ${escapeHtml(it.verse)}</span>
+          <span class="badge">${escapeHtml(it.label)}</span>
           <span class="conf">ודאות ${p}%</span>
         </div>
         <div class="repBar"><i style="width:${p}%"></i></div>
@@ -80,7 +81,7 @@ function renderTimeList() {
     row.className = "timerow";
     row.innerHTML =
       `<span class="t">${fmtSrt(S.times[i]).slice(3, 11)}</span>` +
-      `<span class="txt bible">${seg.display}</span>` +
+      `<span class="txt bible">${isFreeText() ? escapeHtml(seg.display) : seg.display}</span>` +
       `<button class="small secondary" data-act="play" data-i="${i}">▶</button>` +
       `<button class="small secondary" data-act="minus" data-i="${i}">−0.2</button>` +
       `<button class="small secondary" data-act="plus" data-i="${i}">+0.2</button>`;

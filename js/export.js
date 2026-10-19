@@ -13,6 +13,7 @@ function buildSrt() {
   return "\uFEFF" + lines.join("\n");  // BOM — כמו utf-8-sig בצינור ה-Colab
 }
 function srtName() {
+  if (isFreeText()) return freeTextSrtName();
   const q = readQuery();
   let name = `${q.book}_${q.chapter}`;
   if (q.verse_start) name += `_${q.verse_start}`;

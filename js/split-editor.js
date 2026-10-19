@@ -5,6 +5,7 @@
    העריכה עובדת על רצף המילים ועל גדלי הקבוצות בלבד — סדר המילים לעולם
    לא משתנה, ולכן כל חלוקה שנוצרת כאן תקפה גם בעיבוד בענן. */
 const E = { words: [], sizes: [], sel: null };  // sel — אינדקס גלובלי של המילה הנבחרת
+const EDIT_RESET_LABEL = $("editReset").textContent;
 
 function editGroupOf(wordIdx) {
   let acc = 0;
@@ -24,7 +25,9 @@ function editRender() {
     row.dataset.g = g;
     const verse = E.words[wi] ? E.words[wi].verse : "";
     let html = `<span class="gi">${g + 1}</span>`;
-    if (verse !== lastVerse) html += `<span class="vch">פסוק ${heNumeral(verse)}</span>`;
+    if (verse !== lastVerse)
+      html += isFreeText() ? `<span class="vch">${escapeHtml(unitLabel(verse))}</span>`
+                           : `<span class="vch">פסוק ${heNumeral(verse)}</span>`;
     lastVerse = verse;
     if (g > 0) html += `<button class="mrg" data-mrg="${g}" title="איחוד עם הכתובית שמעל">🔗 איחוד</button>`;
     for (let k = 0; k < n; k++, wi++)
@@ -79,6 +82,8 @@ function openSplitEditor() {
   E.words = flatWords();
   E.sizes = currentSplits();
   E.sel = null;
+  // בטקסט חופשי אין טעמים — האיפוס חוזר לחלוקה האוטומטית לפי הפיסוק
+  $("editReset").textContent = isFreeText() ? "🔄 חזרה לחלוקה האוטומטית" : EDIT_RESET_LABEL;
   editRender();
   $("editOverlay").classList.add("open");
 }

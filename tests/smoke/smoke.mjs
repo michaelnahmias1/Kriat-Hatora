@@ -5,6 +5,7 @@
 //
 // מגישה את הריפו בשרת סטטי קטן, ומחליפה ב-mock את כל מה שיוצא מהדפדפן:
 //   /api/segments, /api/structure — ה-build_payload האמיתי מ-api/ עם Sefaria מזויף
+//   /api/text_segments (POST)     — api/text_segments.py האמיתי
 //                                    (tests/smoke/mock_api.py)
 //   ה-worker בענן (*.modal.run)    — submit / status / cancel מזויפים
 //   כל host חיצוני אחר (גופנים)    — תשובה ריקה; שום בקשה לא יוצאת לרשת
@@ -169,7 +170,9 @@ async function newSession(browser, base, profile, { serviceWorkers = "block" } =
     if (url.origin === origin) {
       if (url.pathname.startsWith("/api/")) {
         const kind = url.pathname.slice(5);
-        const params = Object.fromEntries(url.searchParams);
+        // ‏POST (‏/api/text_segments) — גוף ה-JSON הוא הפרמטרים
+        const params = req.method() === "POST"
+          ? JSON.parse(req.postData() || "{}") : Object.fromEntries(url.searchParams);
         cloud.api.push({ kind, params });
         const { status, body } = mockApi(kind, params);
         return route.fulfill({ status, contentType: "application/json; charset=utf-8", body: JSON.stringify(body) });
@@ -637,6 +640,303 @@ async function flowServiceWorker(browser, base) {
   await context.close();
 }
 
+/* =================== טקסט חופשי (PLAN_TEFILA.md 4.1.6) =================== */
+// שורה מנוקדת עם פיסוק; שורה בלי ניקוד בכלל (במצב תפילה — נקראת!); שורה עם
+// שם ה׳ (יְיָ) ופיסוק שמוצמד ברווח קשיח (U+00A0); שורה ריקה ושורה בלי עברית
+const NBSP = " ";
+const FREE_TEXT = [
+  "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ, עוֹד יְהַלְלוּךָ סֶּלָה.",
+  "ברוך אתה יי אלהינו מלך העולם",
+  `בָּרוּךְ אַתָּה יְיָ${NBSP}: אֱלֹהֵינוּ מֶלֶךְ הָעוֹלָם`,
+  "",
+  "— 3 —",
+].join("\n");
+const tabState = page => page.evaluate(() => ({
+  sel: [...document.querySelectorAll(".srcTabs [data-src]")].filter(b => b.getAttribute("aria-selected") === "true").map(b => b.dataset.src),
+  tanakh: !document.getElementById("srcTanakh").hidden,
+  text: !document.getElementById("srcText").hidden,
+}));
+
+async function flowFreeText(browser, base, profile) {
+  const { context, page, cloud, errors } = await newSession(browser, base, profile);
+  const api = mockApi("text_segments", { text: FREE_TEXT, mode: "tefila" });
+  const ts = api.body;
+  const toks = d => d.split(" ").filter(Boolean);
+  const base0 = ts.segments.map(s => toks(s.display).length);
+
+  await step(`[${profile}] לשוניות המקור: תנ״ך ⇄ טקסט חופשי ("תפילה" מוסתר)`, async () => {
+    await gotoReady(page, base);
+    assert.deepEqual(await tabState(page), { sel: ["tanakh"], tanakh: true, text: false });
+    assert.equal(await page.$eval('.srcTabs [data-src="siddur"]', b => b.hidden), true);
+    assert.deepEqual(await page.$$eval(".srcTabs [data-src]:not([hidden])", b => b.map(x => x.textContent)), ["תנ״ך", "טקסט חופשי"]);
+    await page.click('.srcTabs [data-src="text"]');
+    assert.deepEqual(await tabState(page), { sel: ["text"], tanakh: false, text: true });
+    assert.equal((await lsState(page)).source, "text");
+    await page.click('.srcTabs [data-src="tanakh"]');
+    assert.deepEqual(await tabState(page), { sel: ["tanakh"], tanakh: true, text: false });
+    assert.equal((await lsState(page)).source, "tanakh");
+    await page.click('.srcTabs [data-src="text"]');
+    assert.deepEqual(cloud.api, [{ kind: "structure", params: { book: "בראשית" } }], "מעבר לשונית לא קורא ל-API");
+    // בלי גלילה לרוחב בטלפון גם בלשונית הטקסט; גופן ≥16px — בלי זום באייפון
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    assert.ok(await page.evaluate(() => parseFloat(getComputedStyle(document.getElementById("freeText")).fontSize) >= 16));
+    assert.ok(await page.evaluate(() => parseFloat(getComputedStyle(document.getElementById("textTitle")).fontSize) >= 16));
+  });
+
+  await step(`[${profile}] טקסט חופשי: שגיאות בעברית (ריק, בלי עברית)`, async () => {
+    await page.click("#textLoadBtn");
+    assert.equal(await txt(page, "#loadMsg"), "הדביקו את הטקסט בתיבה");
+    assert.equal(cloud.api.length, 1, "טקסט ריק לא נשלח");
+    await page.fill("#freeText", "hello world 123");
+    await page.click("#textLoadBtn");
+    await until(async () => (await txt(page, "#loadMsg")).startsWith("הטעינה נכשלה"), "שגיאת API");
+    assert.equal(await txt(page, "#loadMsg"), "הטעינה נכשלה: לא נמצאו אותיות עבריות בטקסט");
+    // ה-400 המכוון מופיע בקונסול כ-"Failed to load resource" — צפוי, פעם אחת
+    const i400 = errors.findIndex(e => e.includes("status of 400"));
+    assert.ok(i400 >= 0, "ה-API החזיר 400");
+    errors.splice(i400, 1);
+    assert.deepEqual(cloud.api.at(-1), { kind: "text_segments", params: { text: "hello world 123", mode: "tefila" } });
+    assert.equal(await isHidden(page, "segPreviewWrap"), true);
+    assert.equal(await isLocked(page, "step2"), true);
+    assert.equal(await page.$eval("#textLoadBtn", b => b.textContent), "טען את הטקסט");
+  });
+
+  await step(`[${profile}] טקסט חופשי: טעינה דרך api/text_segments.py, תוויות "שורה", הנחיה בלי טעמים`, async () => {
+    assert.equal(api.status, 200);
+    assert.equal(ts.n_units, 3);
+    assert.deepEqual(base0, [3, 3, 3, 3, 3, 3]);
+    await page.fill("#freeText", FREE_TEXT);
+    await page.fill("#textTitle", "אשרי");
+    await page.click("#textLoadBtn");
+    await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+    assert.deepEqual(cloud.api.at(-1), { kind: "text_segments", params: { text: FREE_TEXT, mode: "tefila" } });
+    assert.equal(await txt(page, "#loadMsg"), "");
+    assert.equal(await txt(page, "#loadOk"), "נטען: אשרי · 3 שורות · 6 כתוביות");
+    const rows = await page.$$eval("#segPreview .segrow", r => r.map(x => x.textContent));
+    assert.equal(rows.length, 6);
+    assert.equal(rows[0], "1שורה 1" + ts.segments[0].display);
+    assert.equal(rows[1], "2" + ts.segments[1].display);
+    assert.equal(rows[2], "3שורה 2ברוך אתה יי");
+    assert.equal(rows[4], `5שורה 3בָּרוּךְ אַתָּה יְיָ${NBSP}:`, "הרווח הקשיח נשמר בתצוגה");
+    assert.equal(await page.$$eval("#segPreview .vchip", c => c.some(x => x.textContent.includes("פסוק"))), false);
+    const hint = await txt(page, "#segHint");
+    assert.ok(!hint.includes("טעמי המקרא") && hint.includes("סימני הפיסוק"), hint);
+    assert.equal(await isHidden(page, "editSplitBtn"), false);
+    assert.equal(await isLocked(page, "step2"), false);
+    // סנכרון הספירה מול השרת: מצב tefila, מילה לא מנוקדת נשמעת, U+00A0 לא מפצל
+    const js = await page.evaluate(() => ({
+      mode: alignMode(), free: isFreeText(),
+      audible: ["ברוך", "יי", "יְיָ", "—", "אבג־", "3"].map(isAudible),
+      tokens: S.data.segments.map(s => tokensOf(s.display).length),
+      again: segmentsFromSplits(flatWords(), S.baseSplits).map(s => s.display),
+      lone: segmentsFromSplits(flatWords(), [3, 3, 1, 2, 3, 3, 3]).length,
+    }));
+    assert.equal(js.mode, "tefila");
+    assert.equal(js.free, true);
+    assert.deepEqual(js.audible, [true, true, true, false, true, false]);
+    assert.deepEqual(js.tokens, base0);
+    assert.deepEqual(js.again, ts.segments.map(s => s.display));
+    assert.equal(js.lone, 7, "כתובית של מילה לא מנוקדת לבדה לא מתמזגת (כמו בשרת במצב tefila)");
+    const st = await lsState(page);
+    assert.equal(st.source, "text");
+    assert.equal(st.data.source, "text");
+    assert.deepEqual(st.data.units, ts.units);
+    assert.deepEqual(st.freeText, { text: FREE_TEXT, title: "אשרי" });
+    assert.deepEqual(st.baseSplits, base0);
+    assert.equal(st.splits, null);
+    assert.deepEqual(st.query, { book: "בראשית", chapter: "1", verse_start: "1", verse_end: "1", chapter_end: "1" }, "שדות התנ״ך לא נגעו");
+  });
+
+  const splits = [3, 3, 1, 2, 3, 3, 3];
+  await step(`[${profile}] טקסט חופשי: עורך החלוקה (תוויות שורה, פיצול מילה לא מנוקדת)`, async () => {
+    await page.click("#editSplitBtn");
+    await page.waitForFunction(() => document.getElementById("editOverlay").classList.contains("open"));
+    const groups = () => page.$$eval("#editList .egroup", g => g.map(x => x.querySelectorAll(".w").length));
+    assert.deepEqual(await groups(), base0);
+    assert.deepEqual(await page.$$eval("#editList .vch", v => v.map(x => x.textContent)), ["שורה 1", "שורה 2", "שורה 3"]);
+    assert.equal(await txt(page, "#editReset"), "🔄 חזרה לחלוקה האוטומטית");
+    assert.equal(await txt(page, "#editCount"), "6 כתוביות · 18 מילים");
+    assert.equal(await page.$eval('#editList .w[data-i="12"]', w => w.textContent), "בָּרוּךְ");
+    assert.equal(await page.$eval('#editList .w[data-i="14"]', w => w.textContent), `יְיָ${NBSP}:`);
+    await page.click('#editList .w[data-i="7"]');
+    await page.click("#editSplit");
+    assert.deepEqual(await groups(), splits);
+    await page.click("#editSave");
+    assert.equal(await txt(page, "#loadMsg"), "החלוקה עודכנה ✓");
+    assert.equal(await page.$$eval("#segPreview .segrow", r => r.length), 7, "‏\"ברוך\" לבד נשאר כתובית");
+    assert.equal(await txt(page, "#loadOk"), "נטען: אשרי · 3 שורות · 7 כתוביות");
+    assert.deepEqual(await page.$$eval("#segPreview .vchip", c => c.map(x => x.textContent)), ["שורה 1", "שורה 2", "שורה 3"]);
+    const st = await lsState(page);
+    assert.deepEqual(st.splits, splits);
+    assert.deepEqual(st.data.units, ts.units, "היחידות נשמרות גם אחרי עריכה");
+  });
+
+  const report = [
+    "דוח איכות הסנכרון", "=".repeat(40),
+    "מקטעים: 7 | ביטחון חציוני: 0.74 | לבדיקה ידנית: 1", "",
+    "מקטעים בביטחון נמוך (<0.5) — מומלץ לגרור ידנית:",
+    "  [00:02] שורה 2 | ביטחון 0.31 | ברוך",
+    "        סיבה: ציון יישור נמוך",
+  ].join("\n");
+  const times = [0.4, 1.3, 2.2, 2.9, 4.0, 5.1, 6.3], endTime = 7.5;
+  await step(`[${profile}] טקסט חופשי: סנכרון בענן — source=text, units, title, splits`, async () => {
+    await page.setInputFiles("#audioFile", { name: "ashrei.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+    await page.waitForFunction(() => !document.getElementById("done2").hidden);
+    assert.equal(await isLocked(page, "step3"), false);
+    const segsNow = await page.evaluate(() => S.data.segments);
+    cloud.statusQueue.push(null, { body: { srt: srtFor(segsNow, times, endTime), report } });
+    await page.click("#startCloud");
+    await until(() => cloud.submits.length === 1, "submit");
+    const { fields, files } = cloud.submits[0];
+    assert.deepEqual(Object.keys(fields).sort(), ["max_words", "source", "splits", "title", "token", "units"]);
+    assert.equal(fields.source, "text");
+    assert.equal(fields.units, JSON.stringify(ts.units), "בדיוק היחידות שה-API החזיר");
+    assert.deepEqual(JSON.parse(fields.units), ts.units);
+    assert.equal(fields.title, "אשרי");
+    assert.equal(fields.max_words, "4");
+    assert.equal(fields.token, await page.evaluate(() => AI_TOKEN));
+    const sent = JSON.parse(fields.splits);
+    assert.deepEqual(sent, splits);
+    assert.equal(sent.reduce((a, b) => a + b), ts.segments.reduce((a, s) => a + toks(s.display).length, 0), "סכום ה-splits = מספר המילים");
+    assert.equal(files.file.filename, "ashrei.wav");
+    await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+    for (const id of ["stepReport", "step4", "step5"]) assert.equal(await isLocked(page, id), false, id);
+    assert.deepEqual(await page.$$eval(".repTile .v", v => v.map(x => x.textContent)), ["7", "74%", "1"]);
+    assert.equal(await page.$eval(".repItem .badge", b => b.textContent), "שורה 2");
+    assert.equal(await page.$eval(".repItem button.time", b => b.dataset.t), "2");
+    assert.equal(await page.$$eval("#timeList .timerow", r => r.length), 7);
+    assert.equal(await page.$$eval("#timeList .timerow .txt", t => t[5].textContent), `בָּרוּךְ אַתָּה יְיָ${NBSP}:`);
+    const st = await lsState(page);
+    assert.deepEqual(st.times, times);
+    assert.equal(st.cloudJob, null);
+    await page.waitForFunction(() => document.getElementById("cloudProgress").hidden);
+  });
+
+  await step(`[${profile}] טקסט חופשי: כוונון וייצוא SRT בשם הכותרת`, async () => {
+    await page.click('#timeList button[data-act="plus"][data-i="2"]');
+    assert.equal(await page.$$eval("#timeList .timerow .t", t => t[2].textContent), "00:02,40");
+    times[2] = 2.4;
+    await page.evaluate(() => {
+      const orig = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () { window.__lastDownload = this.download; return orig.call(this); };
+    });
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#dlBtn")]);
+    assert.equal(await page.evaluate(() => window.__lastDownload), "אשרי.srt");
+    const content = fs.readFileSync(await dl.path(), "utf-8");
+    const segsNow = await page.evaluate(() => S.data.segments);
+    const expected = "﻿" + segsNow.map((s, i) => {
+      const a = times[i];
+      let b = i + 1 < segsNow.length ? times[i + 1] : endTime + 0.25;
+      b = Math.max(b, a + 0.3);
+      return `${i + 1}\n${fmtSrt(a)} --> ${fmtSrt(b)}\n${s.display}\n`;
+    }).join("\n");
+    assert.equal(content, expected);
+    assert.ok(content.includes(`יְיָ${NBSP}:`));
+    assert.equal(await txt(page, "#exportMsg"), "ירד הקובץ אשרי.srt ✓");
+    // שם הקובץ: ניקוד ותווים אסורים יורדים; בלי כותרת — שם ברירת מחדל
+    await page.fill("#textTitle", "אַשְׁרֵי / שַׁחֲרִית: חול");
+    assert.equal(await page.evaluate(() => srtName()), "אשרי_שחרית_חול.srt");
+    await page.fill("#textTitle", "  ");
+    assert.equal(await page.evaluate(() => srtName()), "טקסט_חופשי.srt");
+    await page.fill("#textTitle", "אשרי");
+    await until(async () => (await lsState(page)).freeText.title === "אשרי", "השמירה המושהית של הכותרת");
+  });
+
+  await step(`[${profile}] טקסט חופשי: חזרה לעבודה ברקע אחרי סגירה (שחזור + משיכת התוצאה)`, async () => {
+    const now = await page.evaluate(() => Date.now());
+    await page.evaluate(job => {
+      const st = JSON.parse(localStorage.getItem("kriat-hatora-v1"));
+      Object.assign(st, { times: null, endTime: null, report: null, cloudJob: job });
+      localStorage.setItem("kriat-hatora-v1", JSON.stringify(st));
+    }, { id: "fc-text-2", t0: now - 30000, ts: now - 50000, est: 200, push: false });
+    const times2 = [0, 1, 2, 3, 4, 5, 6];
+    const segsNow = await page.evaluate(() => S.data.segments);
+    cloud.statusQueue.length = 0;
+    cloud.statusQueue.push(null, { body: { srt: srtFor(segsNow, times2, 8), report: "" } });
+    const nApi = cloud.api.length;
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("cloudProgress").hidden);
+    assert.deepEqual(await tabState(page), { sel: ["text"], tanakh: false, text: true });
+    assert.equal(await val(page, "freeText"), FREE_TEXT);
+    assert.equal(await val(page, "textTitle"), "אשרי");
+    assert.equal(await page.$$eval("#segPreview .segrow", r => r.length), 7);
+    assert.equal(await txt(page, "#loadOk"), "נטען: אשרי · 3 שורות · 7 כתוביות");
+    assert.equal(await page.evaluate(() => alignMode()), "tefila");
+    assert.equal(await isLocked(page, "step3"), false);
+    assert.equal(await page.$eval("#stayNotice", e => e.className), "notice ok");
+    await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+    assert.deepEqual([...new Set(cloud.statusCalls.slice(-2))], ["fc-text-2"]);
+    assert.ok(cloud.api.slice(nApi).every(c => c.kind === "structure"), "השחזור לא טוען את הטקסט מחדש");
+    const st = await lsState(page);
+    assert.deepEqual(st.times, times2);
+    assert.equal(st.cloudJob, null);
+    assert.equal(st.source, "text");
+    assert.equal(await page.evaluate(() => srtName()), "אשרי.srt");
+  });
+
+  await step(`[${profile}] מעבר לתנ״ך: הטקסט החופשי נשאר עד שנטען קטע חדש, ואז הכול תנ״ך`, async () => {
+    await page.click('.srcTabs [data-src="tanakh"]');
+    assert.deepEqual(await tabState(page), { sel: ["tanakh"], tanakh: true, text: false });
+    // הטקסט שנטען לא נמחק במעבר לשונית — הזמנים והייצוא עדיין שלו
+    assert.equal(await page.$$eval("#segPreview .segrow", r => r.length), 7);
+    assert.equal(await page.evaluate(() => [isFreeText(), srtName()].join()), "true,אשרי.srt");
+    await page.click("#loadBtn");
+    await page.waitForFunction(() => document.getElementById("loadOk").textContent.startsWith("נטען: Genesis"));
+    assert.equal(await page.evaluate(() => [isFreeText(), alignMode(), srtName()].join()), "false,tanakh,בראשית_1_1-1.srt");
+    assert.equal(await page.$eval("#segPreview .vchip", c => c.textContent), "פסוק 1");
+    assert.ok((await txt(page, "#segHint")).includes("טעמי המקרא"));
+    assert.equal(await page.evaluate(() => isAudible("ברוך")), false, "בתנ״ך מילה לא מנוקדת היא כתיב");
+    // והטופס של הטקסט החופשי שמור
+    await page.click('.srcTabs [data-src="text"]');
+    assert.equal(await val(page, "freeText"), FREE_TEXT);
+    const st = await lsState(page);
+    assert.equal(st.source, "text");
+    assert.equal(st.data.source, undefined);
+  });
+
+  await step(`[${profile}] (טקסט חופשי) אין שגיאות קונסול ואין יציאה לרשת`, async () => {
+    assertNoErrors(errors);
+    assert.ok(cloud.external.every(h => /^fonts\.(googleapis|gstatic)\.com$/.test(h)), cloud.external.join(","));
+  });
+  await context.close();
+}
+
+/* מצב שמור בפורמט הישן (לפני source) עם עבודה פעילה בענן — חייב להמשיך כתנ״ך */
+async function flowOldState(browser, base, profile) {
+  const { context, page, cloud, errors } = await newSession(browser, base, profile);
+  const q = { book: "שמות", chapter: "2", verse_start: "3", verse_end: "5", chapter_end: "2" };
+  const data = mockApi("segments", q).body;
+  await step(`[${profile}] שחזור מצב ישן בלי source: לשונית תנ״ך, העבודה בענן נמשכת`, async () => {
+    await gotoReady(page, base);
+    const now = await page.evaluate(() => Date.now());
+    const old = {
+      query: q, data, times: null, endTime: null, audioName: "old.m4a", report: null,
+      cloudJob: { id: "fc-old-1", t0: now - 5000, ts: now - 9000, est: 240, push: false },
+      splits: null, baseSplits: data.segments.map(s => s.display.split(" ").filter(Boolean).length),
+    };
+    await page.evaluate(st => localStorage.setItem("kriat-hatora-v1", JSON.stringify(st)), old);
+    const times = data.segments.map((_, i) => i * 1.25);
+    cloud.statusQueue.push(null, { body: { srt: srtFor(data.segments, times, 15), report: "" } });
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById("chapter").options.length === 40);
+    assert.deepEqual(await tabState(page), { sel: ["tanakh"], tanakh: true, text: false });
+    assert.equal(await val(page, "freeText"), "");
+    assert.equal(await val(page, "book"), "שמות");
+    assert.equal(await page.evaluate(() => [S.source, dataSource(), alignMode(), isFreeText()].join()), "tanakh,tanakh,tanakh,false");
+    assert.equal(await page.$eval("#segPreview .vchip", c => c.textContent), "פסוק 3");
+    await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+    assert.deepEqual([...new Set(cloud.statusCalls)], ["fc-old-1"]);
+    assert.equal(await page.evaluate(() => srtName()), "שמות_2_3-5.srt");
+    const st = await lsState(page);
+    assert.deepEqual(st.times, times);
+    assert.equal(st.source, "tanakh");
+    assert.deepEqual(st.query, q);
+    assert.deepEqual(st.freeText, { text: "", title: "" });
+  });
+  await step(`[${profile}] (מצב ישן) אין שגיאות קונסול`, async () => assertNoErrors(errors));
+  await context.close();
+}
+
 /* =================== הרצה =================== */
 const server = await startServer();
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -649,6 +949,8 @@ try {
     await flowMain(browser, base, profile);
     await flowResume(browser, base, profile);
     await flowUnreadableVideo(browser, base, profile);
+    await flowFreeText(browser, base, profile);
+    await flowOldState(browser, base, profile);
   }
   if (!only || only === "sw") {
     console.log("\n== service worker ==");

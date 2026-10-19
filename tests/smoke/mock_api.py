@@ -2,10 +2,11 @@
 """מוק ל-/api/* עבור בדיקת העשן (tests/smoke/smoke.mjs) — בלי רשת.
 
 מריץ את build_payload האמיתי של api/segments.py ו-api/structure.py, רק
-שהקריאות ל-Sefaria מוחלפות בנתונים קבועים. כך התשובה שהדפדפן מקבל בבדיקה
+שהקריאות ל-Sefaria מוחלפות בנתונים קבועים; ו-api/text_segments.py (טקסט
+חופשי) כמו שהוא — הוא ממילא לא יוצא לרשת. כך התשובה שהדפדפן מקבל בבדיקה
 היא בדיוק במבנה של הפרודקשן, כולל החיתוך האמיתי של src/chunker.
 
-שימוש: python3 mock_api.py segments|structure '<json של פרמטרי השאילתה>'
+שימוש: python3 mock_api.py segments|structure|text_segments '<json של הפרמטרים / גוף ה-POST>'
 מדפיס: {"status": <קוד>, "body": <תשובה>}
 """
 
@@ -92,7 +93,15 @@ def structure(q):
             return 400, {"error": str(e)}
 
 
+def text_segments(q):
+    # בלי רשת בכלל — ה-respond האמיתי על גוף ה-POST כמו שהוא
+    api = _load("text_segments")
+    payload, status = api.respond(json.dumps(q, ensure_ascii=False).encode("utf-8"))
+    return status, payload
+
+
 if __name__ == "__main__":
     kind, q = sys.argv[1], json.loads(sys.argv[2])
-    status, body = {"segments": segments, "structure": structure}[kind](q)
+    status, body = {"segments": segments, "structure": structure,
+                    "text_segments": text_segments}[kind](q)
     sys.stdout.write(json.dumps({"status": status, "body": body}, ensure_ascii=False))

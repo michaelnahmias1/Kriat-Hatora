@@ -8,10 +8,16 @@
 const HE_LETTER_RE = /[א-ת]/;
 const NIQQUD_RE = /[ְ-ׇֽֿׁׂ]/;
 const MAQAF = "־";
+/* פיצול על רווח רגיל (U+0020) בלבד — לא על \s: רווח קשיח (U+00A0) מצמיד
+   פיסוק למילה, והוא חלק מהמילה בדיוק כמו ב-tokenize בשרת */
 function tokensOf(display) { return display.split(" ").filter(Boolean); }
 /* מילה נשמעת = יש בה חלק מנוקד. חלק שיש בו אותיות בלי ניקוד הוא "כתיב"
-   שאינו נקרא — בדיוק ההגדרה שב-chunker.is_ketiv בצד השרת. */
+   שאינו נקרא — בדיוק ההגדרה שב-chunker.is_ketiv בצד השרת.
+   בטקסט חופשי (מצב tefila) אין כתיב: כל חלק עם אות עברית נקרא, גם בלי
+   ניקוד (‏is_ketiv עם mode="tefila"). שם ה׳ מטופל רק בשרת. */
 function isAudible(tok) {
+  if (alignMode() === "tefila")
+    return tok.split(MAQAF).some(p => HE_LETTER_RE.test(p));
   return tok.split(MAQAF).some(p => HE_LETTER_RE.test(p) && NIQQUD_RE.test(p));
 }
 function flatWords() {
