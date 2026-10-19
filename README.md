@@ -81,7 +81,7 @@
    תוך חזרה על `KRIAT_HATORA_TOKEN`) את שני המפתחות:
    - `VAPID_PRIVATE_KEY` — המפתח הפרטי
    - `VAPID_SUBJECT` — ‏`mailto:` וכתובת המייל שלך (למשל `mailto:me@example.com`)
-3. מדביקים את המפתח **הציבורי** בקבוע `VAPID_PUBLIC_KEY` שבראש `index.html`.
+3. מדביקים את המפתח **הציבורי** בקבוע `VAPID_PUBLIC_KEY` שב-`js/config.js`.
 4. פורסים מחדש: את ה-worker (דחיפה ל-main מפעילה את ה-workflow, או
    `modal deploy modal_worker/app.py`) ואת האתר (Vercel — אוטומטי מהדחיפה).
 
@@ -97,7 +97,7 @@ modal secret create kriat-hatora KRIAT_HATORA_TOKEN=<מחרוזת-אקראית-�
 modal deploy modal_worker/app.py                         # מדפיס את כתובת ה-web
 ```
 
-ואז ממלאים ב-`index.html` את שני הקבועים שבראש הסקריפט — `AI_ENDPOINT` (הכתובת
+ואז ממלאים ב-`js/config.js` את שני הקבועים — `AI_ENDPOINT` (הכתובת
 שהודפסה, של הפונקציה `web`) ו-`AI_TOKEN` (אותה מחרוזת מה-secret) — ופורסים ל-Vercel
 כרגיל. כל עוד הקבועים ריקים הכפתור פשוט מוסתר והאפליקציה עובדת כמו קודם.
 
@@ -139,6 +139,9 @@ modal deploy modal_worker/app.py                         # מדפיס את כת�
 | `PLAN.md` | תוכנית הפעולה המחייבת (v6) |
 | `PLAN_TEFILA.md` | תוכנית ההרחבה לתפילה (חול, שבת, חגים) — שלבים, סוגיית index.html ושאלות פתוחות |
 | `index.html` | **הממשק הקבוע** — דף אחד, עברית, מותאם לטלפון (נפרס ל-Vercel) |
+| `css/app.css` | כל העיצוב של הממשק |
+| `js/*.js` | קוד הממשק, מפוצל לפי שלבים — סקריפטים רגילים עם `defer` ומרחב גלובלי משותף (בלי build): `config` (קבועים), `state` (מצב ושמירה), `source-tanakh` (שלב 1), `segments`, `split-editor`, `audio` (שלב 2), `cloud` (שלב 3), `review` (שלבים 4–5), `export` (שלב 6), `pwa`, `main` (אתחול — נטען אחרון). סדר התגים ב-`index.html` מחייב; כל קובץ חדש נכנס גם ל-`SHELL` ב-`sw.js` (ומעלים את `CACHE`) |
+| `sw.js` | ה-Service Worker ‏(PWA): מעטפת האפליקציה ב-cache והתראות Push |
 | `autotime.js` | מנוע התזמון בדפדפן — ניתוח ההקלטה במכשיר, בלי שרת ובלי העלאה |
 | `api/segments.py` | פונקציית ה-API: ‏Sefaria ← ניקוי ← חיתוך ← JSON (Vercel Python) |
 | `vercel.json` | תצורת הפריסה |
@@ -153,11 +156,19 @@ modal deploy modal_worker/app.py                         # מדפיס את כת�
 ## פריסה מחדש (למפתחים)
 
 הפריסה נעשית לפרויקט `kriat-hatora` ב-Vercel (לא לגעת בפרויקטים אחרים בחשבון).
-הקבצים שנפרסים: `index.html`, ‏`autotime.js`, ‏`api/segments.py`, ‏`vercel.json`, ‏`src/chunker/`.
+הקבצים שנפרסים: `index.html`, ‏`css/`, ‏`js/`, ‏`sw.js`, ‏`autotime.js`, ‏`api/`, ‏`vercel.json`, ‏`src/chunker/`.
 
 ## הרצת הבדיקות (למפתחים)
 
 ```bash
 python3 -m unittest discover -s tests -v   # החיתוך וה-API
 node tests/test_autotime.mjs               # מנוע התזמון האוטומטי
+node tests/smoke/smoke.mjs                 # בדיקת עשן לממשק (Playwright + Chromium)
 ```
+
+בדיקת העשן מגישה את הריפו בשרת מקומי ומריצה את הממשק ב-Chromium (דסקטופ ומסך
+אייפון) בלי שום רשת: ‏`/api/*` עונים מ-`build_payload` האמיתי עם Sefaria מזויף
+(`tests/smoke/mock_api.py`), וה-worker בענן מוחלף ב-mock. דורשת Playwright מותקן
+(גלובלית — אין `package.json` בריפו) ו-Chromium שלו; כ-40 שניות. ‏`SMOKE_ONLY=desktop`
+/`mobile`/`sw` מריץ חלק, ו-`SMOKE_DUMP=<תיקייה>` שומר את ה-DOM אחרי כל שלב להשוואה
+בין גרסאות.
