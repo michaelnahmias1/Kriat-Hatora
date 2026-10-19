@@ -4,9 +4,22 @@
    סגורה (באייפון: רק כשהיא מותקנת למסך הבית, iOS 16.4+). */
 "use strict";
 
-const CACHE = "kriat-hatora-v1";
+const CACHE = "kriat-hatora-v4";
 const SHELL = [
   "/",
+  "/css/app.css",
+  "/js/config.js",
+  "/js/state.js",
+  "/js/source-tanakh.js",
+  "/js/source-text.js",
+  "/js/segments.js",
+  "/js/split-editor.js",
+  "/js/audio.js",
+  "/js/cloud.js",
+  "/js/review.js",
+  "/js/export.js",
+  "/js/pwa.js",
+  "/js/main.js",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",

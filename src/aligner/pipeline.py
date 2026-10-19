@@ -16,9 +16,12 @@ import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from chunker import (clean_sefaria_text, regroup_words,  # noqa: E402
-                     segments_for_pipeline, tokenize)
+from chunker import (ALIGN_MODES, clean_sefaria_text,  # noqa: E402
+                     prose_segments,
+                     prose_tokens, regroup_words, segments_for_pipeline,
+                     tokenize, word_accents)
 from chunker.books import HE_TO_EN, to_english  # noqa: E402
+from chunker import taamim  # noqa: E402
 
 SEFARIA_BASE = "https://www.sefaria.org"
 # תאימות לאחור לקוד שייבא את המילון מכאן — כיום כל התנ״ך (chunker/books.py)
@@ -95,25 +98,113 @@ def fetch_verses(ref: str, version_title: str) -> list:
 
 # --- שלב 2: חיתוך -----------------------------------------------------------
 
+# חוזה "יחידות טקסט" (PLAN_TEFILA.md סעיף 3.1): כל מקור טקסט — תנ״ך, סידור,
+# טקסט חופשי — מתורגם לרשימת יחידות {text, label, kind, chunk}, ומכאן
+# והלאה הצינור עובד על יחידות בלבד. התנ״ך הוא מקור אחד שמייצר verse/taamim.
+UNIT_KINDS = ("verse", "line", "paragraph", "stanza", "refrain", "instruction")
+CHUNK_MODES = ("taamim", "punct")
+# ‏ALIGN_MODES = ("tanakh", "tefila") — מוגדר ב-chunker ומיובא למעלה (4.1.2)
+
+
+def verse_units(verses: list) -> list:
+    """פסוקים (מחרוזות) → יחידות verse/taamim.
+
+    התווית "פסוק N" ממוספרת לפי הסדר בטווח (מ-1) — בדיוק מה שהדוח
+    כתב תמיד (seg["verse"]), כדי שפלט התנ״ך יישאר זהה.
+    """
+    return [{"text": v, "label": f"פסוק {vi}", "kind": "verse",
+             "chunk": "taamim"} for vi, v in enumerate(verses, 1)]
+
+
+# ‏סוף-פסוק (׃) ופסק (׀) הם סימני פיסוק ולא טעמים: נפוצים גם בטקסט סידור
+# לא-מוטעם, ולכן לבדם אינם מעידים על טעמי מקרא.
+_NOT_TAAMIM_EVIDENCE = frozenset({taamim.SOF_PASUQ, taamim.PASEQ})
+
+
+def _unit_chunk(unit: dict) -> str:
+    """מצב החיתוך של יחידה: כפוי בשדה chunk, אחרת לפי נוכחות טעמים."""
+    chunk = unit.get("chunk")
+    if chunk is None:
+        words = tokenize(clean_sefaria_text(unit["text"]))
+        accented = any(word_accents(w) - _NOT_TAAMIM_EVIDENCE for w in words)
+        chunk = "taamim" if accented else "punct"
+    if chunk not in CHUNK_MODES:
+        raise ValueError(f"מצב חיתוך לא מוכר: {chunk!r}")
+    return chunk
+
+
+def _chunk_unit(unit: dict, max_words: int, mode: str) -> list:
+    """יחידה אחת → מקטעים לפי מצב החיתוך שלה.
+
+    ‏"taamim" — החותך הקיים לפי טעמי המקרא; ‏"punct" — החותך לטקסט
+    לא-מוטעם (src/chunker/prose.py). ‏mode מועבר הלאה למילות היישור (4.1.2).
+    """
+    if _unit_chunk(unit) == "taamim":
+        return segments_for_pipeline(unit["text"], max_words, mode)
+    return prose_segments(unit["text"], max_words, mode)
+
+
+def _unit_words(unit: dict) -> list:
+    """המילים הפרוזודיות של יחידה — בדיוק אלה שמופיעות בתצוגת מקטעיה.
+
+    שני החותכים מפרקים למילים קצת אחרת (החותך לפי פיסוק מדביק סימני
+    פיסוק בודדים לשכנם במקום לזרוק אותם), ולכן החלוקה המותאמת אישית
+    חייבת להשתמש באותו פירוק — אחרת ספירת המילים בדפדפן ובשרת תתפצל.
+    """
+    if _unit_chunk(unit) == "taamim":
+        return tokenize(clean_sefaria_text(unit["text"]))
+    return prose_tokens(unit["text"])
+
+
+def units_to_segments(units: list, max_words: int = 4, splits=None,
+                      mode: str = "tanakh") -> list:
+    """כל היחידות → רשימה שטוחה של מקטעים (display + מילות יישור).
+
+    כל מקטע נושא unit (אינדקס היחידה ברשימה המקורית) ו-label (תוויתה).
+    יחידות kind="instruction" מוצגות בממשק בלבד — לא נכנסות למקטעים
+    וליישור. ‏splits — חלוקה מותאמת אישית שהמשתמש ערך בממשק (מספר
+    המילים בכל כתובית), על מילות היחידות הנשמעות בלבד; כשהיא נתונה היא
+    מחליפה את החיתוך, והמילים עצמן וסדרן זהים.
+    """
+    if mode not in ALIGN_MODES:
+        raise ValueError(f"מצב יישור לא מוכר: {mode!r}")
+    active = [(ui, u) for ui, u in enumerate(units)
+              if u.get("kind") != "instruction"]
+    if splits:
+        words, unit_of = [], []
+        for ui, unit in active:
+            toks = _unit_words(unit)
+            words.extend(toks)
+            unit_of.extend([ui] * len(toks))
+        segments = regroup_words(words, splits, unit_of, mode)
+        for seg in segments:
+            # ‏regroup_words מסמן "verse" — כאן זה אינדקס היחידה
+            seg["unit"] = seg.pop("verse")
+            seg["label"] = units[seg["unit"]].get("label", "")
+        return segments
+    segments = []
+    for ui, unit in active:
+        for seg in _chunk_unit(unit, max_words, mode):
+            seg["unit"] = ui
+            seg["label"] = unit.get("label", "")
+            segments.append(seg)
+    return segments
+
+
 def verses_to_segments(verses: list, max_words: int = 4, splits=None) -> list:
     """כל הפסוקים → רשימה שטוחה של מקטעים (display + מילות יישור).
 
     ‏splits — חלוקה מותאמת אישית שהמשתמש ערך בממשק (מספר המילים בכל
     כתובית). כשהיא נתונה היא מחליפה את החיתוך לפי הטעמים; המילים
     עצמן וסדרן זהים, ולכן שאר הצינור אינו מושפע.
+
+    עטיפה ל-units_to_segments שמשמרת את הפלט הישן במדויק: לכל מקטע
+    "verse" (מספר סידורי מ-1) ובלי unit/label.
     """
-    if splits:
-        words, verse_of = [], []
-        for vi, verse in enumerate(verses, 1):
-            toks = tokenize(clean_sefaria_text(verse))
-            words.extend(toks)
-            verse_of.extend([vi] * len(toks))
-        return regroup_words(words, splits, verse_of)
-    segments = []
-    for vi, verse in enumerate(verses, 1):
-        for seg in segments_for_pipeline(verse, max_words):
-            seg["verse"] = vi
-            segments.append(seg)
+    segments = units_to_segments(verse_units(verses), max_words, splits)
+    for seg in segments:
+        del seg["label"]
+        seg["verse"] = seg.pop("unit") + 1
     return segments
 
 

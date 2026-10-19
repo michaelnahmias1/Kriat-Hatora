@@ -81,8 +81,10 @@ def format_report(segments: list, confidences: list, infos: list,
         for i in low:
             seg = segments[i]
             m, s = divmod(int(starts[i]), 60)
+            # תווית היחידה (פסוק/שורה/בית); מקטעים בלי label — "פסוק N" כמקודם
+            label = seg.get("label") or f"פסוק {seg.get('verse', '?')}"
             lines.append(
-                f"  [{m:02d}:{s:02d}] פסוק {seg.get('verse', '?')} | "
+                f"  [{m:02d}:{s:02d}] {label} | "
                 f"ביטחון {confidences[i]:.2f} | {seg['display']}")
             lines.append(f"        סיבה: {_reasons(infos[i])}")
     return "\n".join(lines)

@@ -4,7 +4,9 @@
 עטיפה בלבד: הצינור עצמו הוא `src/aligner/hybrid.py::run_hybrid` הקיים,
 ללא שום שינוי — אותה משיכת טקסט מ-Sefaria (API), אותו תמלול-עוגנים,
 אותו יישור ממושכן ואותו VAD שעובדים היום ב-Colab. רק סביבת הריצה מתחלפת:
-GPU T4 לפי-שימוש במקום notebook.
+GPU T4 לפי-שימוש במקום notebook. לתפילה ולטקסט חופשי (PLAN_TEFILA.md 3.3)
+הדפדפן שולח את יחידות הטקסט עצמן, והן עוברות ל-`run_hybrid_units` — אותו
+צינור מהחיתוך והלאה, בלי Sefaria.
 
 פריסה (חד-פעמית, ראה README):
     pip install modal
@@ -16,7 +18,10 @@ GPU T4 לפי-שימוש במקום notebook.
 הפרוטוקול מול הדפדפן (עיבוד אורך דקות — לא מחזיקים בקשה פתוחה מהטלפון):
     POST /submit  (multipart: file + book/chapter/טווח + token
                    [+ splits — ‏JSON של חלוקת הכתוביות הידנית]
-                   [+ push_sub — ‏JSON של PushSubscription])    → {"call_id"}
+                   [+ push_sub — ‏JSON של PushSubscription]
+                   [+ source=text|siddur, units — ‏JSON של יחידות טקסט,
+                      title, performance, profile — ראה params.py;
+                      בלי source — תנ״ך, בדיוק כמו קודם])       → {"call_id"}
     GET  /status?call_id=…                                      → 202 בזמן ריצה,
                                                                   {"srt","report"} בסיום.
     POST /cancel  (form: call_id + token)                       → עוצר עבודה רצה.
@@ -36,7 +41,8 @@ from pathlib import Path
 import modal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from params import parse_params, parse_push_sub  # noqa: E402
+from params import (notify_label, parse_params,  # noqa: E402
+                    parse_push_sub, pipeline_call)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -129,33 +135,28 @@ def _send_push(push_sub, payload: dict):
               secrets=[modal.Secret.from_name("kriat-hatora")])
 def process(audio_bytes: bytes, filename: str, params: dict,
             push_sub: dict = None) -> dict:
-    """הקלטה + פרמטרים → SRT + דוח איכות, דרך run_hybrid הקיים ללא שינוי."""
+    """הקלטה + פרמטרים → SRT + דוח איכות, דרך run_hybrid הקיים ללא שינוי
+    (תנ״ך) או run_hybrid_units (תפילה/טקסט חופשי) — הניתוב ב-pipeline_call."""
     import tempfile
 
     sys.path.insert(0, "/root/src")
-    from aligner.hybrid import run_hybrid
+    from aligner.hybrid import run_hybrid, run_hybrid_units
 
     suffix = Path(filename or "").suffix
     if not re.fullmatch(r"\.[A-Za-z0-9]{1,8}", suffix or ""):
         suffix = ".m4a"  # ffmpeg מזהה את הפורמט האמיתי מהתוכן ממילא
 
-    ref = " ".join(str(params.get(k) or "") for k in ("book", "chapter")).strip()
+    ref = notify_label(params)
     try:
         with tempfile.TemporaryDirectory() as td:
             audio_path = Path(td) / f"recording{suffix}"
             audio_path.write_bytes(audio_bytes)
             out_srt = Path(td) / "out.srt"
 
-            run_hybrid(book=params["book"],
-                       chapter=params["chapter"],
-                       audio_path=str(audio_path),
-                       out_srt_path=str(out_srt),
-                       verse_start=params["verse_start"],
-                       chapter_end=params["chapter_end"],
-                       verse_end=params["verse_end"],
-                       max_words=params["max_words"],
-                       work_dir=td,
-                       splits=params.get("splits"))
+            name, kwargs = pipeline_call(params, str(audio_path),
+                                         str(out_srt), td)
+            {"run_hybrid": run_hybrid,
+             "run_hybrid_units": run_hybrid_units}[name](**kwargs)
 
             srt = out_srt.read_text(encoding="utf-8-sig")
             report_path = out_srt.with_suffix(".report.txt")
@@ -198,7 +199,14 @@ def web():
                      chapter_end: str = Form(""),
                      max_words: str = Form(""),
                      splits: str = Form(""),
-                     push_sub: str = Form("")):
+                     push_sub: str = Form(""),
+                     # שדות התפילה/טקסט החופשי — כולם אופציונליים; דפדפן
+                     # ישן לא שולח אותם ומקבל בדיוק את התנהגות התנ״ך
+                     source: str = Form(""),
+                     units: str = Form(""),
+                     title: str = Form(""),
+                     performance: str = Form(""),
+                     profile: str = Form("")):
         if not _token_ok(token):
             return JSONResponse({"error": "גישה נדחתה — ה-token שגוי או שה-secret "
                                           "‏kriat-hatora לא הוגדר ב-Modal"},
@@ -209,6 +217,8 @@ def web():
                 "verse_start": verse_start, "verse_end": verse_end,
                 "chapter_end": chapter_end, "max_words": max_words,
                 "splits": splits,
+                "source": source, "units": units, "title": title,
+                "performance": performance, "profile": profile,
             })
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)

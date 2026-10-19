@@ -6,12 +6,15 @@
 """
 
 import importlib.util
+import inspect
+import json
+import sys
 import unittest
 from pathlib import Path
 
+_ROOT = Path(__file__).resolve().parent.parent
 _SPEC = importlib.util.spec_from_file_location(
-    "modal_params",
-    Path(__file__).resolve().parent.parent / "modal_worker" / "params.py")
+    "modal_params", _ROOT / "modal_worker" / "params.py")
 params = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(params)
 
@@ -143,6 +146,242 @@ class TestParseSplits(unittest.TestCase):
         got = params.parse_params({"book": "בראשית", "chapter": "1",
                                    "splits": "[2, 5]"})
         self.assertEqual(got["splits"], [2, 5])
+
+
+ASHREI = [
+    {"text": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ, עוֹד יְהַלְלוּךָ סֶּלָה.",
+     "label": "אשרי · 1", "kind": "line", "chunk": "punct"},
+    {"text": "בעשרת ימי תשובה:", "kind": "instruction"},
+    {"text": "אַשְׁרֵי הָעָם שֶׁכָּכָה לּוֹ"},
+]
+
+
+def _units_form(**extra):
+    form = {"source": "text", "units": json.dumps(ASHREI, ensure_ascii=False)}
+    form.update(extra)
+    return form
+
+
+class TestParseParamsUnits(unittest.TestCase):
+    """מקור text/siddur‏ (PLAN_TEFILA.md 3.3) — יחידות טקסט במקום ספר/פרק."""
+
+    def test_text_source_defaults(self):
+        got = params.parse_params(_units_form())
+        self.assertEqual(got, {"source": "text", "units": ASHREI, "title": "",
+                               "max_words": 4, "splits": None,
+                               "performance": None, "profile": "reading",
+                               "mode": "tefila"})
+
+    def test_siddur_source_and_all_fields(self):
+        got = params.parse_params(_units_form(
+            source="siddur", title="  אשרי   לשבת ", max_words="3",
+            splits="[2, 3, 1]", performance="[0, 1, 0, 2]",
+            profile="singing", book="בראשית"))  # book מתעלמים — לא תנ״ך
+        self.assertEqual(got["source"], "siddur")
+        self.assertEqual(got["title"], "אשרי לשבת")
+        self.assertEqual(got["max_words"], 3)
+        self.assertEqual(got["splits"], [2, 3, 1])
+        self.assertEqual(got["performance"], [0, 1, 0, 2])
+        self.assertEqual(got["profile"], "singing")
+        self.assertNotIn("book", got)
+
+    def test_unknown_unit_fields_dropped(self):
+        units = [{"text": "שָׁלוֹם", "extra": 1, "label": "א"}]
+        got = params.parse_params({"source": "text",
+                                   "units": json.dumps(units)})
+        self.assertEqual(got["units"], [{"text": "שָׁלוֹם", "label": "א"}])
+
+    def test_missing_units(self):
+        for units in (None, "", "   "):
+            with self.assertRaisesRegex(ValueError, "חסר הטקסט"):
+                params.parse_params({"source": "text", "units": units})
+
+    def test_broken_json(self):
+        with self.assertRaisesRegex(ValueError, "JSON"):
+            params.parse_params({"source": "text", "units": '[{"text": '})
+
+    def test_not_a_list(self):
+        for bad in ("{}", "[]", '"שלום"', "5"):
+            with self.assertRaisesRegex(ValueError, "רשימה לא ריקה"):
+                params.parse_params({"source": "text", "units": bad})
+
+    def test_oversized_json(self):
+        big = json.dumps([{"text": "א" * 1000}] * 300, ensure_ascii=False)
+        self.assertGreater(len(big.encode("utf-8")), params.MAX_UNITS_BYTES)
+        with self.assertRaisesRegex(ValueError, "ארוך מדי"):
+            params.parse_params({"source": "text", "units": big})
+
+    def test_too_many_units(self):
+        units = json.dumps([{"text": "א"}] * (params.MAX_UNITS + 1))
+        with self.assertRaisesRegex(ValueError, "יותר מדי"):
+            params.parse_params({"source": "text", "units": units})
+
+    def test_unit_text_too_long(self):
+        units = [{"text": "א" * (params.MAX_UNIT_TEXT + 1)}]
+        with self.assertRaisesRegex(ValueError, "יחידה 1: ארוכה מדי"):
+            params.parse_units(units)
+
+    def test_bad_unit_fields(self):
+        cases = [
+            (["שלום"], "אובייקט"),
+            ([{"label": "א"}], "חסר טקסט"),
+            ([{"text": "   "}], "חסר טקסט"),
+            ([{"text": 5}], "חסר טקסט"),
+            ([{"text": "שלום", "kind": "poem"}], "kind"),
+            ([{"text": "שלום", "chunk": "words"}], "chunk"),
+            ([{"text": "שלום", "label": 7}], "label"),
+            ([{"text": "שלום", "label": "א" * (params.MAX_LABEL + 1)}],
+             "label"),
+        ]
+        for units, msg in cases:
+            with self.assertRaisesRegex(ValueError, msg):
+                params.parse_params({"source": "text",
+                                     "units": json.dumps(units,
+                                                         ensure_ascii=False)})
+
+    def test_error_names_unit_number(self):
+        units = [{"text": "שלום"}, {"text": "עולם", "kind": "x"}]
+        with self.assertRaisesRegex(ValueError, "יחידה 2"):
+            params.parse_units(units)
+
+    def test_requires_hebrew(self):
+        with self.assertRaisesRegex(ValueError, "אות עברית"):
+            params.parse_units([{"text": "hello world 123"}])
+        # עברית רק בהוראה (שלא נכנסת ליישור) — אין מה לסנכרן
+        with self.assertRaisesRegex(ValueError, "אות עברית"):
+            params.parse_units([{"text": "ביום שבת:", "kind": "instruction"},
+                                {"text": "Amen"}])
+
+    def test_unknown_source(self):
+        with self.assertRaisesRegex(ValueError, "מקור טקסט לא מוכר"):
+            params.parse_params({"source": "mishna", "units": "[]"})
+
+    def test_unknown_profile(self):
+        with self.assertRaisesRegex(ValueError, "פרופיל לא מוכר"):
+            params.parse_params(_units_form(profile="shouting"))
+
+    def test_title_too_long(self):
+        with self.assertRaisesRegex(ValueError, "הכותרת ארוכה מדי"):
+            params.parse_params(_units_form(title="א" * (params.MAX_TITLE + 1)))
+
+    def test_performance_shape(self):
+        for bad in ("לא JSON", "[]", "{}", '["1"]', "[1.5]", "[true]"):
+            with self.assertRaisesRegex(ValueError, "performance"):
+                params.parse_params(_units_form(performance=bad))
+        with self.assertRaisesRegex(ValueError, "0 ומעלה"):
+            params.parse_params(_units_form(performance="[0, -1]"))
+        with self.assertRaisesRegex(ValueError, "ארוך מדי"):
+            params.parse_performance([0] * (params.MAX_PERFORMANCE + 1))
+
+    def test_performance_out_of_range_with_splits(self):
+        """כשה-splits ידוע — טווח האינדקסים נבדק כבר כאן."""
+        with self.assertRaisesRegex(ValueError, "שאינה קיימת"):
+            params.parse_params(_units_form(splits="[2, 3]",
+                                            performance="[0, 1, 2]"))
+        got = params.parse_params(_units_form(splits="[2, 3]",
+                                              performance="[1, 0, 1]"))
+        self.assertEqual(got["performance"], [1, 0, 1])
+
+    def test_performance_without_splits_checks_shape_only(self):
+        """בלי splits מספר הכתוביות ידוע רק אחרי החיתוך — בצינור עצמו."""
+        got = params.parse_params(_units_form(performance="[0, 99]"))
+        self.assertEqual(got["performance"], [0, 99])
+
+    def test_bad_max_words_and_splits_in_units_mode(self):
+        with self.assertRaisesRegex(ValueError, "מקסימום מילים"):
+            params.parse_params(_units_form(max_words="11"))
+        with self.assertRaises(ValueError):
+            params.parse_params(_units_form(splits="[0]"))
+
+
+class TestTanakhBackwardCompat(unittest.TestCase):
+    """טופס של היום (בלי השדות החדשים) ⇒ בדיוק אותו מילון כמו לפני ההרחבה."""
+
+    OLD = {"book": "בראשית", "chapter": "1", "verse_start": "",
+           "verse_end": "0", "chapter_end": None, "max_words": "",
+           "splits": "[2, 5]"}
+    EXPECTED = {"book": "בראשית", "chapter": 1, "verse_start": None,
+                "verse_end": None, "chapter_end": None, "max_words": 4,
+                "splits": [2, 5]}
+
+    def test_old_form_unchanged(self):
+        self.assertEqual(params.parse_params(dict(self.OLD)), self.EXPECTED)
+
+    def test_empty_new_fields_unchanged(self):
+        """השרת ממלא "" לכל שדה שדפדפן ישן לא שלח (Form(""))."""
+        form = dict(self.OLD, source="", units="", title="", performance="",
+                    profile="")
+        self.assertEqual(params.parse_params(form), self.EXPECTED)
+        form["source"] = "tanakh"
+        self.assertEqual(params.parse_params(form), self.EXPECTED)
+
+    def test_tanakh_ignores_units(self):
+        form = dict(self.OLD, units="לא JSON בכלל")
+        self.assertEqual(params.parse_params(form), self.EXPECTED)
+
+    def test_tanakh_title_only_adds_label(self):
+        got = params.parse_params(dict(self.OLD, title="פרשת בראשית"))
+        self.assertEqual(got, dict(self.EXPECTED, title="פרשת בראשית"))
+
+    def test_tanakh_rejects_performance_and_singing(self):
+        with self.assertRaisesRegex(ValueError, "performance"):
+            params.parse_params(dict(self.OLD, performance="[0, 1]"))
+        with self.assertRaisesRegex(ValueError, "שירה"):
+            params.parse_params(dict(self.OLD, profile="singing"))
+        params.parse_params(dict(self.OLD, profile="reading"))  # לא זורק
+
+
+class TestRouting(unittest.TestCase):
+    """הניתוב ב-process‏ (pipeline_call / notify_label) — בלי modal/torch."""
+
+    def test_tanakh_routes_to_run_hybrid_exactly_as_before(self):
+        p = params.parse_params({"book": "שמות", "chapter": "12",
+                                 "verse_start": "1", "verse_end": "20",
+                                 "splits": "[3]"})
+        name, kw = params.pipeline_call(p, "/t/rec.m4a", "/t/out.srt", "/t")
+        self.assertEqual(name, "run_hybrid")
+        # בדיוק הארגומנטים ש-app.py העביר ל-run_hybrid לפני ההרחבה
+        self.assertEqual(kw, {"book": "שמות", "chapter": 12,
+                              "audio_path": "/t/rec.m4a",
+                              "out_srt_path": "/t/out.srt",
+                              "verse_start": 1, "chapter_end": None,
+                              "verse_end": 20, "max_words": 4,
+                              "work_dir": "/t", "splits": [3]})
+        self.assertEqual(params.notify_label(p), "שמות 12")
+
+    def test_units_route_to_run_hybrid_units(self):
+        p = params.parse_params(_units_form(title="אשרי", splits="[2, 2]",
+                                            performance="[0, 1, 0]"))
+        name, kw = params.pipeline_call(p, "/t/a.wav", "/t/o.srt", "/t")
+        self.assertEqual(name, "run_hybrid_units")
+        self.assertEqual(kw, {"units": ASHREI, "audio_path": "/t/a.wav",
+                              "out_srt_path": "/t/o.srt", "max_words": 4,
+                              "splits": [2, 2], "performance": [0, 1, 0],
+                              "profile": "reading", "mode": "tefila",
+                              "work_dir": "/t"})
+        self.assertEqual(params.notify_label(p), "אשרי")
+
+    def test_routing_kwargs_match_pipeline_signatures(self):
+        """שמות הארגומנטים תואמים לחתימות בפועל ב-src/aligner/hybrid.py."""
+        sys.path.insert(0, str(_ROOT / "src"))
+        from aligner import hybrid
+        for p in (params.parse_params({"book": "בראשית", "chapter": "1"}),
+                  params.parse_params(_units_form())):
+            name, kw = params.pipeline_call(p, "a", "o", "w")
+            inspect.signature(getattr(hybrid, name)).bind(**kw)
+
+    def test_notify_label_fallbacks(self):
+        self.assertEqual(params.notify_label(
+            params.parse_params(_units_form())), "טקסט חופשי")
+        self.assertEqual(params.notify_label(
+            params.parse_params(_units_form(source="siddur"))), "תפילה")
+
+    def test_constants_in_sync_with_pipeline(self):
+        """ההעתק של UNIT_KINDS / CHUNK_MODES ב-params.py חייב להישאר מסונכרן."""
+        sys.path.insert(0, str(_ROOT / "src"))
+        from aligner import pipeline
+        self.assertEqual(params.UNIT_KINDS, pipeline.UNIT_KINDS)
+        self.assertEqual(params.CHUNK_MODES, pipeline.CHUNK_MODES)
 
 
 if __name__ == "__main__":
