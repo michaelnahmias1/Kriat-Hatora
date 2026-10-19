@@ -16,7 +16,8 @@ import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from chunker import (clean_sefaria_text, prose_segments,  # noqa: E402
+from chunker import (ALIGN_MODES, clean_sefaria_text,  # noqa: E402
+                     prose_segments,
                      prose_tokens, regroup_words, segments_for_pipeline,
                      tokenize, word_accents)
 from chunker.books import HE_TO_EN, to_english  # noqa: E402
@@ -101,7 +102,7 @@ def fetch_verses(ref: str, version_title: str) -> list:
 # והלאה הצינור עובד על יחידות בלבד. התנ״ך הוא מקור אחד שמייצר verse/taamim.
 UNIT_KINDS = ("verse", "line", "paragraph", "stanza", "refrain", "instruction")
 CHUNK_MODES = ("taamim", "punct")
-ALIGN_MODES = ("tanakh",)  # ‏"tefila" — משימה 4.1.2 (מילות יישור לתפילה)
+# ‏ALIGN_MODES = ("tanakh", "tefila") — מוגדר ב-chunker ומיובא למעלה (4.1.2)
 
 
 def verse_units(verses: list) -> list:
@@ -132,8 +133,8 @@ def _chunk_unit(unit: dict, max_words: int, mode: str) -> list:
     לא-מוטעם (src/chunker/prose.py). ‏mode מועבר הלאה למילות היישור (4.1.2).
     """
     if _unit_chunk(unit) == "taamim":
-        return segments_for_pipeline(unit["text"], max_words)
-    return prose_segments(unit["text"], max_words)
+        return segments_for_pipeline(unit["text"], max_words, mode)
+    return prose_segments(unit["text"], max_words, mode)
 
 
 def _unit_words(unit: dict) -> list:
@@ -159,8 +160,7 @@ def units_to_segments(units: list, max_words: int = 4, splits=None,
     מחליפה את החיתוך, והמילים עצמן וסדרן זהים.
     """
     if mode not in ALIGN_MODES:
-        raise NotImplementedError(
-            f"מצב יישור {mode!r} עוד לא ממומש — משימה 4.1.2")
+        raise ValueError(f"מצב יישור לא מוכר: {mode!r}")
     active = [(ui, u) for ui, u in enumerate(units)
               if u.get("kind") != "instruction"]
     if splits:
@@ -169,7 +169,7 @@ def units_to_segments(units: list, max_words: int = 4, splits=None,
             toks = _unit_words(unit)
             words.extend(toks)
             unit_of.extend([ui] * len(toks))
-        segments = regroup_words(words, splits, unit_of)
+        segments = regroup_words(words, splits, unit_of, mode)
         for seg in segments:
             # ‏regroup_words מסמן "verse" — כאן זה אינדקס היחידה
             seg["unit"] = seg.pop("verse")

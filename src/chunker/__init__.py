@@ -3,9 +3,11 @@
 לא-מוטעם — תפילה, פיוט, טקסט חופשי — לפי פיסוק (prose.py, PLAN_TEFILA.md)."""
 
 from .chunker import (
+    ALIGN_MODES,
     build_segment,
     clean_sefaria_text,
     is_ketiv,
+    is_tefila_divine_name,
     letters_only,
     rank_table_for,
     regroup_words,
@@ -22,10 +24,12 @@ from . import books
 from . import taamim
 
 __all__ = [
+    "ALIGN_MODES",
     "books",
     "build_segment",
     "clean_sefaria_text",
     "is_ketiv",
+    "is_tefila_divine_name",
     "letters_only",
     "prose_lines",
     "prose_segments",

@@ -131,13 +131,15 @@ def split_prose(words: list, max_words: int = 4) -> list:
             + split_prose(words[cut + 1:], max_words))
 
 
-def prose_segments(text: str, max_words: int = 4) -> list:
+def prose_segments(text: str, max_words: int = 4,
+                   mode: str = "tanakh") -> list:
     """טקסט לא-מוטעם → מקטעים לשלבי ההמשך (display + מילות יישור).
 
     אותו פורמט בדיוק כמו segments_for_pipeline, כולל מיזוג מקטע בלי
-    מילה נשמעת לשכנו.
+    מילה נשמעת לשכנו. לטקסט תפילה/חופשי מעבירים mode="tefila" — אחרת
+    מילה לא מנוקדת נחשבת כתיב ונזרקת מהיישור (ההתנהגות של התנ״ך).
     """
-    result = [build_segment(seg)
+    result = [build_segment(seg, mode)
               for line in prose_lines(text)
               for seg in split_prose(line, max_words)]
     return _merge_unalignable(result)

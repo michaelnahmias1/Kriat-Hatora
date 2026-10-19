@@ -166,6 +166,14 @@ class TestProseSegments(unittest.TestCase):
         self.assertEqual(set(seg),
                          set(segments_for_pipeline("אָ֣בָא")[0]))
 
+    def test_unvocalized_text_needs_tefila_mode(self):
+        text = "ברוך אתה ה' אלהינו מלך העולם"
+        self.assertEqual(prose_segments(text), [])  # תנ״ך: הכול כתיב
+        segs = prose_segments(text, mode="tefila")
+        self.assertEqual(sizes([s["display"].split(" ") for s in segs]),
+                         [3, 3])
+        self.assertEqual(segs[0]["align_plain"], ["ברוך", "אתה", "אדני"])
+
     def test_empty_and_non_hebrew(self):
         self.assertEqual(prose_segments(""), [])
         self.assertEqual(prose_segments("hello, world. 123"), [])
