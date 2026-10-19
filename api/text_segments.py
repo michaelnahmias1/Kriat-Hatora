@@ -30,6 +30,36 @@ MAX_CHARS = 100_000
 MAX_BODY_BYTES = MAX_CHARS * 6 + 4096
 _TOO_LONG = {"error": f"הטקסט ארוך מדי — עד {MAX_CHARS:,} תווים"}
 DEFAULT_MODE = "tefila"  # טקסט חופשי: מילה לא מנוקדת נקראת (4.1.2)
+# מגבלות ה-worker על היחידות (modal_worker/params.py, ‏parse_units) — העתק,
+# כי modal_worker/ לא נכלל ב-Vercel (‏.vercelignore); בדיקה שומרת על הסנכרון.
+# בודקים כאן, כדי שהמשתמש לא יגלה את הדחייה רק אחרי העלאת הקלטה שלמה.
+MAX_UNITS_BYTES = 200 * 1024
+MAX_UNITS = 3000
+MAX_UNIT_TEXT = 20000
+
+
+class TooLarge(ValueError):
+    """קלט שחורג ממגבלות הגודל — תשובת 413."""
+
+
+def units_json(units: list) -> str:
+    """היחידות כפי שהדפדפן שולח אותן ל-worker (‏JSON.stringify — בלי רווחים)."""
+    return json.dumps(units, ensure_ascii=False, separators=(",", ":"))
+
+
+def check_units_limits(units: list) -> None:
+    """אותן מגבלות כמו parse_units ב-worker. זורק TooLarge."""
+    if len(units) > MAX_UNITS:
+        raise TooLarge(f"יותר מדי שורות ({len(units):,}) — עד {MAX_UNITS:,} "
+                       "שורות בסנכרון אחד. פצלו את הטקסט לכמה חלקים")
+    for i, unit in enumerate(units, 1):
+        if len(unit["text"]) > MAX_UNIT_TEXT:
+            raise TooLarge(f"שורה {i} ארוכה מדי ({len(unit['text']):,} תווים)"
+                           f" — עד {MAX_UNIT_TEXT:,} תווים בשורה")
+    size = len(units_json(units).encode("utf-8"))
+    if size > MAX_UNITS_BYTES:
+        raise TooLarge(f"הטקסט ארוך מדי לסנכרון ({size // 1024}KB) — עד "
+                       f"{MAX_UNITS_BYTES // 1024}KB. פצלו את הטקסט לכמה חלקים")
 
 
 def text_units(text: str) -> list:
@@ -55,7 +85,7 @@ def _read_max_words(raw) -> int:
         return 4
     try:
         value = int(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError(f"ערך לא תקין בשדה max_words: {raw}")
     return min(max(value, 2), 8)
 
@@ -77,6 +107,7 @@ def build_payload(body: dict) -> dict:
         raise ValueError(f"מצב לא מוכר: {mode}")
 
     units = text_units(text)
+    check_units_limits(units)
     segs = units_to_segments(units, max_words, mode=mode)
     if not segs:
         raise ValueError("לא נמצאו בטקסט מילים לסנכרון"
@@ -114,10 +145,14 @@ def respond(raw: bytes):
         return {"error": "גוף הבקשה אינו JSON תקין"}, 400
     try:
         return build_payload(body), 200
+    except TooLarge as e:
+        return {"error": str(e)}, 413
     except ValueError as e:
         return {"error": str(e)}, 400
     except Exception as e:  # noqa: BLE001 — תשובת JSON גם על הפתעות
-        return {"error": f"שגיאה פנימית: {e}"}, 500
+        # הפרטים ללוג בלבד — לא חושפים חריגות פנימיות למשתמש
+        print(f"text_segments: {type(e).__name__}: {e}", file=sys.stderr)
+        return {"error": "שגיאה פנימית — נסו שוב מאוחר יותר"}, 500
 
 
 class handler(BaseHTTPRequestHandler):

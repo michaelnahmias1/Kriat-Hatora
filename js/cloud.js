@@ -28,6 +28,9 @@ const CLOUD_POLL_MS = 5000;
 // גבול זהירות למעקב: מגבלת הריצה של ה-worker ‏(modal_worker/app.py:
 // WORKER_TIMEOUT_SEC, שעתיים) + מרווח — עבודה שעברה אותו כבר בוטלה בענן.
 const CLOUD_JOB_LIMIT_MS = (2 * 60 + 10) * 60 * 1000;
+// מגבלת ה-worker על ה-JSON של היחידות (modal_worker/params.py: MAX_UNITS_BYTES;
+// בדיקה שומרת על הסנכרון) — נבדק לפני ההעלאה, לא אחרי הקלטה שלמה
+const MAX_UNITS_BYTES = 200 * 1024;
 if (AI_ENDPOINT) $("startCloud").hidden = false;
 
 /* האזהרה היחידה שנשארה בשלב 3: אדומה כל עוד ההעלאה רצה, ירוקה ברגע
@@ -217,7 +220,7 @@ async function trackCloudJob() {
       $("timingMsg").innerHTML = '<p class="hint">הסנכרון בוטל.</p>';
     else
       $("timingMsg").innerHTML =
-        `<p class="error">הסנכרון נכשל: ${e.message || e}\nנסה שוב בעוד כמה דקות.</p>`;
+        `<p class="error">הסנכרון נכשל: ${escapeHtml(String(e.message || e))}\nנסה שוב בעוד כמה דקות.</p>`;
   } finally {
     cloudAbort = null;
     cloudBusy(false);
@@ -239,6 +242,12 @@ function resumeCloudJob() {
 async function runCloudTiming() {
   if (!audioFileObj) {
     $("timingMsg").innerHTML = '<p class="error">יש לבחור את קובץ ההקלטה מחדש (הדפדפן לא שומר קבצים בין ביקורים).</p>';
+    return;
+  }
+  const unitsJson = isFreeText() ? JSON.stringify(S.data.units) : null;
+  if (unitsJson && new TextEncoder().encode(unitsJson).length > MAX_UNITS_BYTES) {
+    $("timingMsg").innerHTML =
+      `<p class="error">הטקסט ארוך מדי לסנכרון (עד ${MAX_UNITS_BYTES / 1024}KB) — פצלו את הטקסט לכמה חלקים.</p>`;
     return;
   }
   cloudBusy(true);
@@ -282,7 +291,7 @@ async function runCloudTiming() {
       // טקסט חופשי: היחידות עצמן, בדיוק כפי שחזרו מה-API והוצגו (PLAN_TEFILA.md 3.3).
       // ה-mode נגזר בשרת מ-source (text ⇒ tefila)
       fd.append("source", "text");
-      fd.append("units", JSON.stringify(S.data.units));
+      fd.append("units", unitsJson);
       if (S.data.max_words) fd.append("max_words", String(S.data.max_words));
       const title = readFreeText().title;
       if (title) fd.append("title", title);
@@ -306,7 +315,7 @@ async function runCloudTiming() {
       $("timingMsg").innerHTML = '<p class="hint">ההעלאה בוטלה.</p>';
     else
       $("timingMsg").innerHTML =
-        `<p class="error">ההעלאה נכשלה: ${e.message || e}\nנסה שוב בעוד כמה דקות.</p>`;
+        `<p class="error">ההעלאה נכשלה: ${escapeHtml(String(e.message || e))}\nנסה שוב בעוד כמה דקות.</p>`;
     return;
   }
   releaseWakeLock();

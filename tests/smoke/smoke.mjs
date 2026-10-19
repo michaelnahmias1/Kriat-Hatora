@@ -152,7 +152,7 @@ const GLOBAL_FUNCTIONS = `heNumeral fmtClock fmtSrt setLocked escapeHtml save re
   closeSplitEditor nudge renderTimeList buildSrt srtName srtFile isStandalone refreshInstallUi`.split(/\s+/);
 const GLOBAL_BINDINGS = `$ STORE_KEY AI_ENDPOINT AI_TOKEN VAPID_PUBLIC_KEY S HE_LETTER_RE NIQQUD_RE MAQAF
   bookChapters FALLBACK_CHAPTERS player audioReady audioFileObj audioDurationSec lastObjectUrl
-  MAX_UPLOAD_MB MAX_DECODE_MB CLOUD_POLL_MS CLOUD_JOB_LIMIT_MS cloudAbort cloudTimerInt
+  MAX_UPLOAD_MB MAX_DECODE_MB CLOUD_POLL_MS CLOUD_JOB_LIMIT_MS MAX_UNITS_BYTES cloudAbort cloudTimerInt
   CLOUD_BTN_LABEL wakeLock E settingsOverlay installPrompt`.split(/\s+/);
 
 /* ---------- הקשר דפדפן עם כל ה-mocks ---------- */
@@ -810,6 +810,19 @@ async function flowFreeText(browser, base, profile) {
     assert.deepEqual(st.times, times);
     assert.equal(st.cloudJob, null);
     await page.waitForFunction(() => document.getElementById("cloudProgress").hidden);
+  });
+
+  await step(`[${profile}] טקסט חופשי: יחידות מעבר למגבלת ה-worker — שגיאה בלי העלאה`, async () => {
+    const nSubmits = cloud.submits.length;
+    await page.evaluate(() => {
+      window.__units = S.data.units;
+      S.data.units = [{ text: "א".repeat(MAX_UNITS_BYTES / 2), kind: "line" }];
+    });
+    await page.click("#startCloud");
+    assert.equal(await txt(page, "#timingMsg"), "הטקסט ארוך מדי לסנכרון (עד 200KB) — פצלו את הטקסט לכמה חלקים.");
+    assert.equal(cloud.submits.length, nSubmits, "לא הועלה דבר");
+    assert.equal(await page.$eval("#cloudProgress", e => e.hidden), true);
+    await page.evaluate(() => { S.data.units = window.__units; delete window.__units; });
   });
 
   await step(`[${profile}] טקסט חופשי: כוונון וייצוא SRT בשם הכותרת`, async () => {

@@ -5,9 +5,11 @@
 כמו /api/segments, שהממשק בדפדפן מסתמך עליו.
 """
 
+import contextlib
 import importlib.util
 import io
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -87,6 +89,86 @@ class TestBuildPayload(unittest.TestCase):
                 api.build_payload(body)
 
 
+class TestUnitsLimits(unittest.TestCase):
+    """המגבלות של ה-worker (‏parse_units) נאכפות כבר כאן — לפני העלאת הקלטה."""
+
+    def test_unit_count(self):
+        # ישירות על היחידות: ב-3,000 שורות מה-API (עם label/kind/chunk)
+        # מגבלת הבתים נתפסת עוד קודם — ראה test_respond_413
+        api.check_units_limits([{"text": "אב"}] * api.MAX_UNITS)
+        with self.assertRaises(api.TooLarge) as cm:
+            api.check_units_limits([{"text": "אב"}] * (api.MAX_UNITS + 1))
+        self.assertIn("יותר מדי שורות", str(cm.exception))
+
+    def test_unit_text_length(self):
+        line = ("אבגד " * (api.MAX_UNIT_TEXT // 5)).strip()
+        line += "א" * (api.MAX_UNIT_TEXT - len(line))
+        self.assertEqual(len(line), api.MAX_UNIT_TEXT)
+        payload = api.build_payload({"text": line})
+        self.assertEqual(len(payload["units"][0]["text"]), api.MAX_UNIT_TEXT)
+        with self.assertRaises(api.TooLarge) as cm:
+            api.build_payload({"text": line + "א"})
+        self.assertIn("שורה 1 ארוכה מדי", str(cm.exception))
+
+    def _text_of_bytes(self, target):
+        """טקסט שה-JSON של היחידות שלו שוקל target בתים בדיוק.
+
+        מקפים ארוכים (3 בתים לתו) — כדי לעבור את מגבלת הבתים מתחת ל-MAX_CHARS.
+        """
+        def size(lines):
+            return len(api.units_json(api.text_units("\n".join(lines)))
+                       .encode("utf-8"))
+        lines = ["א" + "—" * 4999] * 14
+        lines[-1] = "." * (-(size(lines) - target) % 3) + lines[-1]
+        excess = size(lines) - target
+        self.assertGreater(excess, 0)
+        self.assertEqual(excess % 3, 0)
+        lines[-1] = lines[-1][:-(excess // 3)]
+        text = "\n".join(lines)
+        self.assertLess(len(text), api.MAX_CHARS)
+        self.assertEqual(
+            len(api.units_json(api.text_units(text)).encode("utf-8")), target)
+        return text
+
+    def test_units_bytes(self):
+        ok = self._text_of_bytes(api.MAX_UNITS_BYTES)
+        self.assertEqual(api.build_payload({"text": ok})["n_units"], 14)
+        with self.assertRaises(api.TooLarge) as cm:
+            api.build_payload({"text": ok + "א"})
+        self.assertIn("ארוך מדי לסנכרון", str(cm.exception))
+
+    def test_units_json_matches_browser(self):
+        """כמו JSON.stringify: בלי רווחים ובלי escape לעברית."""
+        self.assertEqual(api.units_json([{"text": "א ב", "kind": "line"}]),
+                         '[{"text":"א ב","kind":"line"}]')
+
+    def test_respond_413(self):
+        payload, status = api.respond(json.dumps(
+            {"text": "\n".join(["אב"] * 3500)}).encode("utf-8"))
+        self.assertEqual(status, 413)
+        self.assertIn("יותר מדי שורות", payload["error"])
+        # ‏3,000 שורות קצרות — מעבר לגודל ה-JSON (מעטפת label/kind/chunk)
+        payload, status = api.respond(json.dumps(
+            {"text": "\n".join(["אב"] * api.MAX_UNITS)}).encode("utf-8"))
+        self.assertEqual(status, 413)
+        self.assertIn("ארוך מדי לסנכרון", payload["error"])
+
+    def test_constants_in_sync_with_worker(self):
+        """ההעתק ב-api/ וב-js/cloud.js חייב להישאר מסונכרן עם ה-worker."""
+        root = Path(__file__).resolve().parent.parent
+        spec = importlib.util.spec_from_file_location(
+            "modal_params_sync", root / "modal_worker" / "params.py")
+        params = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(params)
+        for name in ("MAX_UNITS_BYTES", "MAX_UNITS", "MAX_UNIT_TEXT"):
+            self.assertEqual(getattr(api, name), getattr(params, name), name)
+        js = (root / "js" / "cloud.js").read_text(encoding="utf-8")
+        m = re.search(r"const MAX_UNITS_BYTES = (\d+) \* (\d+);", js)
+        self.assertIsNotNone(m)
+        self.assertEqual(int(m.group(1)) * int(m.group(2)),
+                         params.MAX_UNITS_BYTES)
+
+
 class TestRespond(unittest.TestCase):
     def test_ok(self):
         payload, status = api.respond(
@@ -103,6 +185,26 @@ class TestRespond(unittest.TestCase):
         payload, status = api.respond(b'{"text": "hello"}')
         self.assertEqual(status, 400)
         self.assertRegex(payload["error"], "[א-ת]")
+
+    def test_max_words_infinity(self):
+        payload, status = api.respond(
+            '{"text": "אבג", "max_words": 1e999}'.encode("utf-8"))
+        self.assertEqual(status, 400)
+        self.assertIn("max_words", payload["error"])
+
+    def test_internal_error_hides_details(self):
+        def boom(body):
+            raise RuntimeError("סוד פנימי /etc/passwd")
+        orig, api.build_payload = api.build_payload, boom
+        try:
+            with contextlib.redirect_stderr(io.StringIO()) as err:
+                payload, status = api.respond(b'{"text": "x"}')
+        finally:
+            api.build_payload = orig
+        self.assertEqual(status, 500)
+        self.assertNotIn("סוד", payload["error"])
+        self.assertRegex(payload["error"], "[א-ת]")
+        self.assertIn("סוד פנימי", err.getvalue())
 
     def test_too_large(self):
         _, status = api.respond(b" " * (api.MAX_BODY_BYTES + 1))
