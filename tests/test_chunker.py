@@ -15,8 +15,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from chunker import (  # noqa: E402
+    build_segment,
     clean_sefaria_text,
     is_ketiv,
+    is_tefila_divine_name,
     regroup_words,
     rank_table_for,
     segments_for_pipeline,
@@ -281,6 +283,65 @@ class TestRegroupWords(unittest.TestCase):
         segs = regroup_words(words, [1, 1, 1])
         self.assertEqual(len(segs), 2)
         self.assertEqual(segs[0]["display"], "יָדָ֥יו (ידו)")
+
+
+class TestTefilaMode(unittest.TestCase):
+    """מצב תפילה (PLAN_TEFILA.md 4.1.2): מילה לא מנוקדת נקראת, ושם ה׳ בכתיב
+    הסידור נקרא "אדני". ברירת המחדל (תנ״ך) לא משתנה — ראה הבדיקות למעלה."""
+
+    ADONAI = "אֲדֹנָי"
+
+    def align(self, word, keep_niqqud=False):
+        return to_alignment_words(word, keep_niqqud, mode="tefila")
+
+    def test_unvocalized_word_is_aligned_by_letters(self):
+        self.assertEqual(self.align("ידו"), ["ידו"])
+        self.assertEqual(self.align("ידו", keep_niqqud=True), ["ידו"])
+        self.assertEqual(to_alignment_words("ידו", False), [])  # תנ״ך: כתיב
+
+    def test_unvocalized_segment_not_merged(self):
+        seg = build_segment(["ברוך", "אתה"], mode="tefila")
+        self.assertEqual(seg["align_plain"], ["ברוך", "אתה"])
+        segs = regroup_words(["בָּרוּךְ", "אתה", "הוּא"], [1, 1, 1],
+                             mode="tefila")
+        self.assertEqual(len(segs), 3)
+
+    def test_divine_name_forms(self):
+        for form in ["יְהֹוָה", "יהוה", "יְיָ", "יי", "ה'", "ה׳", "ה’",
+                     "ה',", "(ה')", "ה׳:"]:
+            self.assertTrue(is_tefila_divine_name(form), form)
+            self.assertEqual(self.align(form), ["אדני"], form)
+            self.assertEqual(self.align(form, True), [self.ADONAI], form)
+
+    def test_other_geresh_words_are_not_the_name(self):
+        for word in ["ג'", "ה'תשפ\"ו", "לַה'", "הּ", "ה", "צ'יפס", "וכו'"]:
+            self.assertFalse(is_tefila_divine_name(word), word)
+        self.assertEqual(self.align("ג'"), ["ג"])
+
+    def test_name_combination(self):
+        seg = build_segment(["ה'", "אֱלֹהֵינוּ,"], mode="tefila")
+        self.assertEqual(seg["align_plain"], ["אדני", "אלהינו"])
+        self.assertEqual(seg["align_vocalized"], [self.ADONAI, "אֱלֹהֵינוּ"])
+
+    def test_name_inside_maqaf_chain(self):
+        self.assertEqual(self.align("יְיָ" + MAQAF + "אֱלֹהִים"),
+                         ["אדני", "אלהים"])
+
+    def test_vocalized_drops_punctuation(self):
+        self.assertEqual(self.align('אַשְׁרֵי," –', True), ["אַשְׁרֵי"])
+
+    def test_yy_unchanged_in_tanakh_mode(self):
+        self.assertEqual(to_alignment_words("יְיָ", False), ["יי"])
+        self.assertEqual(to_alignment_words("ה'", False), [])  # כתיב
+
+    def test_unknown_mode_rejected(self):
+        with self.assertRaises(ValueError):
+            to_alignment_words("אָב", False, mode="siddur")
+
+    def test_accented_verse_same_in_both_modes_without_ketiv(self):
+        verse = "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃"
+        self.assertEqual(segments_for_pipeline(verse, mode="tefila"),
+                         segments_for_pipeline(verse))
 
 
 if __name__ == "__main__":

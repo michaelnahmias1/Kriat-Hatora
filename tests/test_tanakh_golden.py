@@ -320,19 +320,28 @@ class TestUnits(unittest.TestCase):
         self.assertEqual(_lists(units_to_segments(units)),
                          _lists(old_verses_to_segments([BERESHIT_1])))
 
-    def test_punct_chunk_is_a_later_task(self):
+    def test_punct_chunk_routed_to_prose_chunker(self):
+        """יחידה בלי טעמים ⇒ החותך לפי פיסוק (4.1.1) — חותך בפסיק."""
         units = [{"text": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ, עוֹד יְהַלְלוּךָ",
                   "label": "אשרי · 1", "kind": "line"}]
-        with self.assertRaises(NotImplementedError):
-            units_to_segments(units)
+        segs = units_to_segments(units)
+        self.assertEqual([s["display"] for s in segs],
+                         ["אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ,", "עוֹד יְהַלְלוּךָ"])
+        self.assertEqual({s["label"] for s in segs}, {"אשרי · 1"})
 
     def test_unknown_chunk_rejected(self):
         with self.assertRaises(ValueError):
             units_to_segments([{"text": BERESHIT_1, "chunk": "rhyme"}])
 
-    def test_tefila_mode_is_a_later_task(self):
-        with self.assertRaises(NotImplementedError):
-            units_to_segments(verse_units([BERESHIT_1]), mode="tefila")
+    def test_tefila_mode_same_on_verse_without_ketiv(self):
+        """מצב תפילה (4.1.2) על פסוק בלי כתיב — אותן מילות יישור כמו בתנ״ך."""
+        units = verse_units([BERESHIT_1, BERESHIT_2])
+        self.assertEqual(_lists(units_to_segments(units, mode="tefila")),
+                         _lists(units_to_segments(units)))
+
+    def test_unknown_mode_rejected(self):
+        with self.assertRaises(ValueError):
+            units_to_segments(verse_units([BERESHIT_1]), mode="tanach")
 
     def test_unit_start_flags_follow_units(self):
         segs = [{"unit": 0}, {"unit": 0}, {"unit": 3}, {"unit": 4}]

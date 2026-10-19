@@ -8,6 +8,10 @@
     "api/structure.py": {
       "maxDuration": 30,
       "excludeFiles": "{notebooks/**,tests/**,*.md}"
+    },
+    "api/text_segments.py": {
+      "maxDuration": 30,
+      "excludeFiles": "{notebooks/**,tests/**,*.md}"
     }
   },
   "headers": [

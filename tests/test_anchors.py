@@ -27,6 +27,9 @@ class TestNormalize(unittest.TestCase):
     def test_qere_substitution(self):
         self.assertEqual(normalize_word("אדוני"), "אדני")
 
+    def test_adoshem_substitution(self):
+        self.assertEqual(normalize_word("אדושם"), "אדני")
+
     def test_non_hebrew_dropped(self):
         self.assertEqual(normalize_word("hello 123 ..."), "")
 
