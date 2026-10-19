@@ -16,8 +16,9 @@ import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from chunker import (clean_sefaria_text, regroup_words,  # noqa: E402
-                     segments_for_pipeline, tokenize, word_accents)
+from chunker import (clean_sefaria_text, prose_segments,  # noqa: E402
+                     prose_tokens, regroup_words, segments_for_pipeline,
+                     tokenize, word_accents)
 from chunker.books import HE_TO_EN, to_english  # noqa: E402
 
 SEFARIA_BASE = "https://www.sefaria.org"
@@ -127,14 +128,24 @@ def _unit_chunk(unit: dict) -> str:
 def _chunk_unit(unit: dict, max_words: int, mode: str) -> list:
     """יחידה אחת → מקטעים לפי מצב החיתוך שלה.
 
-    זו נקודת החיבור של החותך לטקסט לא-מוטעם (4.1.1): כאן ‏"punct" ינותב
-    ל-src/chunker/prose.py. ‏mode מועבר הלאה למילות היישור (4.1.2).
+    ‏"taamim" — החותך הקיים לפי טעמי המקרא; ‏"punct" — החותך לטקסט
+    לא-מוטעם (src/chunker/prose.py). ‏mode מועבר הלאה למילות היישור (4.1.2).
     """
-    chunk = _unit_chunk(unit)
-    if chunk == "taamim":
+    if _unit_chunk(unit) == "taamim":
         return segments_for_pipeline(unit["text"], max_words)
-    raise NotImplementedError(
-        "חיתוך לפי פיסוק (chunk=\"punct\") עוד לא ממומש — משימה 4.1.1")
+    return prose_segments(unit["text"], max_words)
+
+
+def _unit_words(unit: dict) -> list:
+    """המילים הפרוזודיות של יחידה — בדיוק אלה שמופיעות בתצוגת מקטעיה.
+
+    שני החותכים מפרקים למילים קצת אחרת (החותך לפי פיסוק מדביק סימני
+    פיסוק בודדים לשכנם במקום לזרוק אותם), ולכן החלוקה המותאמת אישית
+    חייבת להשתמש באותו פירוק — אחרת ספירת המילים בדפדפן ובשרת תתפצל.
+    """
+    if _unit_chunk(unit) == "taamim":
+        return tokenize(clean_sefaria_text(unit["text"]))
+    return prose_tokens(unit["text"])
 
 
 def units_to_segments(units: list, max_words: int = 4, splits=None,
@@ -155,7 +166,7 @@ def units_to_segments(units: list, max_words: int = 4, splits=None,
     if splits:
         words, unit_of = [], []
         for ui, unit in active:
-            toks = tokenize(clean_sefaria_text(unit["text"]))
+            toks = _unit_words(unit)
             words.extend(toks)
             unit_of.extend([ui] * len(toks))
         segments = regroup_words(words, splits, unit_of)

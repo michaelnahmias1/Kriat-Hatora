@@ -320,11 +320,14 @@ class TestUnits(unittest.TestCase):
         self.assertEqual(_lists(units_to_segments(units)),
                          _lists(old_verses_to_segments([BERESHIT_1])))
 
-    def test_punct_chunk_is_a_later_task(self):
+    def test_punct_chunk_routed_to_prose_chunker(self):
+        """יחידה בלי טעמים ⇒ החותך לפי פיסוק (4.1.1) — חותך בפסיק."""
         units = [{"text": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ, עוֹד יְהַלְלוּךָ",
                   "label": "אשרי · 1", "kind": "line"}]
-        with self.assertRaises(NotImplementedError):
-            units_to_segments(units)
+        segs = units_to_segments(units)
+        self.assertEqual([s["display"] for s in segs],
+                         ["אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ,", "עוֹד יְהַלְלוּךָ"])
+        self.assertEqual({s["label"] for s in segs}, {"אשרי · 1"})
 
     def test_unknown_chunk_rejected(self):
         with self.assertRaises(ValueError):
