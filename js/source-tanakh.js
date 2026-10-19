@@ -37,10 +37,17 @@ async function loadText() {
   }
 }
 
+/* תצוגת הטקסט שנטען — משותפת לכל המקורות; טקסט חופשי מציג "שורה N"
+   במקום "פסוק", והנחיה בלי "טעמי המקרא" (source-text.js) */
+const SEG_HINT_TANAKH = $("segHint").textContent;
+const SEG_HINT_TEXT = "בדיקת עיניים: החיתוך לפי סופי השורות וסימני הפיסוק — כל שורה כאן תהיה כתובית אחת. אפשר לשנות את החלוקה בכפתור העריכה שבפינה.";
 function renderTextLoaded() {
   const d = S.data;
-  $("loadOk").textContent =
-    `נטען: ${d.ref} · ${d.n_verses} פסוקים · ${d.segments.length} כתוביות · גרסה: ${d.version}`;
+  const free = isFreeText();
+  $("loadOk").textContent = free
+    ? `נטען: ${readFreeText().title || "טקסט חופשי"} · ${d.n_units} שורות · ${d.segments.length} כתוביות`
+    : `נטען: ${d.ref} · ${d.n_verses} פסוקים · ${d.segments.length} כתוביות · גרסה: ${d.version}`;
+  $("segHint").textContent = free ? SEG_HINT_TEXT : SEG_HINT_TANAKH;
   $("editSplitBtn").hidden = false;
   const list = $("segPreview");
   list.innerHTML = "";
@@ -48,9 +55,13 @@ function renderTextLoaded() {
   d.segments.forEach((seg, i) => {
     const row = document.createElement("div");
     row.className = "segrow";
-    const chip = seg.verse !== lastVerse ? `<span class="vchip">פסוק ${seg.verse}</span>` : "";
+    const chip = seg.verse === lastVerse ? ""
+      : free ? `<span class="vchip">${escapeHtml(unitLabel(seg.verse))}</span>`
+      : `<span class="vchip">פסוק ${seg.verse}</span>`;
     lastVerse = seg.verse;
-    row.innerHTML = `<span class="idx">${i + 1}</span>${chip}<span class="txt">${seg.display}</span>`;
+    // טקסט שהמשתמש הדביק — תמיד מוצג כטקסט, לא כ-HTML
+    const shown = free ? escapeHtml(seg.display) : seg.display;
+    row.innerHTML = `<span class="idx">${i + 1}</span>${chip}<span class="txt">${shown}</span>`;
     list.appendChild(row);
   });
   $("segPreviewWrap").hidden = false;

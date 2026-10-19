@@ -12,6 +12,7 @@ const S = {
   cloudJob: null,    // עבודת ענן פעילה {id, t0, est, push} — שורדת סגירת האפליקציה
   splits: null,      // חלוקה מותאמת אישית: גודל כל כתובית במילים (null = לפי הטעמים)
   baseSplits: null,  // החלוקה המקורית לפי הטעמים — לכפתור האיפוס
+  source: "tanakh",  // הלשונית הפעילה: tanakh | text (מקור הטקסט שנטען — dataSource())
 };
 
 /* ---------- עזרי תצוגה ---------- */
@@ -55,6 +56,8 @@ function save() {
       query: readQuery(), data: S.data, times: S.times,
       endTime: S.endTime, audioName: S.audioName, report: S.report,
       cloudJob: S.cloudJob, splits: S.splits, baseSplits: S.baseSplits,
+      // ‏source חדש — מצב שמור בלי source משוחזר כתנ״ך (main.js)
+      source: S.source, freeText: readFreeText(),
     }));
   } catch (e) {}
 }
