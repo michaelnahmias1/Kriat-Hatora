@@ -62,9 +62,10 @@ class TestUiListMatchesCanon(unittest.TestCase):
         self.assertEqual(options, [he for he, _ in books.ALL_BOOKS])
 
     def test_index_html_fallback_chapters(self):
+        # FALLBACK_CHAPTERS עבר עם קוד שלב 1 ל-js/source-tanakh.js (פיצול index.html)
         import re
         html = (Path(__file__).resolve().parent.parent
-                / "index.html").read_text(encoding="utf-8")
+                / "js" / "source-tanakh.js").read_text(encoding="utf-8")
         m = re.search(r"const FALLBACK_CHAPTERS = \{(.*?)\};", html, re.S)
         self.assertIsNotNone(m)
         names = re.findall(r'"([^"]+)":', m.group(1))
