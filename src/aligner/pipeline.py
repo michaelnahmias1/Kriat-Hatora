@@ -21,6 +21,7 @@ from chunker import (ALIGN_MODES, clean_sefaria_text,  # noqa: E402
                      prose_tokens, regroup_words, segments_for_pipeline,
                      tokenize, word_accents)
 from chunker.books import HE_TO_EN, to_english  # noqa: E402
+from chunker import taamim  # noqa: E402
 
 SEFARIA_BASE = "https://www.sefaria.org"
 # תאימות לאחור לקוד שייבא את המילון מכאן — כיום כל התנ״ך (chunker/books.py)
@@ -115,12 +116,18 @@ def verse_units(verses: list) -> list:
              "chunk": "taamim"} for vi, v in enumerate(verses, 1)]
 
 
+# ‏סוף-פסוק (׃) ופסק (׀) הם סימני פיסוק ולא טעמים: נפוצים גם בטקסט סידור
+# לא-מוטעם, ולכן לבדם אינם מעידים על טעמי מקרא.
+_NOT_TAAMIM_EVIDENCE = frozenset({taamim.SOF_PASUQ, taamim.PASEQ})
+
+
 def _unit_chunk(unit: dict) -> str:
     """מצב החיתוך של יחידה: כפוי בשדה chunk, אחרת לפי נוכחות טעמים."""
     chunk = unit.get("chunk")
     if chunk is None:
         words = tokenize(clean_sefaria_text(unit["text"]))
-        chunk = "taamim" if any(word_accents(w) for w in words) else "punct"
+        accented = any(word_accents(w) - _NOT_TAAMIM_EVIDENCE for w in words)
+        chunk = "taamim" if accented else "punct"
     if chunk not in CHUNK_MODES:
         raise ValueError(f"מצב חיתוך לא מוכר: {chunk!r}")
     return chunk

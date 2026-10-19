@@ -193,6 +193,12 @@ class TestRoutingInPipeline(unittest.TestCase):
         segs = units_to_segments([{"text": ASHREI, "kind": "paragraph"}])
         self.assertEqual(displays(segs), displays(prose_segments(ASHREI)))
 
+    def test_sof_pasuq_alone_is_not_taamim(self):
+        """‏׃ בסוף שורת סידור אינו טעם — הפסיק עדיין חותך."""
+        text = "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ, עוֹד יְהַלְלוּךָ סֶּלָה׃"
+        segs = units_to_segments([{"text": text, "kind": "line"}])
+        self.assertEqual(segs[0]["display"], "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ,")
+
     def test_forced_punct_on_accented_text(self):
         segs = units_to_segments(
             [{"text": self.VERSE, "kind": "line", "chunk": "punct"}],
