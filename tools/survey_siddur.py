@@ -16,9 +16,9 @@
   לא-מאומתים (נבדקים מול ‏/api/name ו-/api/v2/raw/index), לא עובדה.
 - מבנה התשובות של ה-API מטופל בהגנה (‏.get, בדיקות טיפוס) — כל מבנה לא
   צפוי נרשם בתמונת המצב ובדוח במקום להפיל את הריצה.
-- נתיבי ה-endpoint עצמם (למטה, ENDPOINTS) הם הנחת עבודה: ‏`/api/texts/versions`
-  ו-`/api/v3/texts` כבר בשימוש בצינור (src/aligner/pipeline.py); השאר
-  ⚠️ לאמת — אם אחד מהם מחזיר שגיאה, הדוח יראה זאת בטבלת "שגיאות".
+- נתיבי ה-endpoint עצמם (למטה, ENDPOINTS) — ✅ אומתו בריצה האמיתית
+  (19.10.2026, docs/siddur_survey.md): כולם עונים; אם אחד מהם ישתנה, הדוח
+  יראה זאת בטבלת "שגיאות".
 
 הפונקציות שמנתחות נתונים (walk_toc, walk_schema, analyze_texts, render_report
 וכו') טהורות ונבדקות בלי רשת ב-tests/test_survey_siddur.py.
@@ -43,7 +43,9 @@ SEFARIA_BASE = "https://www.sefaria.org"
 USER_AGENT = ("Kriat-Hatora-survey/1.0 "
               "(+https://github.com/michaelnahmias1/Kriat-Hatora)")
 
-# ⚠️ לאמת — נתיבים שלא נבדקו מהסביבה הזו (sefaria.org חסום בה, שאלה 8.1).
+# ✅ אומתו בריצה האמיתית 19.10.2026: toc/index/versions/texts_v3/name עונים 200.
+# ‏v2/raw/index החזיר רשומה ל-114 מ-115 האינדקסים; לאחד (Machzor Yom Ha'atzmaut
+# & Yom Yerushalyim) גם index_fallback החזיר 200 עם שדה error — ראה הדוח.
 ENDPOINTS = {
     "toc": "/api/index",                        # עץ התוכן המלא
     "index": "/api/v2/raw/index/{title}",       # רשומת אינדקס + schema
@@ -184,8 +186,9 @@ def is_default_node(node: dict) -> bool:
 
 
 def build_ref(index_title: str, path: list) -> str:
-    """ref לצומת: "Index, Node, Sub" — ⚠️ פורמט Sefaria לצמתים מורכבים, לאמת
-    בסקר (הדוגמאות שנמשכות בפועל מראות אם הוא עובד). צומת default לא נכנס."""
+    """ref לצומת: "Index, Node, Sub" — ✅ אומת בריצה האמיתית: ‏ref כזה לעלה
+    עונה 200 ב-api/v3/texts; לצומת ביניים — 400 ("complex book-level ref").
+    הכותרים (titles), לא ה-key, הם שנכנסים ל-ref. צומת default לא נכנס."""
     return ", ".join([index_title] + [p for p in path if p])
 
 
@@ -516,7 +519,8 @@ def describe_v3_response(status: int, data) -> dict:
         out["versionTitle"] = v0.get("versionTitle", "")
         out["license"] = v0.get("license", "")
         out["shape"] = text_shape(v0.get("text"))
-    for k in ("ref", "heRef", "sectionRef", "isComplex", "spanningRefs"):
+    for k in ("ref", "heRef", "sectionRef", "isComplex", "isSpanning",
+              "spanningRefs"):
         if k in data:
             out[k] = data[k] if not isinstance(data[k], list) else data[k][:5]
     return out
@@ -596,8 +600,9 @@ def render_report(snapshot: dict) -> str:
     probes = snapshot.get("v3_probes", [])
     if probes:
         L += ["## התנהגות `api/v3/texts` על refs מורכבים וטווחים", "",
-              "| בדיקה | ref | HTTP | שגיאה/אזהרה | צורת text | ref שהוחזר |",
-              "|---|---|---|---|---|---|"]
+              "| בדיקה | ref | HTTP | שגיאה/אזהרה | צורת text | ref שהוחזר "
+              "| גרסת ברירת המחדל |",
+              "|---|---|---|---|---|---|---|"]
         for p in probes:
             r = p.get("result", {})
             sh = r.get("shape") or {}
@@ -606,7 +611,8 @@ def render_report(snapshot: dict) -> str:
             L.append(f"| {_cell(p.get('kind'))} | `{_cell(p.get('ref'))}` "
                      f"| {r.get('http_status', '—')} "
                      f"| {_cell(r.get('error') or r.get('warnings'))} "
-                     f"| {_cell(shape)} | {_cell(r.get('ref'))} |")
+                     f"| {_cell(shape)} | {_cell(r.get('ref'))} "
+                     f"| {_cell(r.get('versionTitle'))} |")
         L.append("")
 
     errors = snapshot.get("errors", [])
@@ -649,12 +655,22 @@ def _render_index_detail(title: str, rec: dict) -> list:
                 f"«{_cell(x)}»" for x in agg["paren_examples"]))
         L.append(f"- מילות הוראה: {_fmt_counter(agg.get('instruction_hints', {}), 8)}")
         L.append(f"- פיסוק: {_fmt_counter(agg.get('punctuation', {}), 8)}")
-    for s in rec.get("samples", [])[:6]:
+    samples = rec.get("samples", [])
+    empty = sum(1 for s in samples
+                if s.get("http_status") == 200 and not s.get("shape"))
+    if empty:
+        # נמצא בריצה האמיתית: v3 מחזיר 200 עם versions=[] (ואזהרה) כשלגרסה
+        # המבוקשת אין טקסט בצומת הזה — גרסאות רבות מכסות רק חלק מהעץ.
+        L.append(f"- דגימות בלי טקסט בגרסה המבוקשת (HTTP 200, ‏versions ריק): "
+                 f"{empty}/{len(samples)}")
+    for s in samples[:6]:
         sh = s.get("shape") or {}
         L.append(f"  - דגימה `{_cell(s.get('ref'))}` [{_cell(s.get('version'))}]: "
                  f"HTTP {s.get('http_status', '—')}, קינון {sh.get('nesting', '—')}, "
                  f"{sh.get('n_strings', '—')} מחרוזות"
-                 + (f" — שגיאה: {_cell(s.get('error'))}" if s.get("error") else ""))
+                 + (f" — שגיאה: {_cell(s.get('error'))}" if s.get("error") else "")
+                 + (" — אין טקסט בגרסה הזו" if s.get("http_status") == 200
+                    and not sh and not s.get("error") else ""))
     L.append("")
     return L
 
@@ -694,6 +710,8 @@ class Client:
         if cp and cp.exists():
             self.n_cached += 1
             rec = json.loads(cp.read_text(encoding="utf-8"))
+            if rec["status"] >= 400:  # גם ריצה מה-cache מדווחת על שגיאות 4xx
+                self.errors.append({"url": url, "error": f"HTTP {rec['status']}"})
             return rec["status"], rec["data"]
         if self.offline:
             return 0, None
@@ -808,7 +826,8 @@ def survey_index(client: Client, entry: dict, samples: int,
             desc = describe_v3_response(st, data)
             sample = {"ref": leaf["ref"], "version": vt or "(ברירת מחדל)",
                       "http_status": st, "shape": desc.get("shape"),
-                      "error": desc.get("error")}
+                      "error": desc.get("error"),
+                      "warnings": desc.get("warnings")}
             if isinstance(data, dict) and isinstance(data.get("versions"), list) \
                     and data["versions"]:
                 v0 = data["versions"][0]
@@ -888,11 +907,16 @@ def run_survey(client: Client, limit: int = None, nusach: str = None,
 
     log("4/4 בדיקות התנהגות api/v3/texts…")
     probed = 0
-    for title, rec in snap["indexes"].items():
+    # קודם הסידורים עצמם (קטגוריה Liturgy/Siddur) — בריצה האמיתית הראשונים
+    # בסדר הגילוי היו פירושים על משנה תורה, והבדיקות לא אמרו דבר על הסידור.
+    ordered = sorted(snap["indexes"].items(),
+                     key=lambda kv: list(kv[1].get("categories", []))[:2]
+                     != ["Liturgy", "Siddur"])
+    for title, rec in ordered:
         if rec.get("nodes") and rec["schema_summary"].get("max_depth", 0) >= 1:
             snap["v3_probes"] += v3_probes(client, title, rec["nodes"])
             probed += 1
-            if probed >= 2:
+            if probed >= 3:
                 break
     snap["errors"] = client.errors
     return snap
