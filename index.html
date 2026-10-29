@@ -131,44 +131,51 @@
       <p class="hint">כל שורה נחתכת לכתוביות בנפרד, וכתובית לא חוצה שורה. הכותרת משמשת לשם קובץ הכתוביות ולהתראת הסיום.</p>
       <button class="mt" id="textLoadBtn">טען את הטקסט</button>
     </div>
-    <!-- ספריית התפילות (PLAN_TEFILA.md 4.2.4): נוסח ← קיצורים / עץ / חיפוש ← קטע ← טווח פסקאות -->
+    <!-- ספריית התפילות (PLAN_TEFILA.md 4.2.4): חיפוש (למעלה) / נוסח ← קיצורים / עץ ← קטע ← טווח פסקאות -->
     <div id="srcSiddur" hidden>
-      <label for="sdNusach">נוסח</label>
-      <select id="sdNusach"><option value="">בחרו נוסח…</option></select>
-      <div id="sdBrowse" hidden>
-        <div id="sdPopularWrap" class="sdBlock mt" hidden>
-          <div class="range-title">קטעים נפוצים</div>
-          <div id="sdPopular" class="sdPopular"></div>
-          <p class="hint" id="sdPopularNote" hidden></p>
-        </div>
-        <label for="sdSearch" class="mt">חיפוש בסידור</label>
+      <div class="sdSearchBox" role="search">
+        <span class="sdSearchIc" aria-hidden="true">🔍</span>
         <input type="search" id="sdSearch" maxlength="100" autocomplete="off" enterkeyhint="search"
-          placeholder="שם הקטע או המילים הראשונות">
-        <nav id="sdCrumbs" class="sdCrumbs mt" aria-label="מיקום בסידור"></nav>
-        <div id="sdList" class="sdList"></div>
+          aria-label="חיפוש בסידור" placeholder="חיפוש: אשרי, קדיש, נשמת…">
+        <button type="button" id="sdSearchClear" aria-label="ניקוי החיפוש" hidden>✕</button>
       </div>
-      <div id="sdLeaf" hidden>
-        <div class="sdLeafHead">
-          <button type="button" id="sdBack" class="small secondary">→ חזרה לרשימה</button>
-          <h3 id="sdLeafTitle"></h3>
-        </div>
-        <p class="hint" id="sdLeafMeta"></p>
-        <div id="sdRange" hidden>
-          <div class="row mt">
-            <div>
-              <label for="sdFrom">מפסקה</label>
-              <select id="sdFrom"></select>
-            </div>
-            <div>
-              <label for="sdTo">עד פסקה</label>
-              <select id="sdTo"></select>
-            </div>
+      <label class="sdAll" id="sdAllWrap" hidden><input type="checkbox" id="sdAll"> חיפוש בכל הנוסחים</label>
+      <div id="sdResults" class="sdResults" hidden aria-live="polite"></div>
+      <div id="sdMain">
+        <label for="sdNusach" class="mt">נוסח</label>
+        <select id="sdNusach"><option value="">בחרו נוסח…</option></select>
+        <div id="sdBrowse" hidden>
+          <div id="sdPopularWrap" class="sdBlock mt" hidden>
+            <div class="range-title">קטעים נפוצים</div>
+            <div id="sdPopular" class="sdPopular"></div>
+            <p class="hint" id="sdPopularNote" hidden></p>
           </div>
-          <p class="hint">סמנו את הפסקאות שנאמרות בהקלטה. פסקאות באפור הן הוראות — הן מוצגות אבל לא נכנסות לכתוביות.</p>
-          <div id="sdParas" class="sdParas"></div>
+          <nav id="sdCrumbs" class="sdCrumbs mt" aria-label="מיקום בסידור"></nav>
+          <div id="sdList" class="sdList"></div>
         </div>
-        <button class="mt" id="sdLoadBtn">טען את הקטע</button>
-        <button class="secondary mt" id="sdCopyBtn">📝 העתק לטקסט חופשי (לעריכת הנוסח)</button>
+        <div id="sdLeaf" hidden>
+          <div class="sdLeafHead">
+            <button type="button" id="sdBack" class="small secondary">→ חזרה לרשימה</button>
+            <h3 id="sdLeafTitle"></h3>
+          </div>
+          <p class="hint" id="sdLeafMeta"></p>
+          <div id="sdRange" hidden>
+            <div class="row mt">
+              <div>
+                <label for="sdFrom">מפסקה</label>
+                <select id="sdFrom"></select>
+              </div>
+              <div>
+                <label for="sdTo">עד פסקה</label>
+                <select id="sdTo"></select>
+              </div>
+            </div>
+            <p class="hint">סמנו את הפסקאות שנאמרות בהקלטה. פסקאות באפור הן הוראות — הן מוצגות אבל לא נכנסות לכתוביות.</p>
+            <div id="sdParas" class="sdParas"></div>
+          </div>
+          <button class="mt" id="sdLoadBtn">טען את הקטע</button>
+          <button class="secondary mt" id="sdCopyBtn">📝 העתק לטקסט חופשי (לעריכת הנוסח)</button>
+        </div>
       </div>
     </div>
     <div id="loadMsg"></div>

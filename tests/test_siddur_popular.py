@@ -28,9 +28,11 @@ _SPEC.loader.exec_module(shared)
 api = shared.api
 
 HEBREW = re.compile(r"[א-ת]")
-# הרשימה בתוכנית (4.2.3); "קדיש" — על סוגיו
+# הרשימה בתוכנית (4.2.3); "קדיש" — על סוגיו. אושרה ב-29.10.2026 (8.16) בתוספת
+# נשמת וישתבח; "שוכן עד" (ובעדות המזרח "שועת עניים") — המקום שהחזן מתחיל בו
 PLAN_ITEMS = ["קבלת שבת", "לכה דודי", "אשרי", "קדיש", "קדושה", "הלל", "עלינו",
-              "אדון עולם", "יגדל", "אין כאלהינו", "אנעים זמירות", "אבינו מלכנו"]
+              "אדון עולם", "יגדל", "אין כאלהינו", "אנעים זמירות", "אבינו מלכנו",
+              "נשמת", "ישתבח", "שוכן עד", "שועת עניים"]
 
 
 def load():
@@ -47,9 +49,49 @@ class TestPopularFile(unittest.TestCase):
             for e in items:
                 yield nusach, e
 
-    def test_draft_and_note(self):
-        self.assertIs(self.pop["draft"], True)  # ממתין לאישור בעל הפרויקט (8.16)
-        self.assertIn("טיוטה", self.pop["note"])
+    def test_approved_and_note(self):
+        self.assertIs(self.pop["draft"], False)  # אושר ע"י בעל הפרויקט (8.16)
+        self.assertIn("אושרה", self.pop["note"])
+        self.assertIn("29.10.2026", self.pop["note"])
+        self.assertNotIn("טיוטה", self.pop["note"])
+
+    def test_owner_additions_in_every_nusach(self):
+        """נשמת וישתבח בכל נוסח, ומקום הפתיחה של החזן (שוכן עד / שועת עניים)."""
+        for nusach, items in self.pop["nusachim"].items():
+            labels = [e["label"] for e in items]
+            with self.subTest(nusach=nusach):
+                self.assertIn("נשמת", labels)
+                self.assertIn("ישתבח", labels)
+                self.assertTrue({"שוכן עד", "שועת עניים"} & set(labels))
+                by = {e["label"]: e for e in items}
+                self.assertTrue(by["נשמת"]["first"].startswith("נִשְׁמַת כָּל"))
+                self.assertTrue(by["ישתבח"]["first"].startswith("יִשְׁתַּבַּח שִׁמְךָ"))
+
+    def test_nishmat_ranges(self):
+        """הטווחים שנבחרו מול הטקסט האמיתי (‏tools/verify_siddur_popular.py,
+        ‏29.10.2026): נשמת — עד סוף הגוש שלפני ישתבח; שוכן עד/שועת עניים — מאותו
+        גוש, מהמקום שהחזן מתחיל בו. באשכנז נשמת ושוכן עד הם עלים נפרדים (אין
+        טווח בין עלים)."""
+        nus = self.pop["nusachim"]
+        get = lambda n, label: next(e for e in nus[n] if e["label"] == label)
+        edot, sef, ash = (get("edot-hamizrach", "נשמת"), get("sefard", "נשמת"),
+                          get("ashkenaz", "נשמת"))
+        self.assertEqual((edot["from"], edot["to"]), (20, 28))
+        self.assertEqual((sef["from"], sef["to"]), (90, 97))
+        self.assertNotIn("from", ash)  # העלה "נשמת כל חי" כולו
+        sh = get("edot-hamizrach", "שועת עניים")
+        self.assertEqual((sh["path"], sh["from"], sh["to"]), (edot["path"], 23, 28))
+        self.assertTrue(sh["first"].startswith("שַׁוְעַת עֲנִיִּים"))
+        sa = get("sefard", "שוכן עד")
+        self.assertEqual((sa["path"], sa["from"], sa["to"]), (sef["path"], 96, 97))
+        self.assertTrue(sa["first"].startswith("שׁוֹכֵן עַד"))
+        aa = get("ashkenaz", "שוכן עד")
+        self.assertTrue(aa["path"].endswith("/shochen-ad"))
+        self.assertEqual((aa["from"], aa["to"]), (2, aa["paragraph_count"]))
+        # הגוש נגמר במקהלות — הפסקה שלפני ישתבח
+        for e in (edot, sef, sh, sa, aa):
+            self.assertRegex(re.sub("[\u0591-\u05c7]", "", e["last"]),
+                             "^ו?במקהלו")
 
     def test_all_nusachim(self):
         self.assertEqual(set(self.pop["nusachim"]),
@@ -119,7 +161,7 @@ class TestPopularApi(shared.SiddurTestCase):
         payload, headers = self.ok(popular="1", nusach="sefard")
         entries = load()["nusachim"]["sefard"]
         self.assertEqual(payload["nusach"], "sefard")
-        self.assertIs(payload["draft"], True)
+        self.assertIs(payload["draft"], False)
         self.assertEqual([i["label"] for i in payload["items"]],
                          [e["label"] for e in entries])
         ld = next(i for i in payload["items"] if i["label"] == "לכה דודי")

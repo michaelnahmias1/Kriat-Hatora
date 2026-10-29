@@ -968,6 +968,7 @@ async function shot(page, profile, name) {
 }
 const SEFARD_KS = "sefard/shabbat/kabbalat-shabbat";
 const SEFARD_ASHREI = "sefard/weekday/weekday-shacharit/ashrei";      // ‏versions ריק ⇐ 502
+const EDOT_ASHREI = "edot-hamizrach/weekday/weekday-shacharit/ashrei"; // מוקלט (Shaliehsaboo)
 const DAAT_ASHER = "ashkenaz/general/berachot/asher-yatzar-etchem-badin";  // לא מנוקד ⇐ 422
 const UNAVAILABLE = "ashkenaz/weekday/shacharit/torah-reading/reading-from-sefer/prayers-for-welfare-of-the-people";
 const siddurCalls = (cloud, pred = () => true) => cloud.api.filter(c => c.kind === "siddur" && pred(c.params));
@@ -1001,6 +1002,12 @@ async function flowSiddur(browser, base, profile) {
     for (const id of ["sdNusach", "sdSearch", "sdFrom", "sdTo"])
       assert.ok(await page.evaluate(id => parseFloat(getComputedStyle(document.getElementById(id)).fontSize) >= 16, id), id + " ≥16px");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    // החיפוש — הדבר הראשון בלשונית, גלוי עוד לפני בחירת נוסח, גדול
+    assert.equal(await page.evaluate(() => document.querySelector("#srcSiddur > :first-child").contains(document.getElementById("sdSearch"))), true);
+    assert.equal(await page.isVisible("#sdSearch"), true);
+    assert.equal(await page.getAttribute("#sdSearch", "placeholder"), "חיפוש: אשרי, קדיש, נשמת…");
+    assert.ok(await page.evaluate(() => document.getElementById("sdSearch").getBoundingClientRect().height >= 48), "תיבת חיפוש גדולה");
+    assert.equal(await visible(page, "sdAllWrap"), false, "בלי נוסח — ממילא בכל הנוסחים");
     await shot(page, profile, "siddur-1-tab");
   });
 
@@ -1009,8 +1016,14 @@ async function flowSiddur(browser, base, profile) {
     await page.waitForFunction(n => document.querySelectorAll("#sdPopular .sdPop").length === n, pop.items.length);
     await page.waitForFunction(n => document.querySelectorAll("#sdList .sdItem").length === n, sefard.children.length);
     assert.deepEqual(await page.$$eval("#sdPopular .sdPop", b => b.map(x => x.textContent)), pop.items.map(i => i.label));
-    assert.ok(pop.items.length >= 10 && pop.draft);
-    assert.equal(await visible(page, "sdPopularNote"), true, "הערת הטיוטה");
+    assert.ok(pop.items.length >= 10 && !pop.draft, "הרשימה אושרה (8.16)");
+    assert.ok(["נשמת", "שוכן עד", "ישתבח"].every(l => pop.items.some(i => i.label === l)));
+    assert.equal(await visible(page, "sdPopularNote"), true);
+    assert.ok(!(await txt(page, "#sdPopularNote")).includes("ממתינה לאישור"));
+    // סדר הלשונית: חיפוש ← נוסח ← קיצורים
+    const top = id => page.evaluate(id => document.getElementById(id).getBoundingClientRect().top, id);
+    assert.ok(await top("sdSearch") < await top("sdNusach") && await top("sdNusach") < await top("sdPopular"));
+    assert.equal(await visible(page, "sdAllWrap"), true);
     assert.deepEqual(await page.$$eval("#sdCrumbs button", b => b.map(x => x.textContent)), ["ספרד"]);
     assert.deepEqual(await page.$$eval("#sdList .sdItem .tt", t => t.map(x => x.firstChild.textContent)), sefard.children.map(c => c.title));
     const calls = siddurCalls(cloud).map(c => c.params);
@@ -1019,6 +1032,7 @@ async function flowSiddur(browser, base, profile) {
     assert.deepEqual((await lsState(page)).siddur, { nusach: "sefard", path: "sefard", leaf: null });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
     await shot(page, profile, "siddur-2-nusach-shortcuts");
+    await shot(page, profile, "search-1-top");
   });
 
   await step(`[${profile}] תפילה: ניווט בעץ (תיקייה, מיקום, חזרה)`, async () => {
@@ -1037,20 +1051,30 @@ async function flowSiddur(browser, base, profile) {
     assert.equal(await page.$$eval("#sdList .sdItem", i => i.length), sefard.children.length);
   });
 
-  await step(`[${profile}] תפילה: חיפוש עם השהיה — בקשה אחת, תוצאות עם מיקום, ניקוי חוזר לעץ`, async () => {
+  await step(`[${profile}] תפילה: חיפוש עם השהיה — בקשה אחת, קיצורים ואחריהם קטעים, ניקוי חוזר לעץ`, async () => {
     const before = siddurCalls(cloud, p => "q" in p).length;
     await page.locator("#sdSearch").pressSequentially("אשרי", { delay: 40 });
-    await page.waitForSelector(`#sdList .sdItem[data-path="${SEFARD_ASHREI}"]`);
+    await page.waitForSelector(`#sdResults .sdItem.leaf[data-path="${SEFARD_ASHREI}"]`);
     const qs = siddurCalls(cloud, p => "q" in p).slice(before).map(c => c.params);
     assert.deepEqual(qs, [{ q: "אשרי", nusach: "sefard" }], "השהיה: בקשת חיפוש אחת להקלדה");
     const res = mockApi("siddur", { q: "אשרי", nusach: "sefard" }).body;
-    assert.equal(await page.$$eval("#sdList .sdItem", i => i.length), res.results.length);
+    assert.ok(res.shortcuts.length >= 1 && res.results.length >= 1);
+    // קיצורים קודם (כוכב), ואחריהם הקטעים מהסידור
+    assert.deepEqual(await page.$$eval("#sdResults .sdResHead", h => h.map(x => x.textContent)), ["קיצורים", "בסידור"]);
+    const rows = await page.$$eval("#sdResults .sdItem", i => i.map(x => [x.classList.contains("sc"), x.dataset.path]));
+    assert.deepEqual(rows, [...res.shortcuts.map(s => [true, s.path]), ...res.results.map(r => [false, r.path])]);
+    assert.equal(await page.$eval("#sdResults .sdItem.sc .tt", t => t.firstChild.textContent), "אשרי");
     const hit = res.results.find(r => r.path === SEFARD_ASHREI);
-    assert.equal(await page.locator(`#sdList .sdItem[data-path="${SEFARD_ASHREI}"] small`).innerText(), hit.breadcrumb.slice(1, -1).join(" › "));
-    assert.equal(await visible(page, "sdCrumbs"), false);
+    assert.equal(await page.locator(`#sdResults .sdItem.leaf[data-path="${SEFARD_ASHREI}"] small`).innerText(), hit.breadcrumb.slice(1, -1).join(" › "));
+    // בזמן חיפוש — רק התוצאות; הנוסח, הקיצורים והעץ מוסתרים
+    assert.equal(await visible(page, "sdMain"), false);
+    assert.equal(await page.isVisible("#sdSearchClear"), true);
     const nApi = cloud.api.length;
-    await page.fill("#sdSearch", "");
-    await page.waitForFunction(() => !document.getElementById("sdCrumbs").hidden);
+    await page.click("#sdSearchClear");
+    await page.waitForFunction(() => document.getElementById("sdResults").hidden);
+    assert.equal(await val(page, "sdSearch"), "");
+    assert.equal(await visible(page, "sdMain"), true);
+    assert.equal(await visible(page, "sdCrumbs"), true);
     assert.equal(await page.$$eval("#sdList .sdItem", i => i.length), sefard.children.length);
     assert.equal(cloud.api.length, nApi, "חזרה לעץ בלי בקשה נוספת");
   });
@@ -1298,6 +1322,53 @@ async function flowSiddur(browser, base, profile) {
     const expected = errors.filter(e => /status of (413|422|502|504)/.test(e));
     assert.equal(expected.length, 4, errors.join("\n"));
     for (const e of expected) errors.splice(errors.indexOf(e), 1);
+  });
+
+  await step(`[${profile}] תפילה: שם נרדף ("שיר הכבוד", "תהלה לדוד") ⇐ הקיצור; בכל הנוסחים; הקשה טוענת`, async () => {
+    // "שיר הכבוד" ⇐ הקיצור "אנעים זמירות" (הכותרת בספרד שונה)
+    await page.fill("#sdSearch", "שיר הכבוד");
+    await page.waitForFunction(() => (document.querySelector("#sdResults .sdItem.sc .tt") || {}).firstChild?.textContent === "אנעים זמירות");
+    const kavod = mockApi("siddur", { q: "שיר הכבוד", nusach: "sefard" }).body;
+    assert.equal(kavod.shortcuts[0].label, "אנעים זמירות");
+    assert.equal(await page.$eval("#sdResults .sdItem.sc .tt", t => t.firstChild.textContent), "אנעים זמירות");
+    assert.ok((await page.$eval("#sdResults .sdItem.sc small", s => s.textContent)).includes("מתוך «מוסף של שבת»"));
+    await shot(page, profile, "search-2-alias");
+    // "תהלה לדוד" בכל הנוסחים: הנוכחי (ספרד) קודם, עם שם הנוסח בכל שורה
+    await page.fill("#sdSearch", "תהלה לדוד");
+    await page.check("#sdAll");
+    await page.waitForFunction(() => [...document.querySelectorAll("#sdResults .sdItem.sc small")].some(s => s.textContent.startsWith("עדות המזרח")));
+    const q = siddurCalls(cloud, p => p.q === "תהלה לדוד").at(-1).params;
+    assert.deepEqual(q, { q: "תהלה לדוד", nusach: "sefard", all: "1" });
+    const all = mockApi("siddur", q).body;
+    assert.deepEqual(all.shortcuts.map(s => [s.nusach, s.label]).slice(0, 3),
+      [["sefard", "אשרי"], ["edot-hamizrach", "אשרי"], ["ashkenaz", "אשרי"]]);
+    await shot(page, profile, "search-3-all-nusachim");
+    // הקשה על הקיצור של עדות המזרח ⇐ עוברים לנוסח שלו, והקטע נטען עם הטווח
+    const edot = all.shortcuts.find(s => s.nusach === "edot-hamizrach");
+    assert.equal(edot.path, EDOT_ASHREI);
+    await page.locator("#sdResults .sdItem.sc").nth(all.shortcuts.indexOf(edot)).click();
+    await page.waitForFunction(n => document.querySelectorAll("#sdParas .sdPara").length === n, 6);
+    assert.equal(await val(page, "sdSearch"), "");
+    assert.equal(await visible(page, "sdResults"), false);
+    assert.equal(await val(page, "sdNusach"), "edot-hamizrach");
+    assert.equal(await txt(page, "#sdLeafTitle"), "אשרי");
+    assert.deepEqual(await checkedParas(page), range(edot.from, edot.to));
+    assert.deepEqual(leafCalls(cloud, EDOT_ASHREI).at(-1).params, { path: EDOT_ASHREI, from: String(edot.from), to: String(edot.to) });
+    await page.click("#sdLoadBtn");
+    await page.waitForFunction(() => document.getElementById("loadOk").textContent.startsWith("נטען: אשרי"));
+    assert.equal(await page.evaluate(() => dataSource()), "siddur");
+    const st = (await lsState(page)).siddur;
+    assert.equal(st.nusach, "edot-hamizrach");
+    assert.equal(st.leaf.path, EDOT_ASHREI);
+    await page.uncheck("#sdAll");
+    // סבילות לכתיב: "ישתבך" ⇐ ישתבח
+    await page.fill("#sdSearch", "ישתבך");
+    await page.waitForFunction(() => [...document.querySelectorAll("#sdResults .sdItem.sc .tt")].some(t => t.firstChild.textContent === "ישתבח"));
+    // ניקוי ⇐ הקטע שנבחר עדיין שם
+    await page.click("#sdSearchClear");
+    assert.equal(await visible(page, "sdLeaf"), true);
+    assert.equal(await txt(page, "#sdLeafTitle"), "אשרי");
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
   });
 
   await step(`[${profile}] תפילה: מצב שמור ישן (טקסט חופשי, בלי siddur) משוחזר כמו קודם`, async () => {

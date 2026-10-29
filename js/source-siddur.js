@@ -1,8 +1,9 @@
 "use strict";
 /* שלב 1 — מקור "תפילה": ספריית הסידור (PLAN_TEFILA.md 4.2.4)
 
-   נוסח (נזכר) ← קטעים נפוצים / ניווט בעץ / חיפוש ← קטע (עלה) ← טווח פסקאות
-   ← "טען את הקטע". מכאן הכול כמו בטקסט חופשי: S.data הוא תשובת
+   חיפוש (תיבה גדולה בראש הלשונית: קיצורים ואחריהם קטעים, שמות נרדפים —
+   ‏/api/siddur?q=) / נוסח (נזכר) ← קטעים נפוצים / ניווט בעץ ← קטע (עלה) ←
+   טווח פסקאות ← "טען את הקטע". מכאן הכול כמו בטקסט חופשי: S.data הוא תשובת
    ‏/api/siddur?path=… (‏units + segments, ‏mode=tefila) עם source="siddur",
    ולענן נשלחות היחידות עצמן — כולל יחידות ההוראה, שה-worker מדלג עליהן בדיוק
    כמו ה-API (‏units_to_segments).
@@ -18,10 +19,11 @@ const SD = {
   leaf: null,       // הקטע שנבחר (נשמר): {path, title, label, base, from, to, total, paragraphs, meta}
   payload: null,    // תשובת ה-API לקטע ולטווח שנטענו לאחרונה (בזיכרון בלבד)
   popular: {},      // נוסח ⇐ תשובת ?popular=1
-  browseData: null, // הילדים של התיקייה שמוצגת — לחזרה מחיפוש בלי בקשה נוספת
+  browseData: null, // הילדים של התיקייה שמוצגת — לחזרה מקטע בלי בקשה נוספת
   started: false,
-  req: 0,           // מונה בקשות הרשימה (עץ/חיפוש) — תשובה ישנה לא דורסת חדשה
-  leafReq: 0,       // אותו דבר לבקשות הקטע
+  req: 0,           // מונה בקשות העץ — תשובה ישנה לא דורסת חדשה
+  searchReq: 0,     // אותו דבר לבקשות החיפוש
+  leafReq: 0,       // ולבקשות הקטע
 };
 const SD_SEARCH_DELAY_MS = 350;
 const SD_SEARCH_MIN = 2;
@@ -128,21 +130,35 @@ function fillNusachSelect() {
   sel.value = SD.nusach;
   renderSiddurPanels();
 }
+/* בזמן חיפוש — רק התוצאות (מתחת לתיבה); הנוסח, הקיצורים, העץ והקטע שנבחר
+   מוסתרים ולא נמחקים, וחוזרים כשהחיפוש מתנקה */
 function renderSiddurPanels() {
+  const searching = searchActive();
+  $("sdResults").hidden = !searching;
+  $("sdMain").hidden = searching;
   $("sdBrowse").hidden = !SD.nusach || !!SD.leaf;
   $("sdLeaf").hidden = !SD.leaf;
+  $("sdAllWrap").hidden = !SD.nusach;
+  $("sdSearchClear").hidden = !$("sdSearch").value;
 }
 $("sdNusach").addEventListener("change", () => {
   SD.nusach = $("sdNusach").value;
   SD.path = SD.nusach;
   SD.leaf = null; SD.payload = null; SD.browseData = null;
-  $("sdSearch").value = "";
   siddurMsg("");
   renderSiddurPanels();
   save();
   loadPopular();
   browseTo(SD.nusach);
 });
+/* תוצאת חיפוש מנוסח אחר ("חיפוש בכל הנוסחים") ⇐ עוברים לנוסח שלה */
+function useNusach(key) {
+  if (!key || key === SD.nusach) return;
+  SD.nusach = key;
+  $("sdNusach").value = key;
+  SD.browseData = null;
+  loadPopular();
+}
 
 /* ---------- קטעים נפוצים (data/siddur/popular.json דרך ה-API) ---------- */
 async function loadPopular() {
@@ -167,9 +183,9 @@ async function loadPopular() {
       path: it.path, title: it.title, label: it.label, from: it.from, to: it.to }));
     box.appendChild(b);
   });
-  $("sdPopularNote").hidden = !pop.draft;
-  $("sdPopularNote").textContent = pop.draft
-    ? "רשימה ראשונית — ממתינה לאישור. חסר קטע? חפשו אותו או דפדפו בסידור למטה." : "";
+  $("sdPopularNote").hidden = false;
+  $("sdPopularNote").textContent = (pop.draft ? "רשימה ראשונית — ממתינה לאישור. " : "") +
+    "חסר קטע? חפשו אותו בתיבה למעלה או דפדפו בסידור למטה.";
   $("sdPopularWrap").hidden = !items.length;
 }
 
@@ -187,7 +203,7 @@ async function browseTo(path) {
   }
   if (id !== SD.req) return;
   SD.browseData = data;
-  if (!searchActive()) renderBrowse();
+  renderBrowse();
 }
 function renderBrowse() {
   const data = SD.browseData;
@@ -208,85 +224,154 @@ function renderBrowse() {
     else b.addEventListener("click", () => browseTo(c.path));
     nav.appendChild(b);
   });
-  renderItems(data.children || [], false);
-}
-/* שורה לכל צומת: תיקייה ⇐ נכנסים; קטע ⇐ נבחר; קטע לא זמין — באפור ולא לחיץ */
-function renderItems(items, withPath) {
   const list = $("sdList");
   list.innerHTML = "";
-  if (!items.length) {
-    list.innerHTML = '<p class="hint sdPad">לא נמצאו קטעים.</p>';
-    return;
-  }
+  const items = data.children || [];
+  if (!items.length) list.innerHTML = '<p class="hint sdPad">לא נמצאו קטעים.</p>';
   for (const it of items) {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "sdItem " + (it.is_leaf ? "leaf" : "folder") + (it.available ? "" : " na");
-    b.dataset.path = it.path;
-    b.disabled = !it.available;
-    const ic = document.createElement("span");
-    ic.className = "ic"; ic.setAttribute("aria-hidden", "true");
-    ic.textContent = it.is_leaf ? "📄" : "📁";
-    const tt = document.createElement("span");
-    tt.className = "tt";
-    tt.textContent = it.title || it.title_en || it.key;
-    const sub = document.createElement("small");
-    sub.className = it.is_leaf ? "bible" : "";
-    if (!it.available) sub.textContent = "לא זמין ב-Sefaria במהדורה שנבחרה";
-    else if (withPath && it.breadcrumb) sub.textContent = it.breadcrumb.slice(1, -1).join(" › ");
-    else sub.textContent = it.is_leaf ? (it.first_words || "") : `${it.count} פריטים`;
-    if (sub.textContent) tt.appendChild(sub);
-    const go = document.createElement("span");
-    go.className = "go"; go.setAttribute("aria-hidden", "true"); go.textContent = "‹";
-    b.append(ic, tt, go);
-    b.addEventListener("click", () => {
-      if (!it.is_leaf) {
-        $("sdSearch").value = "";
-        browseTo(it.path);
-        return;
-      }
-      SD.path = it.path.split("/").slice(0, -1).join("/");
-      if (searchActive()) { $("sdSearch").value = ""; SD.browseData = null; }
-      selectLeaf({ path: it.path, title: it.title });
-    });
-    list.appendChild(b);
+    list.appendChild(sdRow(it, {
+      sub: it.is_leaf ? (it.first_words || "") : `${it.count} פריטים`,
+      onClick: () => {
+        if (!it.is_leaf) { browseTo(it.path); return; }
+        SD.path = it.path.split("/").slice(0, -1).join("/");
+        selectLeaf({ path: it.path, title: it.title });
+      },
+    }));
   }
 }
+/* שורה ברשימה (עץ או חיפוש): תיקייה ⇐ נכנסים; קטע ⇐ נבחר; קטע לא זמין —
+   באפור ולא לחיץ; קיצור — כוכב */
+function sdRow(it, { sub, onClick, shortcut }) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "sdItem " + (shortcut ? "sc" : it.is_leaf ? "leaf" : "folder") + (it.available ? "" : " na");
+  b.dataset.path = it.path;
+  b.disabled = !it.available;
+  const ic = document.createElement("span");
+  ic.className = "ic"; ic.setAttribute("aria-hidden", "true");
+  ic.textContent = shortcut ? "⭐" : it.is_leaf ? "📄" : "📁";
+  const tt = document.createElement("span");
+  tt.className = "tt";
+  tt.textContent = shortcut ? it.label : (it.title || it.title_en || it.key);
+  const small = document.createElement("small");
+  small.className = it.is_leaf && !shortcut ? "bible" : "";
+  small.textContent = it.available ? sub : "לא זמין ב-Sefaria במהדורה שנבחרה";
+  if (small.textContent) tt.appendChild(small);
+  const go = document.createElement("span");
+  go.className = "go"; go.setAttribute("aria-hidden", "true"); go.textContent = "‹";
+  b.append(ic, tt, go);
+  b.addEventListener("click", onClick);
+  return b;
+}
 
-/* ---------- חיפוש (כותרות + מילים ראשונות; ‏debounce) ---------- */
+/* ---------- חיפוש (‏debounce): קיצורים, ואחריהם קטעים מהסידור ----------
+   ההתאמה כולה בשרת (src/siddur/catalog.py — ‏Catalog.find): ניקוד, אותיות
+   סופיות, גרשיים, שם ה׳, שמות נרדפים (data/siddur/aliases.json) וכתיב מלא/חסר.
+   ברירת המחדל — הנוסח שנבחר; "חיפוש בכל הנוסחים" — כולם, הנבחר קודם. */
 let sdSearchTimer = null;
 function searchActive() { return $("sdSearch").value.trim().length >= SD_SEARCH_MIN; }
+function clearSearch() {
+  clearTimeout(sdSearchTimer);
+  SD.searchReq++;   // תוצאה של חיפוש קודם לא תגיע אחרי הניקוי
+  $("sdSearch").value = "";
+  $("sdResults").innerHTML = "";
+  renderSiddurPanels();
+}
 $("sdSearch").addEventListener("input", () => {
   clearTimeout(sdSearchTimer);
   if (!searchActive()) {
-    SD.req++;   // תוצאה של חיפוש קודם לא תגיע אחרי שחזרנו לעץ
-    if (SD.browseData) renderBrowse(); else if (SD.nusach) browseTo(SD.path || SD.nusach);
-    return;
+    SD.searchReq++;
+    $("sdResults").innerHTML = "";   // לא להציג תוצאות ישנות כשהחיפוש יתחדש
+  } else {
+    if (!$("sdResults").hasChildNodes()) $("sdResults").innerHTML = '<p class="hint sdPad">מחפש…</p>';
+    sdSearchTimer = setTimeout(runSearch, SD_SEARCH_DELAY_MS);
   }
-  sdSearchTimer = setTimeout(runSearch, SD_SEARCH_DELAY_MS);
+  renderSiddurPanels();
 });
 $("sdSearch").addEventListener("keydown", e => {
-  if (e.key === "Enter") { e.preventDefault(); clearTimeout(sdSearchTimer); if (searchActive()) runSearch(); }
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  clearTimeout(sdSearchTimer);
+  if (searchActive()) { $("sdSearch").blur(); runSearch(); }   // בטלפון — המקלדת יורדת
 });
+$("sdSearchClear").addEventListener("click", () => { clearSearch(); $("sdSearch").focus(); });
+$("sdAll").addEventListener("change", () => { if (searchActive()) runSearch(); });
+
 async function runSearch() {
   const q = $("sdSearch").value.trim();
-  const id = ++SD.req;
-  $("sdCrumbs").hidden = true;
-  $("sdList").innerHTML = '<p class="hint sdPad">מחפש…</p>';
+  const id = ++SD.searchReq;
+  const box = $("sdResults");
+  box.innerHTML = '<p class="hint sdPad">מחפש…</p>';
+  const params = { q };
+  if (SD.nusach) {
+    params.nusach = SD.nusach;
+    if ($("sdAll").checked) params.all = 1;
+  }
   let data;
-  try { data = await siddurApi({ q, nusach: SD.nusach }); }
+  try { data = await siddurApi(params); }
   catch (e) {
-    if (id === SD.req) $("sdList").innerHTML = `<p class="error sdPad">${escapeHtml(e.message)}</p>`;
+    if (id === SD.searchReq) box.innerHTML = `<p class="error sdPad">${escapeHtml(e.message)}</p>`;
     return;
   }
-  if (id !== SD.req) return;
-  renderItems(data.results || [], true);
+  if (id !== SD.searchReq) return;
+  renderResults(data);
+}
+function nusachTitle(key) {
+  return ((SD.nusachim || []).find(n => n.key === key) || {}).title || "";
+}
+function renderResults(data) {
+  const box = $("sdResults");
+  box.innerHTML = "";
+  const shortcuts = data.shortcuts || [], results = data.results || [];
+  const many = !!data.all;   // כמה נוסחים ⇐ שם הנוסח בכל שורה
+  if (!shortcuts.length && !results.length) {
+    const p = document.createElement("p");
+    p.className = "hint sdPad";
+    p.textContent = `לא נמצא «${data.q}». נסו שם אחר או את המילים הראשונות של הקטע` +
+      (SD.nusach && !many ? ', או סמנו "חיפוש בכל הנוסחים".' : ".");
+    box.appendChild(p);
+    return;
+  }
+  const section = (title, rows) => {
+    const h = document.createElement("div");
+    h.className = "range-title sdResHead";
+    h.textContent = title;
+    const list = document.createElement("div");
+    list.className = "sdList";
+    rows.forEach(r => list.appendChild(r));
+    box.append(h, list);
+  };
+  if (shortcuts.length) section("קיצורים", shortcuts.map(it => sdRow(it, {
+    shortcut: true,
+    sub: [many && nusachTitle(it.nusach), it.title !== it.label && `מתוך «${it.title}»`,
+          (it.breadcrumb || []).slice(1, -1).join(" › ")].filter(Boolean).join(" · "),
+    onClick: () => openFromSearch(it),
+  })));
+  if (results.length) section("בסידור", results.map(it => sdRow(it, {
+    sub: [it.hint, (it.breadcrumb || []).slice(many ? 0 : 1, -1).join(" › ")]
+      .filter(Boolean).join(" · "),
+    onClick: () => openFromSearch(it),
+  })));
   if (data.truncated) {
     const p = document.createElement("p");
     p.className = "hint sdPad";
     p.textContent = `מוצגות ${data.limit} התוצאות הראשונות — הוסיפו מילה כדי לדייק.`;
-    $("sdList").appendChild(p);
+    box.appendChild(p);
   }
+}
+/* הקשה על תוצאה: החיפוש מתנקה, ועוברים לקיצור / לקטע / לתיקייה (ולנוסח שלו) */
+function openFromSearch(it) {
+  clearSearch();
+  useNusach(it.nusach);
+  if (!it.label && !it.is_leaf) {
+    SD.leaf = null; SD.payload = null;
+    siddurMsg("");
+    renderSiddurPanels();
+    browseTo(it.path);
+    return;
+  }
+  SD.path = it.path.split("/").slice(0, -1).join("/");
+  selectLeaf({ path: it.path, title: it.title, label: it.label, from: it.from, to: it.to });
 }
 
 /* ---------- קטע: טעינה, בחירת טווח ---------- */
@@ -310,8 +395,7 @@ $("sdBack").addEventListener("click", () => {
   siddurMsg("");
   renderSiddurPanels();
   save();
-  if (searchActive()) runSearch();
-  else if (SD.browseData && SD.browseData.path === SD.path) renderBrowse();
+  if (SD.browseData && SD.browseData.path === SD.path) renderBrowse();
   else browseTo(SD.path || SD.nusach);
 });
 

@@ -336,6 +336,35 @@ details summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
 
 /* ---------- ספריית התפילות (שלב 1, לשונית "תפילה") ---------- */
 input[type="search"] { -webkit-appearance: none; appearance: none; }
+/* חיפוש — תיבה גדולה בראש הלשונית; ✕ משלנו (הכפתור של הדפדפן מוסתר) */
+.sdSearchBox { position: relative; }
+#sdSearch {
+  font-size: 1.12rem; min-height: 54px; padding: 13px 46px; border-radius: 14px;
+  border: 2px solid color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--card);
+  box-shadow: 0 1px 6px rgba(0,0,0,.06);
+}
+#sdSearch:focus { outline: none; border-color: var(--accent); }
+#sdSearch::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+#sdSearch::placeholder { color: var(--muted); opacity: 1; }
+.sdSearchIc {
+  position: absolute; inset-inline-start: 15px; top: 50%; transform: translateY(-50%);
+  font-size: 1.05rem; pointer-events: none; opacity: .7;
+}
+#sdSearchClear {
+  position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%);
+  width: 42px; height: 42px; padding: 0; border-radius: 11px; font-size: 1.05rem;
+  background: transparent; color: var(--muted);
+}
+label.sdAll {
+  display: inline-flex; align-items: center; gap: 7px; margin: 8px 0 0;
+  font-size: .9rem; color: var(--ink); cursor: pointer; padding: 4px 0;
+}
+label.sdAll input { width: 20px; height: 20px; margin: 0; padding: 0; flex: none; accent-color: var(--accent); }
+.sdResults { margin-top: 10px; }
+.sdResHead { margin: 12px 0 0; }
+.sdResHead:first-child { margin-top: 0; }
+.sdItem.sc .tt { color: var(--accent); font-weight: 700; }
+.sdItem.sc .tt small { font-weight: 400; }
 .sdBlock {
   border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px;
   background: color-mix(in srgb, var(--verse-chip) 40%, transparent);
