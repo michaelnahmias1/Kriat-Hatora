@@ -5,10 +5,12 @@
 ‏tools/build_siddur_catalog.py — מימוש יחיד לשניהם).
 
 עלה מוויקיטקסט = **סעיף אחד בדף, בגרסה (oldid) קבועה**: ‏{page, rev, section,
-heading}. הטקסט נמשך דרך ה-API של MediaWiki ‏(action=parse&oldid=…&section=…)
-כ-HTML מורחב (התבניות כבר מוחלות), ומומר כאן לפסקאות במבנה ש-src/siddur/markup.py
-מכיר מ-Sefaria: ‏<b>, ‏<small>, ‏<br>, וכל השאר טקסט. כך אותו סיווג הוראות
-(8.4) רץ על שני המקורות.
+heading}. בונה הקטלוג מושך את הדף המוצג (HTML מורחב — התבניות כבר מוחלות),
+מפצל לסעיפים וממיר כאן לפסקאות במבנה ש-src/siddur/markup.py מכיר מ-Sefaria:
+‏<b>, ‏<small>, ‏<br>, וכל השאר טקסט — כך אותו סיווג הוראות (8.4) רץ על שני
+המקורות. הפסקאות נשמרות בצילום בגיט (data/siddur/wikisource/<rev>.json.gz),
+ו-api/siddur.py מגיש מהצילום, **בלי רשת**. ההמרה של סעיף בודד מתשובת
+‏action=parse (section_paragraphs) נשארה לבדיקה מול ה-API האמיתי.
 
 למה oldid קבוע: הדף ממשיך להיערך בוויקיטקסט; מספרי הסעיפים והטקסט של גרסה
 מסוימת לא משתנים, כך שהקטלוג (כותרות, מילים ראשונות, מספר פסקאות) נשאר נכון
@@ -24,11 +26,14 @@ heading}. הטקסט נמשך דרך ה-API של MediaWiki ‏(action=parse&oldi
   ‏<script>, טבלאות ניווט, ושילובי שמות של קבלה שאינם נאמרים ("יאהדונהי").
 """
 
+import gzip
 import html
+import json
 import re
 import unicodedata
 import urllib.parse
 from html.parser import HTMLParser
+from pathlib import Path
 
 API_URL = "https://he.wikisource.org/w/api.php"
 SITE = "https://he.wikisource.org"
@@ -360,3 +365,82 @@ def paragraphs_from_page(page_html: str, rev, section, heading: str = None) -> l
     if s is None or (heading and not same_heading(s["line"], heading)):
         raise WikisourceError(f"אין בדף סעיף {section} «{heading}»")
     return split_page_sections(content, secs)[str(section)]
+
+
+# --- צילום בגיט (data/siddur/wikisource/<rev>.json.gz) ---------------------------
+# ה-API של האפליקציה לא פונה לוויקיטקסט בכלל: הטקסט של עלי ויקיטקסט נשמר בגיט
+# (‏CC BY-SA 4.0 מתיר הפצה עם ייחוס — הייחוס בקובץ עצמו ובשורת המקור שבאפליקציה).
+# קובץ לכל דף, לפי מספר הגרסה הקבועה (rev) שבקטלוג; רק הסעיפים שהקטלוג משתמש
+# בהם, כבר כפסקאות (אותה המרה). בונה הקטלוג כותב אותו מחדש בכל בנייה
+# (tools/build_siddur_catalog.py), כך שעדכון = עדכון rev ב-overrides.json + בנייה.
+
+SNAPSHOT_DIR = (Path(__file__).resolve().parent.parent.parent
+                / "data" / "siddur" / "wikisource")
+SNAPSHOT_FORMAT = 1
+
+
+def snapshot_path(rev, directory=None) -> Path:
+    return Path(directory or SNAPSHOT_DIR) / f"{int(rev)}.json.gz"
+
+
+def make_snapshot(page: str, rev, fetched: str, sections: dict) -> dict:
+    """{index: (כותרת, [פסקאות])} ⇐ רשומת הצילום, עם כל פרטי הייחוס."""
+    return {
+        "format": SNAPSHOT_FORMAT,
+        "source": NAME,
+        "page": page,
+        "rev": int(rev),
+        "fetched": fetched,
+        "page_url": page_url(page, rev),
+        "history_url": history_url(page),
+        "license": LICENSE,
+        "license_name": LICENSE_NAME,
+        "license_url": LICENSE_URL,
+        "about": ("טקסט מוויקיטקסט העברי, בגרסה הקבועה rev, כפסקאות בסגנון Sefaria "
+                  "(src/siddur/wikisource.py). מופץ ברישיון CC BY-SA 4.0 — ראו "
+                  "page_url ו-history_url לתורמים. נבנה ע״י tools/build_siddur_catalog.py."),
+        "sections": {str(k): {"heading": h, "paragraphs": list(p)}
+                     for k, (h, p) in sorted(sections.items(), key=lambda kv: int(kv[0]))},
+    }
+
+
+def write_snapshot(snap: dict, directory=None) -> Path:
+    """כתיבה דטרמיניסטית (‏gzip בלי חותמת זמן) — אותו קלט ⇐ אותו קובץ."""
+    path = snapshot_path(snap["rev"], directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    raw = json.dumps(snap, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    with open(path, "wb") as fh:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=fh, mtime=0,
+                           compresslevel=9) as gz:
+            gz.write(raw)
+    return path
+
+
+_SNAPSHOTS = {}
+
+
+def load_snapshot(rev, directory=None) -> dict:
+    """הצילום של גרסה אחת (נטען פעם אחת לכל תהליך). חסר ⇐ WikisourceError."""
+    path = snapshot_path(rev, directory)
+    key = str(path)
+    if key not in _SNAPSHOTS:
+        try:
+            with gzip.open(path, "rt", encoding="utf-8") as fh:
+                _SNAPSHOTS[key] = json.load(fh)
+        except FileNotFoundError:
+            raise WikisourceError(f"חסר צילום הטקסט של ויקיטקסט (גרסה {rev}) — "
+                                  "צריך לבנות מחדש את הקטלוג")
+    return _SNAPSHOTS[key]
+
+
+def snapshot_paragraphs(w: dict, directory=None) -> list:
+    """עלה ויקיטקסט מהקטלוג (‏{page, rev, section, heading}) ⇐ פסקאות מהצילום,
+    בלי רשת. כותרת או דף אחרים מהצפוי ⇐ WikisourceError."""
+    snap = load_snapshot(w["rev"], directory)
+    if snap.get("page") != w["page"] or int(snap.get("rev", -1)) != int(w["rev"]):
+        raise WikisourceError("צילום ויקיטקסט לא תואם לקטלוג — צריך לבנות מחדש")
+    sec = (snap.get("sections") or {}).get(str(w["section"]))
+    if sec is None or (w.get("heading") and not same_heading(sec["heading"], w["heading"])):
+        raise WikisourceError(f"אין בצילום סעיף {w['section']} «{w.get('heading')}» — "
+                              "צריך לבנות מחדש את הקטלוג")
+    return list(sec["paragraphs"])

@@ -460,55 +460,18 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
 
 # --- מקורות נוספים: ויקיטקסט ומהדורות לינאריות (4.4.1) ------------------------------
 # עלה של אוסף (מחזור, סליחות, קינות, הגדה) יכול לבוא מוויקיטקסט — סעיף בדף בגרסה
-# קבועה (oldid) — או ממהדורה "לינארית" של Sefaria (שורה לכל קטע). ההמרה ל-HTML
-# בסגנון Sefaria — src/siddur/wikisource.py; איחוד השורות — src/siddur/sources.py.
+# קבועה (rev), מוגש מצילום בגיט — או ממהדורה "לינארית" של Sefaria (שורה לכל קטע).
+# ההמרה ל-HTML בסגנון Sefaria — src/siddur/wikisource.py; איחוד השורות —
+# src/siddur/sources.py.
 # משם הכל ממשיך באותו מסלול (סיווג הוראות, יחידות, מקטעים).
 
-WIKISOURCE_TIMEOUT_MSG = ("ויקיטקסט לא ענה בזמן ({} שניות) — נסו שוב בעוד רגע")
-
-
-def _wikisource_error(e: Exception) -> ApiError:
-    if isinstance(e, urllib.error.HTTPError):
-        if e.code == 429:
-            return ApiError(503, "ויקיטקסט מגביל כרגע את קצב הבקשות (429) — "
-                                 "נסו שוב בעוד דקה")
-        return ApiError(502, f"תקלה בגישה לוויקיטקסט (HTTP {e.code})")
-    reason = getattr(e, "reason", e)
-    if isinstance(e, (socket.timeout, TimeoutError)) or isinstance(
-            reason, (socket.timeout, TimeoutError)):
-        return ApiError(504, WIKISOURCE_TIMEOUT_MSG.format(SEFARIA_TIMEOUT))
-    return ApiError(502, "תקלה בגישה לוויקיטקסט — נסו שוב בעוד רגע")
-
-
-def _get_html(url: str) -> str:
-    """GET לדף HTML (הדף המוצג של ויקיטקסט). נקודת החלפה של הבדיקות."""
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=SEFARIA_TIMEOUT) as resp:
-        body = resp.read(MAX_SEFARIA_BYTES + 1)
-    if len(body) > MAX_SEFARIA_BYTES:
-        raise ApiError(502, "הדף בוויקיטקסט גדול מדי")
-    return body.decode("utf-8", "replace")
-
-
 def fetch_wikisource_leaf(w: dict) -> list:
-    """סעיף אחד מדף בוויקיטקסט, בגרסה הקבועה שבקטלוג ⇐ פסקאות (HTML בסגנון
-    Sefaria). כותרת אחרת מהצפוי ⇐ 502 (לא טקסט אחר בשקט).
-
-    ה-API של ויקיטקסט מגביל קצב לפי IP (429). אז — ורק אז — הדף המוצג
-    (/wiki/…, מוגש מה-CDN) משמש גיבוי, בתנאי שהוא עדיין בדיוק בגרסה שבקטלוג;
-    מפוצל באותו מימוש שבנה את הקטלוג (src/siddur/wikisource.py)."""
+    """עלה מוויקיטקסט ⇐ פסקאות (HTML בסגנון Sefaria) **מהצילום שבגיט**
+    (data/siddur/wikisource/<rev>.json.gz) — בלי רשת: ה-API של ויקיטקסט מגביל
+    קצב לפי IP (429), והטקסט ממילא נעול על הגרסה הקבועה שבקטלוג. צילום חסר או
+    סעיף שלא תואם ⇐ 502 בעברית (הקטלוג והצילום נבנים יחד)."""
     try:
-        data = _get_json(_ws.API_URL, _ws.parse_params(w["rev"], w["section"]))
-    except (OSError, http.client.HTTPException) as e:  # רשת, timeout, 429
-        err = _wikisource_error(e)
-        try:
-            page = _get_html(_ws.page_url(w["page"]))
-            return _ws.paragraphs_from_page(page, w["rev"], w["section"],
-                                            w.get("heading"))
-        except (OSError, http.client.HTTPException, _ws.WikisourceError):
-            raise err
-    try:
-        return _ws.section_paragraphs(data, w.get("heading"))
+        return _ws.snapshot_paragraphs(w)
     except _ws.WikisourceError as e:
         raise ApiError(502, str(e))
 
