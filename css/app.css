@@ -422,6 +422,31 @@ label.sdAll input { width: 20px; height: 20px; margin: 0; padding: 0; flex: none
 .sdPara .pt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.05rem; }
 .sdPara.on { background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
 .sdPara.instr .pt { color: var(--muted); font-family: inherit; font-size: .88rem; }
+.sdPara .pc {
+  flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .72rem; color: var(--gold); font-family: inherit;
+}
+/* "מה אומרים היום?" — סוג היום, עונה, ומתג לכל תוספת שבקטע (4.4.2) */
+.sdDays .range-title { margin-bottom: 6px; }
+.sdSubTitle { font-size: .85rem; color: var(--muted); margin: 10px 0 4px; }
+.sdSeg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.sdSeg button { text-align: start; }
+.sdSeg button, .sdChip {
+  width: auto; min-height: 42px; padding: 8px 10px; border-radius: 10px; font-size: .9rem;
+  line-height: 1.25; font-weight: 600; background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); overflow-wrap: anywhere;
+}
+.sdSeg button[aria-pressed="true"], .sdChip[aria-pressed="true"] {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+}
+.sdChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sdChip { display: inline-flex; align-items: center; gap: 6px; }
+.sdChip .n { font-size: .75rem; font-weight: 400; opacity: .8; }
+.sdNeed {
+  margin-top: 10px; padding: 8px 10px; border-radius: 10px; font-size: .88rem; line-height: 1.45;
+  color: var(--ink); background: color-mix(in srgb, var(--gold) 18%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent); white-space: pre-line;
+}
 /* הוראות מהסידור בתצוגת הטקסט שנטען — באפור, בלי מספר כתובית */
 .segrow.instr .txt {
   color: var(--muted); font-size: .85rem;
