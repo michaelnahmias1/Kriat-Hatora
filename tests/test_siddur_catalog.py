@@ -94,7 +94,13 @@ class RealCatalogTest(unittest.TestCase):
                 if "children" in n:
                     continue
                 with self.subTest(path="/".join(path)):
-                    self.assertTrue(n["ref"].startswith(nus["index"] + ", "))
+                    # עלה של אוסף (4.4.1) — ה-ref של האינדקס שלו, או דף בוויקיטקסט
+                    index = (versions.get(n["v"]) or {}).get("index") or nus["index"]
+                    if n.get("ws"):
+                        self.assertTrue(n["ref"].startswith(n["ws"]["page"] + "#"))
+                    elif not n.get("unavailable"):
+                        self.assertTrue(n["ref"].startswith(index + ", ")
+                                        or n["ref"] == index, n["ref"])
                     if n.get("unavailable"):
                         self.assertIsNone(n["v"])
                     else:
@@ -106,10 +112,13 @@ class RealCatalogTest(unittest.TestCase):
     def test_chosen_version_follows_policy(self):
         for nus in self.data["nusachim"]:
             pol = nus["policy"]
+            coll_versions = {v for v, d in nus["versions"].items() if d.get("source")}
             for day in nus["children"]:
                 prefs = pol.get(day["key"]) or pol["*"]
                 for path, n in walk(day["children"]):
                     if "children" in n or not n.get("v"):
+                        continue
+                    if n["v"] in coll_versions:  # אוסף — מהדורה משלו (4.4.1)
                         continue
                     have = [n["v"]] + n.get("alt", [])
                     self.assertEqual(n["v"], [p for p in prefs if p in have][0],
@@ -129,8 +138,10 @@ class RealCatalogTest(unittest.TestCase):
     def test_versions_match_overrides(self):
         for cfg in self.overrides["nusachim"]:
             nus = self.cat.node(cfg["key"])
-            self.assertEqual({k: v["title"] for k, v in nus["versions"].items()},
-                             cfg["versions"])
+            self.assertEqual({k: v["title"] for k, v in nus["versions"].items()
+                              if not v.get("source")}, cfg["versions"])
+            self.assertEqual({k for k, v in nus["versions"].items() if v.get("source")},
+                             set(cfg.get("collection_versions", {})))
             self.assertEqual(nus["policy"], cfg["policy"])
 
     def test_most_leaves_available(self):
@@ -267,7 +278,7 @@ class CatalogApiTest(unittest.TestCase):
         self.assertEqual(src, {"ref": "Fake Siddur A, Shacharit, Ashrei",
                                "version": " Lead Space", "version_id": "v1",
                                "license": "CC0", "index": "Fake Siddur A",
-                               "depth": 1, "nusach": "nus-a"})
+                               "depth": 1, "nusach": "nus-a", "source": "sefaria"})
         self.assertEqual(self.cat.source("nus-a/weekday/kabbalat")["depth"], 2)
         self.assertEqual(
             self.cat.source("nus-a/weekday/shacharit/kaddish")["version"], "Second")

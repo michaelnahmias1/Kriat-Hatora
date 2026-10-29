@@ -15,11 +15,31 @@
   {"key": "weekday", "title": "Weekday", "heTitle": "ימי חול"},
   {"key": "shabbat", "title": "Shabbat", "heTitle": "שבת"},
   {"key": "rosh-chodesh", "title": "Rosh Chodesh", "heTitle": "ראש חודש"},
+  {"key": "high-holidays", "title": "High Holidays", "heTitle": "ימים נוראים"},
   {"key": "festivals", "title": "Festivals", "heTitle": "חגים ומועדים"},
   {"key": "chanukah-purim", "title": "Chanukah and Purim", "heTitle": "חנוכה ופורים"},
   {"key": "fasts", "title": "Fast Days and Selichot", "heTitle": "תעניות וסליחות"},
   {"key": "general", "title": "Blessings and Assorted Prayers", "heTitle": "ברכות ותפילות שונות"}
  ],
+ "collections": {
+  "_doc": [
+   "אוספים (PLAN_TEFILA.md 4.4.1): מחזורים, סליחות, קינות והגדה. כל אוסף = צומת עם \"collection\" מתחת לסוג יום, בכל נוסח שיש לו",
+   "מהדורה ברישיון פתוח. rule = כלל הכיסוי של בעל הפרויקט (29.10.2026): אוסף נכנס רק אם יש לו מהדורה פתוחה בעדות המזרח",
+   "וגם באשכנז או בספרד — אחרת הוא מושמט כולו (הבנייה נכשלת אם הכלל לא מתקיים). מהדורה של אוסף מוגדרת בנוסח",
+   "(collection_versions): source=sefaria (index + versionTitle) או source=wikisource (דף + גרסה קבועה rev). origin = מאיפה",
+   "Sefaria לקחה את הטקסט (מוצג בשורת המקור); lines = מהדורה 'לינארית' (שורה לכל קטע, פסקה נגמרת ב-':' או בשורה ריקה).",
+   "חלק (part): skip = נתיבי כותרים / כותרות סעיפים שלא נכנסים; chapters = עלה בעומק 2 מתפצל לעלה לכל פרק (סליחה / קינה);",
+   "include = מספרי סעיפים עליונים בדף ויקיטקסט; under = סעיף שילדיו הם השורש."
+  ],
+  "rule": {"all_of": ["edot-hamizrach"], "any_of": ["ashkenaz", "sefard"]},
+  "list": [
+   {"key": "selichot", "day": "high-holidays", "title": "Selichot", "heTitle": "סליחות"},
+   {"key": "rosh-hashanah", "day": "high-holidays", "title": "Rosh Hashanah", "heTitle": "ראש השנה"},
+   {"key": "yom-kippur", "day": "high-holidays", "title": "Yom Kippur", "heTitle": "יום כיפור"},
+   {"key": "tisha-bav", "day": "fasts", "title": "Tisha B'Av", "heTitle": "תשעה באב"},
+   {"key": "haggadah", "day": "festivals", "title": "Pesach Haggadah", "heTitle": "הגדה של פסח"}
+  ]
+ },
  "nusachim": [
   {
    "key": "edot-hamizrach",
@@ -31,6 +51,17 @@
     "torat-emet": "Torat Emet 357"
    },
    "policy": {"*": ["shaliehsaboo", "torat-emet"]},
+   "collection_versions": {
+    "torat-emet-selichot": {"source": "sefaria", "index": "Selichot Edot HaMizrach", "title": "Selichot Edot HaMizrach - Torat Emet", "origin": {"name": "תורת אמת", "url": "http://www.toratemetfreeware.com/online/f_01821.html"}},
+    "mshotz-wikisource": {"source": "wikisource", "title": "סידור (מהדורת מרדכי שליח ציבור)", "heTitle": "סידור עדות המזרח, מהדורת מרדכי שליח ציבור", "credit": "עריכה: מרדכי שליח ציבור (MShotz) ותורמי ויקיטקסט"}
+   },
+   "collections": [
+    {"collection": "selichot", "parts": [{"version": "torat-emet-selichot", "title": "Selichot", "heTitle": "סדר הסליחות"}]},
+    {"collection": "rosh-hashanah", "parts": [{"version": "mshotz-wikisource", "page": "סידור (מהדורת מרדכי שליח ציבור)/סדר ראש השנה", "rev": 3077452}]},
+    {"collection": "yom-kippur", "parts": [{"version": "mshotz-wikisource", "page": "סידור (מהדורת מרדכי שליח ציבור)/סדר יום הכיפורים", "rev": 2971772}]},
+    {"collection": "tisha-bav", "parts": [{"version": "mshotz-wikisource", "page": "סידור (מהדורת מרדכי שליח ציבור)/סדר חמש תעניות", "rev": 2971793, "include": ["2", "3", "4"]}]},
+    {"collection": "haggadah", "parts": [{"version": "mshotz-wikisource", "page": "סידור (מהדורת מרדכי שליח ציבור)/סדר מועדים וזמנים", "rev": 2991274, "under": "13"}]}
+   ],
    "rules": [
     {"path": ["Preparatory Prayers"], "day": "weekday"},
     {"path": ["The Midnight Rite"], "day": "weekday"},
@@ -104,7 +135,7 @@
     {"path": ["Rosh Chodesh"], "day": "rosh-chodesh"},
     {"path": ["Holidays"], "day": "festivals"},
     {"path": ["Nissan"], "day": "festivals"},
-    {"path": ["Pesach Haggadah"], "day": "festivals"},
+    {"path": ["Pesach Haggadah"], "day": "festivals", "collection": "haggadah"},
     {"path": ["Sukkot"], "day": "festivals"},
     {"path": ["Simchat Torah"], "day": "festivals"},
     {"path": ["Shavuot"], "day": "festivals"},
@@ -132,6 +163,23 @@
     "daat": "Daat Siddur Ashkenaz"
    },
    "policy": {"weekday": ["metsudah", "daat"], "*": ["daat", "metsudah"]},
+   "collection_versions": {
+    "metsudah-machzor-rh": {"source": "sefaria", "index": "Machzor Rosh Hashanah Ashkenaz", "title": "The Metsudah Machzor. Metsudah Publications, New York -- he (paragraph ed.)", "origin": {"name": "מחזור מצודה (הספרייה הלאומית)", "url": "https://www.nli.org.il/he/books/NNL_ALEPH000996925"}},
+    "metsudah-machzor-yk": {"source": "sefaria", "index": "Machzor Yom Kippur Ashkenaz Linear", "title": "The Metsudah Machzor. Metsudah Publications, New York", "lines": true, "origin": {"name": "מחזור מצודה (הספרייה הלאומית)", "url": "https://www.nli.org.il/he/books/NNL_ALEPH000996925"}},
+    "selichot-polin-wikisource": {"source": "sefaria", "index": "Selichot Nusach Polin", "title": "Selichot Nusach Polin -- Wikisource", "origin": {"name": "ויקיטקסט", "url": "https://he.wikisource.org/wiki/%D7%A1%D7%9C%D7%99%D7%97%D7%95%D7%AA_%D7%9C%D7%99%D7%9E%D7%99_%D7%94%D7%AA%D7%A9%D7%95%D7%91%D7%94/%D7%9E%D7%A0%D7%94%D7%92_%D7%A4%D7%95%D7%9C%D7%99%D7%9F"}},
+    "selichot-lita-wikisource": {"source": "sefaria", "index": "Selichot Nusach Ashkenaz Lita", "title": "Selichot Nusach Lita -- Wikisource", "origin": {"name": "ויקיטקסט", "url": "https://he.wikisource.org/wiki/%D7%A1%D7%9C%D7%99%D7%97%D7%95%D7%AA_%D7%9C%D7%99%D7%9E%D7%99_%D7%94%D7%AA%D7%A9%D7%95%D7%91%D7%94/%D7%9E%D7%A0%D7%94%D7%92_%D7%9C%D7%99%D7%98%D7%90"}},
+    "kinot-wikisource": {"source": "sefaria", "index": "Kinnot for Tisha B'Av (Ashkenaz)", "title": "Kinnot for Tisha B'Av -- Wikisource", "origin": {"name": "ויקיטקסט", "url": "https://he.wikisource.org/wiki/%D7%A7%D7%99%D7%A0%D7%95%D7%AA_%D7%9C%D7%AA%D7%A9%D7%A2%D7%94_%D7%91%D7%90%D7%91_(%D7%90%D7%A9%D7%9B%D7%A0%D7%96)"}},
+    "daat-haggadah": {"source": "sefaria", "index": "Pesach Haggadah", "title": "Pesach Haggadah", "origin": {"name": "דעת", "url": "http://www.daat.ac.il/daat/shabat/pesach/hagada-2.htm"}}
+   },
+   "collections": [
+    {"collection": "selichot", "parts": [
+     {"key": "polin", "title": "Minhag Polin", "heTitle": "מנהג פולין", "version": "selichot-polin-wikisource", "chapters": true},
+     {"key": "lita", "title": "Minhag Lita", "heTitle": "מנהג ליטא", "version": "selichot-lita-wikisource", "chapters": true}]},
+    {"collection": "rosh-hashanah", "parts": [{"version": "metsudah-machzor-rh"}]},
+    {"collection": "yom-kippur", "parts": [{"version": "metsudah-machzor-yk"}]},
+    {"collection": "tisha-bav", "parts": [{"version": "kinot-wikisource", "chapters": true}]},
+    {"collection": "haggadah", "parts": [{"version": "daat-haggadah"}]}
+   ],
    "rules": [
     {"path": ["Weekday"], "day": "weekday", "strip": 1},
     {"path": ["Shabbat"], "day": "shabbat", "strip": 1},

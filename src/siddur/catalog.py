@@ -293,15 +293,34 @@ class Catalog:
             return None
         nus = self.nusach_of(keys)
         ver = nus["versions"][leaf["v"]]
-        return {
+        src = {
             "ref": leaf["ref"],
             "version": ver["title"],
             "version_id": leaf["v"],
             "license": ver.get("license", ""),
-            "index": nus.get("index", ""),
+            "index": ver.get("index") or nus.get("index", ""),
             "depth": leaf.get("depth", 1),
             "nusach": nus["key"],
+            # אוספים (4.4.1): ‏sefaria / ‏wikisource; ‏lines — מהדורה "לינארית"
+            "source": ver.get("source", "sefaria"),
         }
+        if ver.get("lines"):
+            src["lines"] = True
+        if leaf.get("ws"):
+            src["ws"] = dict(leaf["ws"])
+        return src
+
+    def attribution(self, path) -> dict:
+        """שורת המקור והרישיון של עלה (מוצגת ליד הטקסט באפליקציה — חובה
+        ב-CC-BY/CC-BY-SA, ולא נכנסת לקובץ הכתוביות): {source, source_url,
+        edition, license, license_url?, origin?, credit?}. ‏KeyError לנתיב שאינו
+        עלה; ‏None לעלה לא זמין."""
+        from . import sources as _sources  # noqa: PLC0415 — בלי מעגל ייבוא
+        src = self.source(path)
+        if src is None:
+            return None
+        ver = self.nusach_of(path)["versions"][src["version_id"]]
+        return _sources.attribution(src, ver)
 
     def leaves(self, path=""):
         """כל העלים מתחת לנתיב (כולל הוא עצמו אם הוא עלה), לפי הסדר:
@@ -519,6 +538,9 @@ class Catalog:
         if self._sflat is None:
             self._sflat = [
                 (p, n, c,
+                 # כותרת שנבנתה מהמילים הראשונות (פרק של סליחות/קינות, 4.4.1)
+                 # היא לא שם — היא נמצאת דרך "מילים ראשונות", לא ככותרת
+                 [] if n.get("auto_title") else
                  [t for t in (fold(n.get("heTitle", "")), fold(n.get("title", ""))) if t],
                  fold(n.get("first", "")) if is_leaf(n) else "")
                 for p, n, c in self._index() if "/" in p]

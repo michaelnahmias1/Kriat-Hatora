@@ -6,7 +6,8 @@
 
 קלט: ‏data/siddur/catalog.json (העלים, ה-ref והמהדורה שנבחרה לכל עלה). הטקסט
 נמשך עם הלקוח של tools/survey_siddur.py (‏cache בדיסק — אותו cache של
-tools/build_siddur_catalog.py, כך שבדרך כלל אין שום בקשת רשת).
+tools/build_siddur_catalog.py, כך שבדרך כלל אין שום בקשת רשת). עלים מוויקיטקסט
+(אוספים, 4.4.1) — מהדפים שבונה הקטלוג שמר (‏~/.cache/kriat-hatora-wikisource).
 
 פלט: ‏data/siddur/identify_index.json.gz — הטקסט הנאמר של כל עלה זמין
 (3 הנוסחים), כמילים מנורמלות **בדיוק כמו בצינור**: יחידות כמו ב-api/siddur.py
@@ -36,6 +37,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from aligner.anchors import normalize_word  # noqa: E402
 from aligner.pipeline import _unit_chunk, units_to_segments  # noqa: E402
 from siddur import load_catalog  # noqa: E402
+from siddur import sources, wikisource  # noqa: E402  (אוספים, 4.4.1)
 from siddur.identify import FORMAT, INDEX_PATH  # noqa: E402
 from siddur.markup import (CONDITIONAL, SPOKEN, classify_leaf,  # noqa: E402
                            first_words, flatten)
@@ -46,6 +48,8 @@ sv = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(sv)
 
 DEFAULT_CACHE = Path.home() / ".cache" / "kriat-hatora-sefaria-catalog"
+# הדפים המוצגים של ויקיטקסט שבונה הקטלוג שמר (‏<rev>.html) — אותו cache
+DEFAULT_WS_CACHE = Path.home() / ".cache" / "kriat-hatora-wikisource"
 FIRST_WORDS = 5
 
 
@@ -111,7 +115,24 @@ def fetch_paragraphs(client, ref: str, version_title: str):
     return None
 
 
-def build(cat, client, log=print) -> tuple:
+def source_paragraphs(client, src: dict, ws_cache=DEFAULT_WS_CACHE):
+    """הפסקאות של עלה לפי המקור שלו — כמו api/siddur._fetch_leaf_text (4.4.1):
+    ויקיטקסט ⇐ הדף המוצג שבונה הקטלוג שמר (בגרסה הקבועה), מפוצל באותו מימוש;
+    מהדורה לינארית ⇐ שורות מאוחדות לפסקאות. ⇐ None כשאין ב-cache."""
+    if src.get("source") == "wikisource":
+        w = src["ws"]
+        f = Path(ws_cache) / f"{int(w['rev'])}.html"
+        if not f.exists():
+            return None
+        return wikisource.paragraphs_from_page(f.read_text(encoding="utf-8"),
+                                               w["rev"], w["section"], w.get("heading"))
+    paras = fetch_paragraphs(client, src["ref"], src["version"])
+    if paras is not None and src.get("lines"):
+        paras = sources.merge_lines(paras)
+    return paras
+
+
+def build(cat, client, log=print, ws_cache=DEFAULT_WS_CACHE) -> tuple:
     leaves, missing, seen_refs = [], [], set()
     vocab_count = Counter()
     for nus in cat.nusachim:
@@ -123,7 +144,7 @@ def build(cat, client, log=print) -> tuple:
             if (nkey, src["ref"]) in seen_refs:   # shared_refs — אותו טקסט בדיוק
                 continue
             seen_refs.add((nkey, src["ref"]))
-            paras = fetch_paragraphs(client, src["ref"], src["version"])
+            paras = source_paragraphs(client, src, ws_cache)
             if paras is None:
                 missing.append(path)
                 continue
@@ -166,6 +187,8 @@ def main(argv=None):
     ap.add_argument("--out", default=str(INDEX_PATH))
     ap.add_argument("--cache-dir", default=str(DEFAULT_CACHE))
     ap.add_argument("--offline", action="store_true", help="רק מה-cache")
+    ap.add_argument("--wikisource-cache-dir", default=str(DEFAULT_WS_CACHE),
+                    help="הדפים של ויקיטקסט שבונה הקטלוג שמר")
     ap.add_argument("--delay", type=float, default=0.5)
     ap.add_argument("--base", default=sv.SEFARIA_BASE)
     args = ap.parse_args(argv)
@@ -173,7 +196,7 @@ def main(argv=None):
     cat = load_catalog()
     client = sv.Client(args.base, args.cache_dir, delay=args.delay,
                        offline=args.offline)
-    index, missing = build(cat, client)
+    index, missing = build(cat, client, ws_cache=args.wikisource_cache_dir)
     if missing:
         print(f"✗ {len(missing)} עלים בלי טקסט (offline / רשת):")
         for p in missing[:20]:
