@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from aligner.anchors import normalize_word  # noqa: E402
+from aligner.pipeline import _unit_chunk  # noqa: E402
 from aligner.pipeline import units_to_segments  # noqa: E402
 from siddur import identify as idm  # noqa: E402
 from siddur import load_catalog  # noqa: E402
@@ -227,16 +228,20 @@ class TestBuilder(unittest.TestCase):
         fx = json.loads((ROOT / "tests" / "fixtures" / "siddur"
                          / "sefard_kabbalat_shabbat_torat_emet.json").read_text(encoding="utf-8"))
         rec = builder.leaf_record(builder.flatten(fx["versions"][0]["text"]))
-        segs = units_to_segments(payload["units"], 4, None, "tefila")
+        # האינדקס כולל גם תוספות תלויות-יום (4.4.2) — כאילו כל הימים דלוקים
+        units = [dict(u, kind="paragraph", chunk=_unit_chunk(dict(u, kind="paragraph")))
+                 if u.get("condition") else u for u in payload["units"]]
+        segs = units_to_segments(units, 4, None, "tefila")
         pipeline_words = [w for w in (normalize_word(x) for s in segs
                                       for x in s["align_plain"]) if w]
         self.assertEqual(rec["words"], pipeline_words)
         self.assertEqual(rec["total"], payload["range"]["total"])
         info = {p["n"]: p for p in payload["paragraphs"]}
+        said = ("paragraph", "mixed", "conditional")
         for n, off in rec["starts"]:
-            self.assertIn(info[n]["kind"], ("paragraph", "mixed"))
+            self.assertIn(info[n]["kind"], said)
             self.assertEqual(rec["first"].get(str(n)), info[n]["first_words"])
-        spoken = [p["n"] for p in payload["paragraphs"] if p["kind"] in ("paragraph", "mixed")]
+        spoken = [p["n"] for p in payload["paragraphs"] if p["kind"] in said]
         self.assertEqual([n for n, _ in rec["starts"]], spoken)
 
 

@@ -12,6 +12,12 @@ GET /api/siddur?popular=1&nusach=sefard        ⇐ קיצורים: הקטעים 
                                                   (data/siddur/popular.json, 4.2.3)
 GET /api/siddur?path=<עלה>[&from=N&to=M][&max_words=4]   ⇐ טקסט העלה כיחידות
                                                   + מקטעים (כמו /api/text_segments)
+    [&day=<סוג יום>|auto][&season=summer|winter|between][&days=a,b,-c]
+                                               ⇐ "מה אומרים היום?" (4.4.2): תוספות
+                                                  תלויות-יום שהיום שנבחר מדליק נאמרות
+                                                  (‏kind="paragraph") והשאר מוצגות בלבד
+                                                  (‏kind="conditional"); ‏conditions,
+                                                  ‏needs_choice, ‏day, ‏season, ‏days
 
 ‏path הוא נתיב בקטלוג (data/siddur/catalog.json), מפתחות מופרדים ב-"/". עם
 ‏nusach אפשר לתת נתיב יחסי לנוסח ("weekday/shacharit") או מלא.
@@ -24,6 +30,16 @@ GET /api/siddur?path=<עלה>[&from=N&to=M][&max_words=4]   ⇐ טקסט העל�
 ולא מיושרות) — src/siddur/markup.py. החיתוך: units_to_segments, אותו מימוש
 שה-worker מריץ. טווח ‏from/to (‏1-based, פסקאות של העלה) — כך מגיעים לקטע
 נפוץ שהוא פסקה בתוך עלה גדול (8.25). לעולם לא טווח בין עלים.
+
+תוספות תלויות-יום (4.4.2): ‏markup.classify_leaf מסמן טקסט שאחרי הוראה כמו
+"בעשי"ת:", "בקיץ:", "בראש חודש ובחול המועד אומרים:" כתוספת עם תנאי, ו-
+src/siddur/days.py קובע אילו תנאים מתקיימים היום (ברירת מחדל — לפי סוג היום
+של הקטע בקטלוג; עונה — רק בבחירה מפורשת). תוספת שהיום מדליק — יחידה רגילה
+(‏kind="paragraph", מסונכרנת); תוספת כבויה — ‏kind="conditional" (מוצגת עם
+שם התנאי, לא מסונכרנת). כל יחידת תוספת נושאת ‏condition (התנאי הראשון),
+‏conditions (כל התנאים), ‏condition_label (עברית) ו-negate (כשהיא נאמרת
+"חוץ מ…"). **תאימות לאחור:** בקשה בלי day/days/season (ממשק ישן מה-cache)
+מקבלת תוספת כבויה כ-kind="instruction" — כמו הוראה, שה-worker מכיר.
 """
 
 import http.client
@@ -69,8 +85,11 @@ _ts = _load_by_path("text_segments", _API_DIR / "text_segments.py")
 from aligner.pipeline import _unit_chunk  # noqa: E402
 from siddur import load_aliases, load_catalog, split_path  # noqa: E402
 from siddur.catalog import is_leaf  # noqa: E402
-from siddur.markup import (INSTRUCTION, SPOKEN, classify_paragraph,  # noqa: E402
-                           display_word, first_words, flatten, has_vocalized)
+from siddur import days as day_rules  # noqa: E402
+from siddur.markup import (CONDITIONAL, INSTRUCTION, SPOKEN,  # noqa: E402
+                           classify_leaf, condition_label, condition_slugs,
+                           display_word, first_words, flatten, has_vocalized,
+                           is_enabled)
 
 TooLarge = _ts.TooLarge
 _read_max_words = _ts._read_max_words
@@ -266,22 +285,37 @@ def _read_pos(q: dict, name: str):
 
 
 def _paragraph_info(n: int, parts: list) -> dict:
-    kinds = {k for k, _ in parts}
+    """‏parts — [(kind, טקסט, cond)] של markup.classify_leaf."""
+    kinds = {k for k, _, _ in parts}
     if not parts:
         kind = "empty"
     elif kinds == {SPOKEN}:
         kind = "paragraph"
     elif kinds == {INSTRUCTION}:
         kind = "instruction"
+    elif SPOKEN not in kinds:   # תוספת תלויית-יום (אולי עם ההוראה שלה)
+        kind = "conditional"
     else:
         kind = "mixed"
-    spoken = [b for k, b in parts if k == SPOKEN]
+    spoken = [b for k, b, _ in parts if k == SPOKEN] or \
+        [b for k, b, _ in parts if k == CONDITIONAL]
     if spoken:
         fw = first_words(spoken, FIRST_WORDS)
     else:  # הוראה — תחילתה, לתצוגה בבחירת הטווח
         fw = " ".join(display_word(w) for w in
-                      " ".join(b for _, b in parts).split()[:FIRST_WORDS])
-    return {"n": n, "kind": kind, "first_words": fw}
+                      " ".join(b for _, b, _ in parts).split()[:FIRST_WORDS])
+    info = {"n": n, "kind": kind, "first_words": fw}
+    conds, labels = [], []
+    for k, _, c in parts:
+        if k != CONDITIONAL:
+            continue
+        conds += [s for s in condition_slugs(c) if s not in conds]
+        if condition_label(c) not in labels:
+            labels.append(condition_label(c))
+    if conds:   # לסימון ברשימת הפסקאות: "ראש חודש", "לא ביום שאין בו תחנון"
+        info["conditions"] = conds
+        info["condition_label"] = " · ".join(labels)
+    return info
 
 
 def _fetch_with_policy(cat, keys: list, leaf: dict, src: dict):
@@ -320,9 +354,10 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
                        + (f" ({leaf['note']})" if leaf.get("note") else ""))
     max_words = _read_max_words(q.get("max_words"))
     start, end = _read_pos(q, "from"), _read_pos(q, "to")
+    sel = day_rules.resolve(q, cat, keys)   # ValueError ⇐ 400, לפני הרשת
 
     paragraphs, ver, vid, fallback = _fetch_with_policy(cat, keys, leaf, src)
-    parts = [classify_paragraph(p) for p in paragraphs]
+    parts = classify_leaf(paragraphs)
     info = [_paragraph_info(n, ps) for n, ps in enumerate(parts, 1)]
 
     total = len(paragraphs)
@@ -340,20 +375,46 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
                             "פסקאות (from/to)", paragraphs=info)
 
     he_title = leaf.get("heTitle", "")
-    units = []
+    in_range = [p for n in range(start, end + 1) for p in parts[n - 1]]
+    if not any(k == SPOKEN or (k == CONDITIONAL and is_enabled(c, sel["enabled"]))
+               for k, _, c in in_range):
+        # כל הטקסט בטווח הוא תוספת כבויה (הקיצור "אבינו מלכנו" בעדות — עשי"ת)
+        first = next((c for k, _, c in in_range
+                      if k == CONDITIONAL and not c.get("negate")), None)
+        if first is not None:
+            sel = day_rules.auto_for_range(first["any"], sel)
+    off = CONDITIONAL if sel["explicit"] else INSTRUCTION
+    units, conds = [], []
     for n in range(start, end + 1):
-        for kind, body in parts[n - 1]:
-            unit = {"text": body, "label": f"{he_title} · {n}",
-                    "kind": "paragraph" if kind == SPOKEN else "instruction"}
-            if kind == SPOKEN:
+        for kind, body, cond in parts[n - 1]:
+            label = f"{he_title} · {n}"
+            if kind == CONDITIONAL:
+                on = is_enabled(cond, sel["enabled"])
+                unit = {"text": body,
+                        "label": f"{label} · {condition_label(cond)}",
+                        "kind": "paragraph" if on else off,
+                        "condition": condition_slugs(cond)[0],
+                        "conditions": condition_slugs(cond),
+                        "condition_label": condition_label(cond)}
+                if cond.get("negate"):
+                    unit["negate"] = True
+                conds.append(unit["conditions"])
+            else:
+                unit = {"text": body, "label": label,
+                        "kind": "paragraph" if kind == SPOKEN else "instruction"}
+            if unit["kind"] == "paragraph":
                 unit["chunk"] = _unit_chunk(unit)  # טעמים/פיסוק — 8.24
             units.append(unit)
+    days = day_rules.summary(conds, sel)
     try:
         check_units_limits(units)
     except TooLarge as e:
         raise ApiError(413, f"{e} (בחרו טווח פסקאות קצר יותר — from/to)",
-                       paragraphs=info)
-    segments = segments_payload(units, max_words, MODE)
+                       paragraphs=info, **days)
+    # תוספת כבויה לא נכנסת למקטעים — בדיוק כמו הוראה (units_to_segments)
+    segments = segments_payload(
+        [dict(u, kind=INSTRUCTION) if u["kind"] == CONDITIONAL else u
+         for u in units], max_words, MODE)
     if not segments:
         if not has_vocalized(paragraphs):
             # הכלל "לא מנוקד ⇐ הוראה" לא מבחין כאן בין הלכה לתפילה (למשל
@@ -364,6 +425,11 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
                      "הנאמר — הכל מוצג כהוראות. אפשר להעתיק אותו לטקסט חופשי "
                      "ולסנכרן משם", unvocalized=True, units=units,
                 paragraphs=info)
+        if conds:
+            raise ApiError(400, "בטווח שנבחר יש רק תוספות לימים מסוימים, וכולן "
+                                "כבויות — סמנו ב\"מה אומרים היום?\" את היום "
+                                "המתאים, או בחרו טווח אחר",
+                           units=units, paragraphs=info, **days)
         raise ApiError(400, "בטווח שנבחר אין טקסט נאמר לסנכרון — רק הוראות",
                        units=units, paragraphs=info)
     lic = cat.nusach_of(keys)["versions"][vid].get("license") or \
@@ -386,6 +452,7 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
         "source_url": f"{SEFARIA_BASE}/{urllib.parse.quote(src['ref'])}",
         "range": {"from": start, "to": end, "total": total},
         "paragraphs": info,
+        **days,
     }
 
 

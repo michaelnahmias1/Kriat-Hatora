@@ -10,7 +10,8 @@ tools/build_siddur_catalog.py, כך שבדרך כלל אין שום בקשת ר�
 
 פלט: ‏data/siddur/identify_index.json.gz — הטקסט הנאמר של כל עלה זמין
 (3 הנוסחים), כמילים מנורמלות **בדיוק כמו בצינור**: יחידות כמו ב-api/siddur.py
-(‏markup.classify_paragraph — הוראות בחוץ), מילות יישור במצב tefila
+(‏markup.classify_leaf — הוראות בחוץ; **תוספות תלויות-יום בפנים** (4.4.2): הן
+נאמרות בחלק מהימים, וההקלטה עשויה להיות מיום כזה), מילות יישור במצב tefila
 (‏units_to_segments ⇐ align_plain: שם ה׳ ⇐ אדני, מקף ⇐ מילים נפרדות, כתיב
 שהקרי שלו בסוגריים בחוץ), ואז anchors.normalize_word — אותה נורמליזציה
 שהמיישר מפעיל על התמלול. ה-n-gramים עצמם לא נשמרים: src/siddur/identify.py
@@ -36,7 +37,8 @@ from aligner.anchors import normalize_word  # noqa: E402
 from aligner.pipeline import _unit_chunk, units_to_segments  # noqa: E402
 from siddur import load_catalog  # noqa: E402
 from siddur.identify import FORMAT, INDEX_PATH  # noqa: E402
-from siddur.markup import SPOKEN, classify_paragraph, first_words, flatten  # noqa: E402
+from siddur.markup import (CONDITIONAL, SPOKEN, classify_leaf,  # noqa: E402
+                           first_words, flatten)
 
 _SPEC = importlib.util.spec_from_file_location(
     "survey_siddur", Path(__file__).resolve().parent / "survey_siddur.py")
@@ -47,11 +49,18 @@ DEFAULT_CACHE = Path.home() / ".cache" / "kriat-hatora-sefaria-catalog"
 FIRST_WORDS = 5
 
 
-def paragraph_words(paragraph: str) -> list:
-    """פסקה אחת (HTML מ-Sefaria) ⇐ המילים הנאמרות, מנורמלות כמו בצינור."""
+_SAID = (SPOKEN, CONDITIONAL)   # נאמר תמיד / בחלק מהימים
+
+
+def paragraph_words(paragraph, parts=None) -> list:
+    """פסקה אחת (HTML מ-Sefaria) ⇐ המילים הנאמרות (גם תוספות תלויות-יום),
+    מנורמלות כמו בצינור. ‏parts — הסיווג שלה מ-classify_leaf, אם כבר חושב
+    (תוספת שהכותרת שלה בפסקה הקודמת מזוהה רק בסיווג של העלה כולו)."""
+    if parts is None:
+        parts = classify_leaf([paragraph])[0]
     units = []
-    for kind, body in classify_paragraph(paragraph):
-        if kind != SPOKEN:
+    for kind, body, _ in parts:
+        if kind not in _SAID:
             continue
         unit = {"text": body, "kind": "paragraph"}
         unit["chunk"] = _unit_chunk(unit)
@@ -72,13 +81,15 @@ def leaf_record(paragraphs: list) -> dict:
     first: {מספר פסקה: מילים ראשונות}, total}. פסקה בלי מילים נאמרות (הוראה)
     לא נכנסת ל-starts — הטווח שיוחזר לעולם לא מתחיל או נגמר בה."""
     words, starts, first = [], [], {}
-    for n, para in enumerate(paragraphs, 1):
-        pw = paragraph_words(para)
+    for n, (para, parts) in enumerate(zip(paragraphs, classify_leaf(paragraphs)), 1):
+        pw = paragraph_words(para, parts)
         if not pw:
             continue
         starts.append([n, len(words)])
         words.extend(pw)
-        spoken = [b for k, b in classify_paragraph(para) if k == SPOKEN]
+        # כמו first_words של /api/siddur: הנאמר תמיד, ואם אין — התוספת
+        spoken = [b for k, b, _ in parts if k == SPOKEN] or \
+            [b for k, b, _ in parts if k == CONDITIONAL]
         fw = first_words(spoken, FIRST_WORDS)
         if fw:
             first[str(n)] = fw

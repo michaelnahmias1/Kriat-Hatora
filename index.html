@@ -176,6 +176,20 @@
             <h3 id="sdLeafTitle"></h3>
           </div>
           <p class="hint" id="sdLeafMeta"></p>
+          <!-- "מה אומרים היום?" — תוספות תלויות-יום (PLAN_TEFILA.md 4.4.2) -->
+          <div id="sdDays" class="sdBlock sdDays mt" hidden>
+            <div class="range-title">מה אומרים היום?</div>
+            <label for="sdDay">איזה יום?</label>
+            <select id="sdDay"></select>
+            <div id="sdSeasonWrap" hidden>
+              <div class="sdSubTitle">עונה</div>
+              <div id="sdSeason" class="sdSeg" role="group" aria-label="עונה"></div>
+            </div>
+            <div id="sdNeed" class="sdNeed" role="status" hidden></div>
+            <div class="sdSubTitle" id="sdCondsTitle">תוספות בקטע (הקשה מדליקה / מכבה)</div>
+            <div id="sdConds" class="sdChips"></div>
+            <p class="hint" id="sdDaysSum"></p>
+          </div>
           <div id="sdRange" hidden>
             <div class="row mt">
               <div>

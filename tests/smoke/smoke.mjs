@@ -1054,7 +1054,7 @@ async function flowSiddur(browser, base, profile) {
     const calls = siddurCalls(cloud).map(c => c.params);
     assert.ok(calls.some(p => p.popular === "1" && p.nusach === "sefard"));
     assert.ok(calls.some(p => p.path === "sefard" && Object.keys(p).length === 1));
-    assert.deepEqual((await lsState(page)).siddur, { nusach: "sefard", path: "sefard", leaf: null });
+    assert.deepEqual((await lsState(page)).siddur, { nusach: "sefard", path: "sefard", leaf: null, days: { day: "auto", season: "", on: [], off: [] } });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
     await shot(page, profile, "siddur-2-nusach-shortcuts");
     await shot(page, profile, "search-1-top");
@@ -1410,13 +1410,128 @@ async function flowSiddur(browser, base, profile) {
     assert.deepEqual(await tabState(page), { sel: ["text"], tanakh: false, text: true });
     assert.equal(await txt(page, "#loadOk"), `נטען: אשרי · 1 שורות · ${ts.segments.length} כתוביות`);
     assert.equal(siddurCalls({ api: cloud.api.slice(nApi) }).length, 0, "הסידור לא נטען בלי פתיחת הלשונית");
-    assert.deepEqual((await lsState(page)).siddur, { nusach: "", path: "", leaf: null });
+    assert.deepEqual((await lsState(page)).siddur, { nusach: "", path: "", leaf: null, days: { day: "auto", season: "", on: [], off: [] } });
     await page.click('.srcTabs [data-src="siddur"]');
     await page.waitForFunction(() => document.getElementById("sdNusach").options.length === 4);
     assert.equal(await val(page, "sdNusach"), "");
     assert.equal(await visible(page, "sdBrowse"), false);
     assert.equal(await visible(page, "sdLeaf"), false);
     assert.equal(await page.evaluate(() => dataSource()), "text", "הטקסט שנטען לא נמחק במעבר לשונית");
+  });
+
+  /* ---- "מה אומרים היום?" — תוספות תלויות-יום (PLAN_TEFILA.md 4.4.2) ----
+     העמידה של חול בעדות המזרח (Shaliehsaboo, מוקלטת): יעלה ויבוא, עשי"ת,
+     מוריד הטל/משיב הרוח, על הניסים, עננו… */
+  const EDOT_AMIDA = "edot-hamizrach/weekday/weekday-shacharit/amida";
+  const A0 = mockApi("siddur", { path: EDOT_AMIDA }).body;
+  const A_RC = mockApi("siddur", { path: EDOT_AMIDA, day: "auto", days: "rosh-chodesh" }).body;
+  const A_RCW = mockApi("siddur", { path: EDOT_AMIDA, day: "auto", season: "winter", days: "rosh-chodesh" }).body;
+  const A_W = mockApi("siddur", { path: EDOT_AMIDA, day: "auto", season: "winter" }).body;
+  const A_RCP = mockApi("siddur", { path: EDOT_AMIDA, day: "rosh-chodesh", season: "winter" }).body;
+  const rowsOf = async () => ({
+    subs: await page.$$eval("#segPreview .segrow:not(.instr) .txt", r => r.map(x => x.textContent)),
+    greys: await page.$$eval("#segPreview .segrow.instr .txt", r => r.map(x => x.textContent)),
+  });
+  const offTexts = d => d.units.filter(u => u.condition && u.kind !== "paragraph").map(u => u.text);
+  // לצילום: האלמנט מתחת לכותרת הדביקה
+  const scrollUnderHeader = sel => page.evaluate(sel => {
+    const el = document.querySelector(sel);
+    const head = document.querySelector("header");
+    scrollTo(0, el.getBoundingClientRect().top + scrollY - (head ? head.offsetHeight : 0) - 8);
+  }, sel);
+  const chip = label => page.locator(`#sdConds .sdChip:has-text("${label}")`).first();
+  const loadedWith = async d => {
+    await page.waitForFunction(n => document.querySelectorAll("#segPreview .segrow:not(.instr)").length === n
+      && /עודכן לפי היום|^$/.test(document.getElementById("loadMsg").textContent), d.segments.length);
+    const r = await rowsOf();
+    assert.deepEqual(r.subs, d.segments.map(s => s.display));
+    for (const t of offTexts(d)) assert.ok(r.greys.includes(t), "תוספת כבויה מוצגת באפור: " + t);
+    assert.ok(await page.evaluate(() => S.data.units.every(u => u.kind !== "conditional")),
+      "ב-S.data (מה שנשלח ל-worker) אין kind=conditional");
+  };
+
+  await step(`[${profile}] מה אומרים היום: מופיע בקטע עם תוספות; ברירת מחדל לפי הקטע, עונה מבוקשת`, async () => {
+    await page.evaluate(p => selectLeaf({ path: p, title: "עמידה" }), EDOT_AMIDA);
+    await page.waitForFunction(() => !document.getElementById("sdDays").hidden);
+    assert.deepEqual(leafCalls(cloud, EDOT_AMIDA).map(c => c.params), [{ path: EDOT_AMIDA }],
+      "בלי בחירה — אותה בקשה כמו קודם");
+    assert.equal(await val(page, "sdDay"), "auto");
+    assert.equal(await page.$eval("#sdDay option[value=auto]", o => o.textContent), "לפי הקטע (יום חול רגיל)");
+    assert.equal(await visible(page, "sdSeasonWrap"), true);
+    assert.equal(await visible(page, "sdNeed"), true);
+    assert.ok((await txt(page, "#sdNeed")).includes("קיץ או חורף"));
+    const chips = await page.$$eval("#sdConds .sdChip", b => b.map(x => [x.dataset.slug, x.getAttribute("aria-pressed")]));
+    const expect = A0.conditions.filter(c => c.group !== "season").map(c => [c.slug, "false"]);
+    assert.deepEqual(chips, expect);
+    assert.ok(chips.some(([s]) => s === "rosh-chodesh") && chips.some(([s]) => s === "aseret-yemei-teshuva"));
+    // ברשימת הפסקאות — שם היום ליד פסקה עם תוספת
+    assert.ok((await page.$$eval("#sdParas .sdPara .pc", r => r.map(x => x.textContent))).includes("ראש חודש"));
+    await page.click("#sdLoadBtn");
+    await loadedWith(A0);
+    assert.ok(offTexts(A0).some(t => t.startsWith("רֹאשׁ חֹֽדֶשׁ")));
+    assert.ok(offTexts(A0).some(t => t.startsWith("מוֹרִיד הַטָּל")) && offTexts(A0).some(t => t.startsWith("מַשִּׁיב הָרֽוּחַ")));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    await scrollUnderHeader("#sdDays");
+    await shot(page, profile, "days-1-weekday", false);
+    // רשימת הפסקאות: שם היום ליד פסקאות יעלה ויבוא
+    await page.$eval('#sdParas input[data-n="35"]', e => e.closest(".sdPara").scrollIntoView({ block: "center" }));
+    await scrollUnderHeader("#sdRange");
+    await shot(page, profile, "days-4-paragraph-list", false);
+  });
+
+  await step(`[${profile}] מה אומרים היום: הדלקת "ראש חודש" ⇐ יעלה ויבוא הופך לכתוביות; העונה ⇐ משיב הרוח`, async () => {
+    await chip("ראש חודש").click();
+    await loadedWith(A_RC);
+    assert.deepEqual(leafCalls(cloud, EDOT_AMIDA).at(-1).params, { path: EDOT_AMIDA, day: "auto", days: "rosh-chodesh" });
+    assert.equal(await chip("ראש חודש").getAttribute("aria-pressed"), "true");
+    assert.equal(await txt(page, "#loadMsg"), "הטקסט עודכן לפי היום שנבחר ✓");
+    const rc = A_RC.units.find(u => u.text.startsWith("רֹאשׁ חֹֽדֶשׁ"));
+    assert.equal(rc.kind, "paragraph");
+    assert.ok(A_RC.segments.some(s => A_RC.units[s.unit] === undefined ? false : A_RC.units[s.unit].text === rc.text));
+    assert.ok(!offTexts(A_RC).includes(rc.text) && offTexts(A0).includes(rc.text));
+    assert.ok(A_RC.segments.length > A0.segments.length);
+    // עונה — חורף
+    await page.click('#sdSeason button[data-season="winter"]');
+    await loadedWith(A_RCW);
+    assert.equal(await visible(page, "sdNeed"), false, "העונה נבחרה — אין בקשה");
+    assert.equal(await page.$eval('#sdSeason button[data-season="winter"]', b => b.getAttribute("aria-pressed")), "true");
+    assert.ok(offTexts(A_RCW).some(t => t.startsWith("מוֹרִיד הַטָּל")));
+    assert.ok(!offTexts(A_RCW).some(t => t.startsWith("מַשִּׁיב הָרֽוּחַ")));
+    assert.deepEqual((await lsState(page)).siddur.days, { day: "auto", season: "winter", on: ["rosh-chodesh"], off: [] });
+    await scrollUnderHeader("#sdDays");
+    await shot(page, profile, "days-2-rosh-chodesh-winter", false);
+    // הטקסט שנטען: יעלה ויבוא — כתוביות; חוה"מ — באפור עם שם היום
+    await page.$$eval("#segPreview .segrow", rows => {
+      const i = rows.findIndex(x => x.textContent.includes("רֹאשׁ חֹֽדֶשׁ"));
+      const r = rows[Math.max(0, i - 3)];
+      r.parentElement.scrollTop = r.offsetTop - r.parentElement.offsetTop - 8;
+    });
+    await scrollUnderHeader("#segPreviewWrap");
+    await shot(page, profile, "days-3-loaded-text", false);
+  });
+
+  await step(`[${profile}] מה אומרים היום: כיבוי ⇐ שוב באפור; "ראש חודש" מהתפריט; נזכר אחרי טעינה מחדש`, async () => {
+    await chip("ראש חודש").click();
+    await loadedWith(A_W);
+    assert.equal(await chip("ראש חודש").getAttribute("aria-pressed"), "false");
+    assert.deepEqual(leafCalls(cloud, EDOT_AMIDA).at(-1).params, { path: EDOT_AMIDA, day: "auto", season: "winter" });
+    await page.selectOption("#sdDay", "rosh-chodesh");
+    await loadedWith(A_RCP);
+    assert.deepEqual(leafCalls(cloud, EDOT_AMIDA).at(-1).params, { path: EDOT_AMIDA, day: "rosh-chodesh", season: "winter" });
+    assert.equal(A_RCP.day.key, "rosh-chodesh");
+    assert.equal(await chip("ראש חודש").getAttribute("aria-pressed"), "true");
+    const nApi = cloud.api.length;
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("sdDays").hidden);
+    assert.equal(await val(page, "sdDay"), "rosh-chodesh");
+    assert.equal(await page.$eval('#sdSeason button[data-season="winter"]', b => b.getAttribute("aria-pressed")), "true");
+    assert.equal(await page.$$eval("#segPreview .segrow:not(.instr)", r => r.length), A_RCP.segments.length);
+    assert.ok(!siddurCalls({ api: cloud.api.slice(nApi) }).some(c => c.params.path === EDOT_AMIDA), "בלי בקשה — מהטקסט השמור");
+    // חזרה לברירת המחדל — כדי שהשלבים הבאים יתחילו נקי
+    await page.selectOption("#sdDay", "auto");
+    await page.click('#sdSeason button[data-season="winter"]');
+    await page.waitForFunction(() => document.getElementById("sdDay").value === "auto"
+      && JSON.parse(localStorage.getItem("kriat-hatora-v1")).siddur.days.season === "");
   });
 
   await step(`[${profile}] (תפילה) אין שגיאות קונסול ואין יציאה לרשת`, async () => {
