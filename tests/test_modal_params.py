@@ -282,6 +282,16 @@ class TestParseParamsUnits(unittest.TestCase):
                                               performance="[1, 0, 1]"))
         self.assertEqual(got["performance"], [1, 0, 1])
 
+    def test_performance_word_cap_with_splits(self):
+        """החזרות מכפילות מילים — אותה תקרה כמו לחלוקה (MAX_SPLIT_WORDS)."""
+        n = params.MAX_SPLIT_WORDS // 10
+        form = _units_form(splits="[10]",
+                           performance=json.dumps([0] * (n + 1)))
+        with self.assertRaisesRegex(ValueError, "ארוך מדי"):
+            params.parse_params(form)
+        params.parse_params(_units_form(splits="[10]",
+                                        performance=json.dumps([0] * n)))
+
     def test_performance_without_splits_checks_shape_only(self):
         """בלי splits מספר הכתוביות ידוע רק אחרי החיתוך — בצינור עצמו."""
         got = params.parse_params(_units_form(performance="[0, 99]"))
@@ -392,9 +402,13 @@ class TestRouting(unittest.TestCase):
     def test_constants_in_sync_with_pipeline(self):
         """ההעתק של UNIT_KINDS / CHUNK_MODES ב-params.py חייב להישאר מסונכרן."""
         sys.path.insert(0, str(_ROOT / "src"))
-        from aligner import pipeline
+        from aligner import hybrid, pipeline
         self.assertEqual(params.UNIT_KINDS, pipeline.UNIT_KINDS)
         self.assertEqual(params.CHUNK_MODES, pipeline.CHUNK_MODES)
+        # תקרת סדר הביצוע זהה; תקרת המילים בצינור (מילות יישור) ≥ זו שכאן
+        self.assertEqual(params.MAX_PERFORMANCE, hybrid.MAX_PERFORMANCE)
+        self.assertGreaterEqual(hybrid.MAX_PERFORMED_WORDS,
+                                params.MAX_SPLIT_WORDS)
 
 
 if __name__ == "__main__":

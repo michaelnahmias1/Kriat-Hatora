@@ -32,6 +32,8 @@ silero-vad/uroman — כמו ה-image ב-modal_worker/app.py):
     --asr-json PATH        תמלול שמור במקום להריץ Whisper שוב (חוסך דקות)
     --rate-range LO HI     ‏rate_range של select_anchors (ברירת מחדל 0.12 4.0)
     --max-word-sec X       אורך מילה מרבי (קריאה: ‏_MAX_WORD_SEC=12; שירה: 20)
+    --performance JSON     סדר ביצוע (4.3.2) — אינדקסי כתוביות מ-0, למשל
+                           "[0,1,2,3,0,1]" (חזרה) או בלי אינדקס (דילוג)
     --src DIR              תיקיית src חלופית — למשל הגרסה שרצה בענן:
                            git archive <commit> src | tar -x -C /tmp/old
                            ואז --src /tmp/old/src (בלי וו הדיבאג: רק SRT/דוח/יומן)
@@ -254,6 +256,7 @@ def build_dump(debug: dict, units: list, anchors_mod) -> dict:
         n = len(seg["align_plain"])
         seg_rows.append({
             "i": si, "unit": seg.get("unit"), "label": seg.get("label"),
+            "seg_index": seg.get("seg_index"),  # סדר ביצוע: האינדקס המקורי
             "display": seg["display"], "word_lo": j, "word_hi": j + n - 1,
             "start_raw": _r(raw[si]) if si < len(raw) else None,
             "start": _r(starts[si]) if si < len(starts) else None,
@@ -352,6 +355,8 @@ def _parse_args(argv):
     ap.add_argument("--asr-json", default=None)
     ap.add_argument("--rate-range", nargs=2, type=float, default=None)
     ap.add_argument("--max-word-sec", type=float, default=None)
+    ap.add_argument("--performance", default=None,
+                    help="סדר ביצוע: JSON של אינדקסי כתוביות (מ-0)")
     ap.add_argument("--src", default=None)
     ap.add_argument("--ground-truth", default=None)
     ap.add_argument("--compare-srt", default=None)
@@ -425,6 +430,8 @@ def _run(args, audio, out_dir, out_srt) -> dict:
                   work_dir=str(out_dir), asr_model=args.asr_model)
     if args.profile != "reading":
         kwargs["profile"] = args.profile
+    if args.performance:
+        kwargs["performance"] = json.loads(args.performance)
     if has_debug:
         kwargs["debug"] = debug
     else:
@@ -455,6 +462,7 @@ def _run(args, audio, out_dir, out_srt) -> dict:
     dump["meta"] = {"audio": str(audio), "text_file": str(args.text_file),
                     "max_words": payload["max_words"], "mode": payload["mode"],
                     "profile": args.profile,
+                    "performance": kwargs.get("performance"),
                     "src": str(Path(H.__file__).parent.parent),
                     "overrides": overrides, "asr_sec": captured.get("sec"),
                     "total_sec": round(time.time() - t0, 1)}
