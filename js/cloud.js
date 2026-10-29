@@ -176,11 +176,13 @@ async function ensurePushSubscription() {
   } catch (e) { return null; }
 }
 
-/* העלאה עם מד אחוזים אמיתי (fetch לא חושף התקדמות העלאה — לכן XHR) */
-function uploadToCloud(fd, signal, onProgress) {
+/* העלאה עם מד אחוזים אמיתי (fetch לא חושף התקדמות העלאה — לכן XHR).
+   ‏route — ‏"/submit" (סנכרון) או "/identify" (זיהוי הקטע, identify.js);
+   לשגיאה מצורף status — worker ישן בלי /identify עונה 404 */
+function uploadToCloud(fd, signal, onProgress, route = "/submit") {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", AI_ENDPOINT + "/submit");
+    xhr.open("POST", AI_ENDPOINT + route);
     xhr.responseType = "json";
     xhr.upload.onprogress = ev => {
       if (ev.lengthComputable && onProgress) onProgress(ev.loaded / ev.total);
@@ -188,7 +190,7 @@ function uploadToCloud(fd, signal, onProgress) {
     xhr.onload = () => {
       const data = xhr.response || {};
       if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new Error(data.error || "שגיאה " + xhr.status));
+      else reject(Object.assign(new Error(data.error || "שגיאה " + xhr.status), { status: xhr.status }));
     };
     xhr.onerror = () => reject(new Error("ההעלאה נכשלה — בדוק את החיבור ונסה שוב"));
     xhr.onabort = () => reject(new DOMException("בוטל", "AbortError"));

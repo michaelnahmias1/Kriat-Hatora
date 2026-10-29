@@ -25,6 +25,10 @@ GPU T4 לפי-שימוש במקום notebook. לתפילה ולטקסט חופש
     GET  /status?call_id=…                                      → 202 בזמן ריצה,
                                                                   {"srt","report"} בסיום.
     POST /cancel  (form: call_id + token)                       → עוצר עבודה רצה.
+    POST /identify (multipart: file + token [+ nusach])         → {"call_id"};
+                   תמלול בלבד + חיפוש באינדקס הסידור (PLAN_TEFILA.md 4.5).
+                   התוצאה — באותו GET /status: ‏{"kind":"identify",
+                   "candidates":[…], …} (ראה src/siddur/identify.py).
 
 אחרי שה-submit חוזר, העבודה רצה בענן בלי שום תלות בטלפון: הדפדפן יכול
 להיסגר, וה-call_id (שנשמר ב-localStorage בצד הלקוח) מאפשר למשוך את
@@ -41,8 +45,9 @@ from pathlib import Path
 import modal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from params import (notify_label, parse_params,  # noqa: E402
-                    parse_push_sub, pipeline_call)
+from params import (identify_call, notify_label,  # noqa: E402
+                    parse_identify_params, parse_params, parse_push_sub,
+                    pipeline_call)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -90,6 +95,11 @@ _gpu_image = (
     .add_local_python_source("params", copy=True)
     .run_function(_download_models)
     .add_local_dir(str(_REPO_ROOT / "src"), remote_path="/root/src")
+    # אינדקס הזיהוי (‏/identify, ‏tools/build_identify_index.py): קובץ אחד
+    # (~1MB) לצד src — ‏src/siddur/identify.py מוצא אותו ב-/root/data/siddur.
+    # ‏add_local_* בלי copy נטען בעליית הקונטיינר — לא שכבה חדשה ב-build.
+    .add_local_file(str(_REPO_ROOT / "data" / "siddur" / "identify_index.json.gz"),
+                    remote_path="/root/data/siddur/identify_index.json.gz")
 )
 
 _web_image = (
@@ -170,6 +180,30 @@ def process(audio_bytes: bytes, filename: str, params: dict,
     return {"srt": srt, "report": report}
 
 
+# זיהוי: תמלול של עד 10 דקות (params.IDENTIFY_MAX_SEC) — חצי שעה היא מגבלת
+# בטיחות בלבד
+IDENTIFY_TIMEOUT_SEC = 30 * 60
+
+
+@app.function(image=_gpu_image, gpu="T4", timeout=IDENTIFY_TIMEOUT_SEC,
+              secrets=[modal.Secret.from_name("kriat-hatora")])
+def identify_job(audio_bytes: bytes, filename: str, params: dict) -> dict:
+    """הקלטה ⇐ מועמדים (נוסח, קטע וטווח פסקאות) — תמלול בלבד, בלי יישור.
+    ‏src/siddur/identify.py::run_identify; ה-kwargs מ-params.identify_call."""
+    import tempfile
+
+    sys.path.insert(0, "/root/src")
+    from siddur.identify import run_identify
+
+    suffix = Path(filename or "").suffix
+    if not re.fullmatch(r"\.[A-Za-z0-9]{1,8}", suffix or ""):
+        suffix = ".m4a"
+    with tempfile.TemporaryDirectory() as td:
+        audio_path = Path(td) / f"recording{suffix}"
+        audio_path.write_bytes(audio_bytes)
+        return run_identify(**identify_call(params, str(audio_path), td))
+
+
 @app.function(image=_web_image,
               secrets=[modal.Secret.from_name("kriat-hatora")])
 @modal.asgi_app()
@@ -233,6 +267,30 @@ def web():
 
         call = process.spawn(audio_bytes, file.filename or "", params,
                              parse_push_sub(push_sub))
+        return {"call_id": call.object_id}
+
+    @api.post("/identify")
+    async def identify(file: UploadFile = File(...),
+                       token: str = Form(""),
+                       nusach: str = Form("")):
+        """זיהוי הקטע מההקלטה (4.5.1) — עבודת רקע כמו /submit; התוצאה
+        נמשכת ב-/status. נתיב חדש: הנתיבים הקיימים לא השתנו."""
+        if not _token_ok(token):
+            return JSONResponse({"error": "גישה נדחתה — ה-token שגוי או שה-secret "
+                                          "‏kriat-hatora לא הוגדר ב-Modal"},
+                                status_code=401)
+        try:
+            params = parse_identify_params({"nusach": nusach})
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        audio_bytes = await file.read()
+        if not audio_bytes:
+            return JSONResponse({"error": "קובץ ההקלטה ריק"}, status_code=400)
+        if len(audio_bytes) > MAX_UPLOAD_MB * 1024 * 1024:
+            return JSONResponse(
+                {"error": f"הקובץ גדול מ-{MAX_UPLOAD_MB}MB — פצל את ההקלטה"},
+                status_code=413)
+        call = identify_job.spawn(audio_bytes, file.filename or "", params)
         return {"call_id": call.object_id}
 
     @api.get("/status")

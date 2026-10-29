@@ -387,8 +387,9 @@ function selectLeaf(sel) {
   renderSiddurPanels();
   renderLeaf();
   save();
-  fetchLeafRange();
+  const loading = fetchLeafRange();
   $("sdLeaf").scrollIntoView({ block: "nearest" });
+  return loading;   // ‏identify.js מחכה לטעינה ואז טוען את הקטע
 }
 $("sdBack").addEventListener("click", () => {
   SD.leaf = null; SD.payload = null;
