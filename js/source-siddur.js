@@ -476,6 +476,7 @@ async function loadSiddurLeaf() {
   d.label = siddurLabel();
   S.data = d;
   S.times = null; S.endTime = null; S.report = null;
+  S.perf = null; S.timesOrder = null;   // מבנה הביצוע שייך לטקסט הקודם
   S.splits = null;
   S.baseSplits = d.segments.map(s => tokensOf(s.display).length);
   renderTextLoaded();

@@ -71,7 +71,8 @@ function refreshTimingSteps() {
   setLocked("step3", !ready);
   // התוצאה לא תלויה בקובץ האודיו: דוח, זמנים וייצוא SRT נפתחים ברגע שיש
   // זמנים — גם אחרי סגירה מלאה, כשהקובץ אבד. רק ההאזנה דורשת אותו מחדש.
-  const timed = !!(S.data && S.times && S.times.length === S.data.segments.length && S.endTime != null);
+  // ‏cueCount — כתובית לכל הופעה בסדר הביצוע שנשלח (performance.js); בלעדיו = מספר הכתוביות
+  const timed = !!(S.data && S.times && S.times.length === cueCount() && S.endTime != null);
   setLocked("stepReport", !timed);
   setLocked("step4", !timed);
   setLocked("step5", !timed);

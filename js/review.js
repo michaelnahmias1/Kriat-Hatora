@@ -76,12 +76,18 @@ function nudge(i, delta) {
 function renderTimeList() {
   const list = $("timeList");
   list.innerHTML = "";
-  S.data.segments.forEach((seg, i) => {
+  // רשומה לכל הופעה בסדר הביצוע (performance.js) — כתובית שחוזרת מופיעה שוב,
+  // עם מספר הכתובית בטקסט ו"חזרה 2"; בלי סדר ביצוע — בדיוק כמו קודם
+  const expanded = !!S.timesOrder;
+  cueList().forEach((cue, i) => {
+    const seg = S.data.segments[cue.i];
     const row = document.createElement("div");
     row.className = "timerow";
+    const tag = expanded
+      ? `<small class="cueTag">כתובית ${cue.i + 1}${cue.occ > 1 ? ` · חזרה ${cue.occ}` : ""}</small>` : "";
     row.innerHTML =
       `<span class="t">${fmtSrt(S.times[i]).slice(3, 11)}</span>` +
-      `<span class="txt bible">${isUnitsSource() ? escapeHtml(seg.display) : seg.display}</span>` +
+      `<span class="txt bible">${tag}${isUnitsSource() ? escapeHtml(seg.display) : seg.display}</span>` +
       `<button class="small secondary" data-act="play" data-i="${i}">▶</button>` +
       `<button class="small secondary" data-act="minus" data-i="${i}">−0.2</button>` +
       `<button class="small secondary" data-act="plus" data-i="${i}">+0.2</button>`;

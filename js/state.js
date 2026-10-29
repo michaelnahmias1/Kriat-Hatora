@@ -13,6 +13,8 @@ const S = {
   splits: null,      // חלוקה מותאמת אישית: גודל כל כתובית במילים (null = לפי הטעמים)
   baseSplits: null,  // החלוקה המקורית לפי הטעמים — לכפתור האיפוס
   source: "tanakh",  // הלשונית הפעילה: tanakh | siddur | text (מקור הטקסט שנטען — dataSource())
+  perf: null,        // מבנה הביצוע — חזרות, פזמון, דילוגים (performance.js); null = סדר הטקסט
+  timesOrder: null,  // סדר הכתוביות ש-times שייכים אליו (מה שנשלח לענן); null = סדר הטקסט
 };
 
 /* ---------- עזרי תצוגה ---------- */
@@ -60,6 +62,8 @@ function save() {
       source: S.source, freeText: readFreeText(),
       // הבחירה בסידור (נוסח, מיקום בעץ, קטע וטווח) — source-siddur.js
       siddur: siddurSaved(),
+      // מבנה הביצוע וסדר הזמנים — חדשים; מצב שמור בלעדיהם = סדר הטקסט
+      perf: S.perf, timesOrder: S.timesOrder,
     }));
   } catch (e) {}
 }

@@ -80,6 +80,7 @@ async function loadFreeText() {
     data.source = "text";   // מכאן — מצב יישור, שליחה לענן ושם הקובץ
     S.data = data;
     S.times = null; S.endTime = null; S.report = null;
+    S.perf = null; S.timesOrder = null;   // מבנה הביצוע שייך לטקסט הקודם
     S.splits = null;
     S.baseSplits = data.segments.map(s => tokensOf(s.display).length);
     renderTextLoaded();

@@ -287,6 +287,17 @@ class TestParseParamsUnits(unittest.TestCase):
         got = params.parse_params(_units_form(performance="[0, 99]"))
         self.assertEqual(got["performance"], [0, 99])
 
+    def test_performance_limit_in_sync_with_ui(self):
+        """עורך מבנה הביצוע (js/performance.js) חוסם מעל אותה תקרה."""
+        import re
+        js = (_ROOT / "js" / "performance.js").read_text(encoding="utf-8")
+        m = re.search(r"const PERF_MAX_LEN = (\d+);", js)
+        self.assertIsNotNone(m)
+        self.assertEqual(int(m.group(1)), params.MAX_PERFORMANCE)
+        cfg = (_ROOT / "js" / "config.js").read_text(encoding="utf-8")
+        self.assertIn("const PERFORMANCE_ENABLED = false;", cfg,
+                      "עד שמשימה 4.3.2 נפרסת ב-worker הדגל כבוי")
+
     def test_bad_max_words_and_splits_in_units_mode(self):
         with self.assertRaisesRegex(ValueError, "מקסימום מילים"):
             params.parse_params(_units_form(max_words="11"))

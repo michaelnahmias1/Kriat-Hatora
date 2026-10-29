@@ -2,7 +2,9 @@
 /* שלב 3 — סנכרון בענן: העלאה, מעקב, ביטול, התראות, wake lock וחידוש עבודה */
 
 /* ---------- קליטת הזמנים מה-SRT שחוזר מהענן ---------- */
-function applySrtTimes(text, mismatchHint) {
+/* ‏order — סדר הביצוע שנשלח עם העבודה (performance): ה-SRT חוזר עם רשומה לכל
+   הופעה. בלעדיו — רשומה לכל כתובית, כמו תמיד */
+function applySrtTimes(text, mismatchHint, order) {
   const re = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/g;
   const starts = [], ends = [];
   let m;
@@ -10,11 +12,15 @@ function applySrtTimes(text, mismatchHint) {
     starts.push(+m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000);
     ends.push(+m[5] * 3600 + +m[6] * 60 + +m[7] + +m[8] / 1000);
   }
-  const n = S.data.segments.length;
+  order = order || null;
+  if (order && !validTimesOrder(order, S.data.segments.length))
+    throw new Error("סדר הביצוע שנשלח לא תואם את הטקסט שנטען — טען את הקטע מחדש ונסה שוב");
+  const n = order ? order.length : S.data.segments.length;
   if (!starts.length) throw new Error("לא חזרו חותמות זמן מהעיבוד");
   if (starts.length !== n)
-    throw new Error(`חזרו ${starts.length} כתוביות אבל בקטע שנטען ${n} — ${mismatchHint}`);
+    throw new Error(`חזרו ${starts.length} כתוביות אבל ${order ? "בסדר הביצוע" : "בקטע שנטען"} ${n} — ${mismatchHint}`);
   S.times = starts;
+  S.timesOrder = order;
   S.endTime = ends[ends.length - 1];
 }
 
@@ -184,7 +190,7 @@ async function pollCloudJob(signal) {
         throw new Error("התוצאה כבר לא שמורה בענן (נשמרת כשבוע מסיום העיבוד) — העלה את ההקלטה שוב");
       if (!res.ok) throw new Error(data.error || "שגיאה " + res.status);
       applySrtTimes(data.srt, isUnitsSource() ? "ודא שהטקסט תואם את ההקלטה"
-                                           : "ודא שטווח הפסוקים תואם את ההקלטה");
+                                           : "ודא שטווח הפסוקים תואם את ההקלטה", job.perf);
       S.report = (data.report || "").trim() || null;
       stopCloudTimer(true);
       setStayNotice(null);
@@ -259,7 +265,7 @@ async function runCloudTiming() {
   $("timingMsg").innerHTML = "";
   setStayNotice("warn");
   holdWakeLock();
-  let subData, pushSub = null;
+  let subData, pushSub = null, sentPerf = null;
   try {
     // הרשאת ההתראות מתבקשת עכשיו — צמוד ללחיצת המשתמש
     setProcLabel("מכין את ההעלאה…");
@@ -296,6 +302,10 @@ async function runCloudTiming() {
       if (S.data.max_words) fd.append("max_words", String(S.data.max_words));
       const title = sourceTitle().slice(0, 120);  // MAX_TITLE ב-params.py
       if (title) fd.append("title", title);
+      // מבנה הביצוע (חזרות/פזמון/דילוגים, PLAN_TEFILA.md 3.2) — רק כשאינו סדר
+      // הטקסט, ורק כשהסנכרון של חזרות פעיל ב-worker (PERFORMANCE_ENABLED)
+      sentPerf = sentPerformance();
+      if (sentPerf) fd.append("performance", JSON.stringify(sentPerf));
     } else {
       for (const [k, v] of Object.entries(readQuery())) if (v) fd.append(k, v);
     }
@@ -325,6 +335,7 @@ async function runCloudTiming() {
   // ── שלב העיבוד: העבודה רשומה ב-localStorage — שורדת סגירה וחזרה ──
   // ‏t0 — סיום ההעלאה (בסיס למגבלת הזמן); ts — תחילת הטיימר בתצוגה
   S.cloudJob = { id: subData.call_id, t0: Date.now(), ts: timerStart, est, push: !!pushSub };
+  if (sentPerf) S.cloudJob.perf = sentPerf;   // התוצאה תחזור עם כתובית לכל הופעה
   save();
   announceCloudProcessing();
   await trackCloudJob();
