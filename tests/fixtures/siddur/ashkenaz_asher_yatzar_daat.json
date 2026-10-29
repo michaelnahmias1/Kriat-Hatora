@@ -1,0 +1,15 @@
+{
+ "_recorded": "תשובה אמיתית של sefaria.org (api/v3/texts), הוקלטה 2026-10-29. קוצרה: רק השדות שה-API קורא; בלי קיצור טקסט (עלה לא מנוקד כלל).",
+ "ref": "Siddur Ashkenaz, Berachot, Asher Yatzar Etchem Badin",
+ "warnings": [],
+ "versions": [
+  {
+   "versionTitle": "Daat Siddur Ashkenaz",
+   "language": "he",
+   "license": "Public Domain",
+   "text": [
+    "ברוך אתה יי אלהינו מלך העולם, אשר יצר אתכם בדין, וזן וכלכל אתכם בדין, והמית אתכם בדין, ויודע מספר כלכם בדין, והוא עתיד להחיותכם ולקים אתכם בדין. ברוך אתה ד', מחיה המתים."
+   ]
+  }
+ ]
+}
