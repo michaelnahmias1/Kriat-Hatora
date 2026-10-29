@@ -19,6 +19,7 @@
     chapter_end: q.chapter_end, verse_end: q.verse_end,
   });
   if (!st) return;
+  S.singing = st.singing === true;   // לפני התצוגה — refreshTimingSteps מציג את המתג
   if (st.data) {
     S.data = st.data; S.times = st.times; S.endTime = st.endTime; S.audioName = st.audioName;
     S.report = st.report || null;

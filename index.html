@@ -204,6 +204,14 @@
   <!-- שלב 3: תזמון -->
   <section class="card locked" id="step3">
     <h2><span class="n">3</span> תזמון <span class="done" id="done3" hidden>✓</span></h2>
+    <!-- פרופיל שירה (PLAN_TEFILA.md 4.3.5) — רק בתפילה ובטקסט חופשי, כבוי כברירת מחדל (8.27) -->
+    <label class="singToggle" id="singWrap" hidden>
+      <input type="checkbox" id="singing" role="switch">
+      <span class="singTxt">
+        <b>🎵 שירה / חזנות</b>
+        <small>הדליקו אם ההקלטה מושרת או בנוסח חזנות — המערכת תדלג על דיבורים שאינם בטקסט (פתיחה, שם המנגינה)</small>
+      </span>
+    </label>
     <button id="startCloud" hidden>✨ סנכרון אוטומטי של הכתוביות</button>
     <div id="cloudProgress" hidden>
       <div class="procrow">

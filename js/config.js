@@ -13,7 +13,8 @@ const AI_TOKEN = "hdkue38hf6Gfjl96XMre";      // אותו token שהוגדר ב-
 const VAPID_PUBLIC_KEY = "";
 
 /* סנכרון לפי מבנה הביצוע — חזרות, פזמון ודילוגים (PLAN_TEFILA.md 4.3.1–4.3.2).
-   העורך ("מבנה הביצוע") זמין תמיד בתפילה ובטקסט חופשי, אבל השדה performance
-   נשלח ל-worker רק כשהדגל דולק: עד שמשימה 4.3.2 תיפרס ב-worker הוא דוחה את
-   השדה (NotImplementedError). כבוי ⇒ העורך מציג "בקרוב" והסנכרון לינארי. */
-const PERFORMANCE_ENABLED = false;
+   העורך ("מבנה הביצוע") זמין תמיד בתפילה ובטקסט חופשי; כשהדגל דולק השדה
+   performance נשלח ל-worker (4.3.2 — ממוזג; פעיל מרגע שה-worker נפרס מחדש).
+   worker ישן בחלון הפריסה זורק NotImplementedError — cloud.js מציג אז "הענן
+   עדיין לא עודכן". כבוי ⇒ העורך מציג "בקרוב" והסנכרון לינארי. */
+const PERFORMANCE_ENABLED = true;
