@@ -151,14 +151,17 @@ const GLOBAL_FUNCTIONS = `heNumeral fmtClock fmtSrt setLocked escapeHtml save re
   resumeCloudJob runCloudTiming editGroupOf editRender editMove editSplitAt editMerge openSplitEditor
   closeSplitEditor nudge renderTimeList buildSrt srtName srtFile isStandalone refreshInstallUi
   dataSource isFreeText isUnitsSource alignMode unitLabel sourceTitle setSourceTab titleSrtName
-  siddurSaved siddurRestore siddurActivate selectLeaf loadSiddurLeaf copySiddurToText`.split(/\s+/);
+  siddurSaved siddurRestore siddurActivate selectLeaf loadSiddurLeaf copySiddurToText
+  perfAvailable performanceOrder sentPerformance cueOrder cueList cueCount perfAfterSplits perfRestore
+  renderPerfStatus openPerfEditor`.split(/\s+/);
 const GLOBAL_BINDINGS = `$ STORE_KEY AI_ENDPOINT AI_TOKEN VAPID_PUBLIC_KEY S HE_LETTER_RE NIQQUD_RE MAQAF
   bookChapters FALLBACK_CHAPTERS player audioReady audioFileObj audioDurationSec lastObjectUrl
   MAX_UPLOAD_MB MAX_DECODE_MB CLOUD_POLL_MS CLOUD_JOB_LIMIT_MS MAX_UNITS_BYTES cloudAbort cloudTimerInt
-  CLOUD_BTN_LABEL wakeLock E settingsOverlay installPrompt`.split(/\s+/);
+  CLOUD_BTN_LABEL wakeLock E settingsOverlay installPrompt PERFORMANCE_ENABLED PERF_MAX_LEN PE`.split(/\s+/);
 
 /* ---------- הקשר דפדפן עם כל ה-mocks ---------- */
-async function newSession(browser, base, profile, { serviceWorkers = "block" } = {}) {
+/* ‏perfEnabled: מגישים את js/config.js עם PERFORMANCE_ENABLED = true (הקובץ בריפו — false) */
+async function newSession(browser, base, profile, { serviceWorkers = "block", perfEnabled = false } = {}) {
   const ctxOpts = profile === "mobile"
     ? (({ defaultBrowserType, ...d }) => d)(devices["iPhone 13"])
     : { viewport: { width: 1280, height: 860 } };
@@ -170,6 +173,12 @@ async function newSession(browser, base, profile, { serviceWorkers = "block" } =
     const req = route.request();
     const url = new URL(req.url());
     if (url.origin === origin) {
+      if (perfEnabled && url.pathname === "/js/config.js") {
+        const src = fs.readFileSync(path.join(ROOT, "js", "config.js"), "utf-8");
+        const patched = src.replace("const PERFORMANCE_ENABLED = false;", "const PERFORMANCE_ENABLED = true;");
+        assert.notEqual(patched, src, "PERFORMANCE_ENABLED = false ב-config.js");
+        return route.fulfill({ status: 200, contentType: "text/javascript; charset=utf-8", body: patched });
+      }
       if (url.pathname.startsWith("/api/")) {
         const kind = url.pathname.slice(5);
         // ‏POST (‏/api/text_segments) — גוף ה-JSON הוא הפרמטרים
@@ -285,6 +294,7 @@ async function flowMain(browser, base, profile) {
     assert.equal(rows[1], "2" + seg.segments[1].display);
     assert.equal(await isHidden(page, "done1"), false);
     assert.equal(await isHidden(page, "editSplitBtn"), false);
+    assert.equal(await isHidden(page, "perfRow"), true, "אין מבנה ביצוע בתנ״ך");
     assert.equal(await isLocked(page, "step2"), false);
     assert.equal(await isLocked(page, "step3"), true, "שלב 3 נעול בלי קובץ");
     assert.equal(await page.$eval("#loadBtn", b => b.textContent), "טען את הטקסט");
@@ -960,11 +970,12 @@ async function flowOldState(browser, base, profile) {
 // ‏/api/siddur — api/siddur.py האמיתי עם תשובות Sefaria אמיתיות שהוקלטו
 // (tests/fixtures/siddur; mock_api.py). צילומי מסך: SMOKE_SHOTS=<תיקייה>
 const SHOTS_DIR = process.env.SMOKE_SHOTS || "";
-async function shot(page, profile, name) {
+async function shot(page, profile, name, fullPage = true) {
   if (!SHOTS_DIR || profile !== "mobile") return;
   fs.mkdirSync(SHOTS_DIR, { recursive: true });
-  await page.evaluate(() => scrollTo(0, 0));   // הכותרת הדביקה — במקומה בצילום של כל הדף
-  await page.screenshot({ path: path.join(SHOTS_DIR, name + ".png"), fullPage: true });
+  // הכותרת הדביקה — במקומה בצילום של כל הדף; חלונית (fullPage=false) — מה שעל המסך
+  if (fullPage) await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: path.join(SHOTS_DIR, name + ".png"), fullPage });
 }
 const SEFARD_KS = "sefard/shabbat/kabbalat-shabbat";
 const SEFARD_ASHREI = "sefard/weekday/weekday-shacharit/ashrei";      // ‏versions ריק ⇐ 502
@@ -1330,6 +1341,392 @@ async function flowSiddur(browser, base, profile) {
   await context.close();
 }
 
+/* =================== מבנה הביצוע (PLAN_TEFILA.md 4.3.1) =================== */
+// לכה דודי כטקסט חופשי: הפזמון פעם אחת בראש (2 כתוביות), ואחריו שלושה בתים
+const LD_TEXT = [
+  "לְכָה דוֹדִי לִקְרַאת כַּלָּה, פְּנֵי שַׁבָּת נְקַבְּלָה:",
+  "שָׁמוֹר וְזָכוֹר בְּדִבּוּר אֶחָד, הִשְׁמִיעָנוּ אֵל הַמְּיֻחָד, יְהֹוָה אֶחָד וּשְׁמוֹ אֶחָד, לְשֵׁם וּלְתִפְאֶרֶת וְלִתְהִלָּה:",
+  "לִקְרַאת שַׁבָּת לְכוּ וְנֵלְכָה, כִּי הִיא מְקוֹר הַבְּרָכָה, מֵרֹאשׁ מִקֶּדֶם נְסוּכָה, סוֹף מַעֲשֶׂה בְּמַחֲשָׁבָה תְּחִלָּה:",
+  "מִקְדַּשׁ מֶלֶךְ עִיר מְלוּכָה, קוּמִי צְאִי מִתּוֹךְ הַהֲפֵכָה, רַב לָךְ שֶׁבֶת בְּעֵמֶק הַבָּכָא, וְהוּא יַחְמוֹל עָלַיִךְ חֶמְלָה:",
+].join("\n");
+const LD_R = [0, 1], LD_S1 = [2, 3, 4, 5], LD_S2 = [6, 7, 8, 9], LD_S3 = [10, 11, 12, 13, 14];
+// הפזמון בהתחלה ואחרי כל בית
+const LD_REFRAIN = [...LD_R, ...LD_S1, ...LD_R, ...LD_S2, ...LD_R, ...LD_S3, ...LD_R];
+// + שורה 3 ×2, דילוג על שורה 6, בית 2 ×2, דילוג על בית 3
+const LD_ORDER2 = [0, 1, 2, 2, 3, 4, 0, 1, 6, 7, 8, 9, 6, 7, 8, 9, 0, 1];
+// אחרי פיצול כתובית 3 בעורך החלוקה (‏×2 שלה בוטל) — מספרי הכתוביות זזים ב-1
+const LD_ORDER_SPLIT = [0, 1, 2, 3, 4, 5, 0, 1, 7, 8, 9, 10, 7, 8, 9, 10, 0, 1];
+// ואחרי איפוס החלוקה — חזרה ל-15 כתוביות, בלי ×2 של שורה 3
+const LD_ORDER3 = [0, 1, 2, 3, 4, 0, 1, 6, 7, 8, 9, 6, 7, 8, 9, 0, 1];
+const PERF_SOON = "\n⏳ בקרוב: הסנכרון של חזרות. בינתיים הסנכרון ייעשה לפי סדר הטקסט.";
+const perfNames = page => page.$$eval("#perfList .pblock .pname", n => n.map(x => x.textContent));
+const editorOrder = page => page.evaluate(() => perfOrder(PE.p, PE.g).order);
+const perfIsOpen = page => page.evaluate(() => document.getElementById("perfOverlay").classList.contains("open"));
+const perfClick = (page, sel) => page.click("#perfList " + sel);
+const cueRows = page => page.$$eval("#timeList .timerow", r => r.map(x => {
+  const tag = x.querySelector(".cueTag");
+  return [tag ? tag.textContent : null, x.querySelector(".txt").lastChild.textContent];
+}));
+
+async function flowPerformance(browser, base, profile, enabled) {
+  const tag = `[${profile}${enabled ? " · חזרות פעיל" : ""}]`;
+  const { context, page, cloud, errors } = await newSession(browser, base, profile, { perfEnabled: enabled });
+  const ts = mockApi("text_segments", { text: LD_TEXT, mode: "tefila" }).body;
+  const n = ts.segments.length;
+  const soon = enabled ? "" : PERF_SOON;
+  const perfShot = (name, full) => enabled ? null : shot(page, profile, name, full);
+
+  await step(`${tag} מבנה הביצוע: רק בתפילה/טקסט חופשי; ההצעה הראשונה — בית לכל שורה`, async () => {
+    await gotoReady(page, base);
+    assert.equal(await page.evaluate(() => PERFORMANCE_ENABLED), enabled);
+    await page.click("#loadBtn");   // תנ״ך — אין מבנה ביצוע
+    await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+    assert.equal(await isHidden(page, "perfRow"), true, "לא בתנ״ך");
+    await page.click('.srcTabs [data-src="text"]');
+    await page.fill("#freeText", LD_TEXT);
+    await page.fill("#textTitle", "לכה דודי");
+    await page.click("#textLoadBtn");
+    await page.waitForFunction(() => document.getElementById("loadOk").textContent.startsWith("נטען: לכה דודי"));
+    assert.equal(n, 15);
+    assert.deepEqual(ts.segments.map(s => s.verse), [1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4]);
+    assert.equal(await isHidden(page, "perfRow"), false);
+    assert.equal(await txt(page, "#perfBtn"), "🔁 מבנה הביצוע — חזרות, פזמון, דילוגים");
+    assert.equal(await txt(page, "#perfStatus"), "סדר הביצוע: לפי הטקסט, בלי חזרות.");
+    assert.equal(await page.evaluate(() => performanceOrder()), null);
+    await page.click("#perfBtn");
+    assert.equal(await perfIsOpen(page), true);
+    assert.equal(await isHidden(page, "perfSoon"), enabled, "\"בקרוב\" רק כשהדגל כבוי");
+    assert.deepEqual(await perfNames(page), ["בית 1", "בית 2", "בית 3", "בית 4"]);
+    assert.deepEqual(await page.$$eval("#perfList .pblock", b => b.map(x => x.querySelectorAll(".pline").length)), [2, 4, 4, 5]);
+    assert.deepEqual(await page.$$eval("#perfList .plabel", b => b.map(x => x.textContent)), ["שורה 1", "שורה 2", "שורה 3", "שורה 4"]);
+    assert.equal(await isHidden(page, "perfAfterWrap"), true, "אין פזמון — אין \"אחרי כל בית\"");
+    assert.equal(await txt(page, "#perfTabPreview"), `התוצאה (${n})`);
+    assert.ok((await txt(page, "#perfCount")).includes("כמו סדר הטקסט"));
+    assert.deepEqual(await editorOrder(page), range(0, n - 1));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    await perfShot("perf-1-editor", false);
+  });
+
+  await step(`${tag} לכה דודי: "פזמון" על הבית הראשון ⇐ בהתחלה ואחרי כל בית; תצוגה מקדימה`, async () => {
+    await perfClick(page, '.pblock[data-b="0"] [data-act="refrain"]');
+    assert.deepEqual(await perfNames(page), ["🎵 פזמון", "בית 1", "בית 2", "בית 3"]);
+    assert.equal(await isHidden(page, "perfAfterWrap"), false);
+    assert.equal(await page.$eval("#perfAfter", c => c.checked), true, "\"אחרי כל בית\" נדלק מעצמו");
+    assert.deepEqual(await editorOrder(page), LD_REFRAIN);
+    assert.equal(await txt(page, "#perfTabPreview"), "התוצאה (21)");
+    await perfShot("perf-2-refrain", false);
+    await page.click("#perfTabPreview");
+    assert.equal(await isHidden(page, "perfList"), true);
+    const rows = await page.$$eval("#perfPreview .prow", r => r.map(x => [x.querySelector(".pi").textContent,
+      x.querySelector(".pb").textContent, x.querySelector(".txt").textContent,
+      [...x.querySelectorAll(".ptag")].map(t => t.textContent).join("|")]));
+    assert.equal(rows.length, 21);
+    const d = i => ts.segments[i].display;
+    assert.deepEqual(rows[0], ["1", "כתובית 1", d(0), ""]);
+    assert.deepEqual(rows[2], ["3", "כתובית 3", d(2), ""]);
+    assert.deepEqual(rows[6], ["7", "כתובית 1", d(0), "פזמון|חזרה 2"]);
+    assert.deepEqual(rows[7], ["8", "כתובית 2", d(1), "פזמון|חזרה 2"]);
+    assert.deepEqual(rows[8], ["9", "כתובית 7", d(6), ""]);
+    assert.deepEqual(rows[20], ["21", "כתובית 2", d(1), "פזמון|חזרה 4"]);
+    await perfShot("perf-3-preview", false);
+    // "אחרי כל בית" כבוי ⇐ סדר הטקסט; ושוב דלוק
+    await page.click("#perfTabEdit");
+    await page.click("#perfAfter");
+    assert.deepEqual(await editorOrder(page), range(0, n - 1));
+    assert.ok((await txt(page, "#perfCount")).includes("כמו סדר הטקסט"));
+    await page.click("#perfAfter");
+    await page.click("#perfSave");
+    assert.equal(await perfIsOpen(page), false);
+    assert.equal(await txt(page, "#loadMsg"), "מבנה הביצוע נשמר ✓");
+    assert.equal(await txt(page, "#perfStatus"), "סדר הביצוע: 21 כתוביות בהקלטה (בטקסט 15) — פזמון אחרי כל בית." + soon);
+    assert.deepEqual(await page.evaluate(() => performanceOrder()), LD_REFRAIN);
+    assert.deepEqual(await page.evaluate(() => sentPerformance()), enabled ? LD_REFRAIN : null);
+    const st = await lsState(page);
+    assert.equal(st.perf.after, true);
+    assert.deepEqual(st.perf.starts, [0, 7, 21, 36], "גבולות הבתים — בהיסטי מילים");
+    assert.deepEqual(st.perf.blocks.map(b => b.refrain), [true, false, false, false]);
+    assert.deepEqual(st.perf.subs, {});
+    await page.locator("#perfRow").scrollIntoViewIfNeeded();
+    await perfShot("perf-4-card");
+  });
+
+  await step(`${tag} חזור ×N ודלג (בית ושורה), בית חדש מכאן ואיחוד`, async () => {
+    await page.click("#perfBtn");
+    assert.deepEqual(await editorOrder(page), LD_REFRAIN, "המבנה השמור נטען לעורך");
+    await perfClick(page, '.pline[data-i="2"]');
+    assert.equal(await page.$$eval("#perfList .lact", l => l.length), 1);
+    assert.equal(await page.$eval('#perfList .lact [data-act="split"]', b => b.disabled), true, "שורה ראשונה בבית");
+    assert.equal(await page.$eval('#perfList .lact [data-act="srep-"]', b => b.disabled), true);
+    await perfClick(page, '.lact [data-act="srep+"]');
+    assert.equal(await page.$eval('#perfList .lact .stepper b', b => b.textContent), "חזור ×2");
+    assert.equal(await page.$eval('#perfList .pline[data-i="2"] .ptag', t => t.textContent), "×2");
+    await perfClick(page, '.pline[data-i="5"]');   // הבחירה עוברת לשורה אחרת
+    assert.equal(await page.$$eval("#perfList .pline.sel", l => l.map(x => x.dataset.i).join()), "5");
+    await perfClick(page, '.lact [data-act="sskip"]');
+    assert.ok(await page.$eval('#perfList .pline[data-i="5"]', l => l.classList.contains("skip")));
+    await perfClick(page, '.pblock[data-b="2"] .bctl [data-act="brep+"]');
+    assert.equal(await page.$eval('#perfList .pblock[data-b="2"] .bctl .stepper b', b => b.textContent), "חזור ×2");
+    await perfClick(page, '.pblock[data-b="3"] .bctl [data-act="bskip"]');
+    assert.ok(await page.$eval('#perfList .pblock[data-b="3"]', b => b.classList.contains("skip")));
+    assert.deepEqual(await editorOrder(page), LD_ORDER2);
+    await page.locator('#perfList .pline[data-i="2"]').scrollIntoViewIfNeeded();
+    await perfShot("perf-5-repeat-skip", false);
+    // בית חדש מאמצע בית 2 ⇐ הפזמון גם אחרי החצי הראשון; איחוד מחזיר
+    await perfClick(page, '.pline[data-i="8"]');
+    await perfClick(page, '.lact [data-act="split"]');
+    assert.deepEqual(await perfNames(page), ["🎵 פזמון", "בית 1", "בית 2", "בית 3", "בית 4"]);
+    assert.deepEqual(await editorOrder(page), [0, 1, 2, 2, 3, 4, 0, 1, 6, 7, 6, 7, 0, 1, 8, 9, 0, 1]);
+    await perfClick(page, '.pblock[data-b="3"] [data-act="merge"]');
+    assert.deepEqual(await perfNames(page), ["🎵 פזמון", "בית 1", "בית 2", "בית 3"]);
+    assert.deepEqual(await editorOrder(page), LD_ORDER2);
+    // דילוג על הכול — אי אפשר לשמור
+    for (const b of [0, 1, 2]) await perfClick(page, `.pblock[data-b="${b}"] .bctl [data-act="bskip"]`);
+    assert.ok((await txt(page, "#perfCount")).includes("אי אפשר לדלג על כל הכתוביות"));
+    assert.equal(await page.$eval("#perfSave", b => b.disabled), true);
+    for (const b of [0, 1, 2]) await perfClick(page, `.pblock[data-b="${b}"] .bctl [data-act="bskip"]`);
+    assert.equal(await page.$eval("#perfSave", b => b.disabled), false);
+    await page.click("#perfSave");
+    assert.equal(await txt(page, "#perfStatus"),
+      "סדר הביצוע: 18 כתוביות בהקלטה (בטקסט 15) — פזמון אחרי כל בית, חזרות, דילוג על 6 כתוביות." + soon);
+    assert.deepEqual(await page.evaluate(() => performanceOrder()), LD_ORDER2);
+    assert.deepEqual((await lsState(page)).perf.subs, { "7+4": { rep: 2, skip: false }, "18+3": { rep: 1, skip: true } });
+  });
+
+  await step(`${tag} ביטול לא שומר; "חזרה לסדר הרגיל"; שחזור אחרי טעינה מחדש`, async () => {
+    await page.click("#perfBtn");
+    await page.click("#perfReset");
+    assert.deepEqual(await perfNames(page), ["בית 1", "בית 2", "בית 3", "בית 4"]);
+    assert.deepEqual(await editorOrder(page), range(0, n - 1));
+    await page.click("#perfCancel");
+    assert.deepEqual(await page.evaluate(() => performanceOrder()), LD_ORDER2, "ביטול — בלי שינוי");
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+    assert.equal(await txt(page, "#perfStatus"),
+      "סדר הביצוע: 18 כתוביות בהקלטה (בטקסט 15) — פזמון אחרי כל בית, חזרות, דילוג על 6 כתוביות." + soon);
+    assert.deepEqual(await page.evaluate(() => performanceOrder()), LD_ORDER2);
+    await page.click("#perfBtn");
+    assert.deepEqual(await perfNames(page), ["🎵 פזמון", "בית 1", "בית 2", "בית 3"]);
+    assert.deepEqual(await editorOrder(page), LD_ORDER2);
+    await page.click("#perfCancel");
+  });
+
+  await step(`${tag} עריכת החלוקה ⇐ המבנה מותאם, עם הודעה ברורה`, async () => {
+    await page.click("#editSplitBtn");
+    await page.click('#editList .w[data-i="8"]');   // באמצע כתובית 3 (המילה השנייה שלה)
+    await page.click("#editSplit");
+    await page.click("#editSave");
+    const msg = await txt(page, "#loadMsg");
+    assert.ok(msg.startsWith("החלוקה עודכנה ✓"), msg);
+    assert.ok(msg.includes("מבנה הביצוע הותאם לחלוקה החדשה, וחזרות או דילוגים של כתוביות שהשתנו בוטלו — כדאי לבדוק אותו שוב."), msg);
+    assert.equal(await page.evaluate(() => S.data.segments.length), 16);
+    assert.deepEqual(await page.evaluate(() => performanceOrder()), LD_ORDER_SPLIT);
+    // איפוס החלוקה ⇐ שוב 15 כתוביות; הודעה בלי "בוטלו"
+    await page.click("#editSplitBtn");
+    await page.click("#editReset");
+    await page.click("#editSave");
+    const msg2 = await txt(page, "#loadMsg");
+    assert.ok(msg2.includes("מבנה הביצוע הותאם לחלוקה החדשה — כדאי לבדוק אותו שוב.") && !msg2.includes("בוטלו"), msg2);
+    assert.deepEqual(await page.evaluate(() => performanceOrder()), LD_ORDER3);
+    assert.equal(await txt(page, "#perfStatus"),
+      "סדר הביצוע: 17 כתוביות בהקלטה (בטקסט 15) — פזמון אחרי כל בית, חזרות, דילוג על 6 כתוביות." + soon);
+  });
+
+  const segs = ts.segments;
+  if (!enabled) {
+    await step(`${tag} סנכרון כשהדגל כבוי: נשלח בלי performance, התוצאה לפי סדר הטקסט`, async () => {
+      await page.setInputFiles("#audioFile", { name: "lecha.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+      await page.waitForFunction(() => !document.getElementById("done2").hidden);
+      const times = segs.map((_, i) => +(i * 0.8).toFixed(3));
+      cloud.statusQueue.push(null, { body: { srt: srtFor(segs, times, 13), report: "" } });
+      await page.click("#startCloud");
+      await until(() => cloud.submits.length === 1, "submit");
+      const { fields } = cloud.submits[0];
+      assert.deepEqual(Object.keys(fields).sort(), ["max_words", "source", "splits", "title", "token", "units"]);
+      assert.equal(fields.performance, undefined);
+      assert.equal((await until(async () => (await lsState(page)).cloudJob, "cloudJob נשמר")).perf, undefined);
+      await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+      assert.equal(await page.$$eval("#timeList .timerow", r => r.length), n);
+      assert.equal(await page.$$eval("#timeList .cueTag", r => r.length), 0, "בלי תגיות חזרה");
+      const st = await lsState(page);
+      assert.deepEqual(st.times, times);
+      assert.equal(st.timesOrder, null);
+      // שינוי המבנה כשהדגל כבוי לא משנה את מה שנשלח — הזמנים נשארים
+      await page.click("#perfBtn");
+      await page.click("#perfAfter");
+      await page.click("#perfSave");
+      assert.equal(await txt(page, "#loadMsg"), "מבנה הביצוע נשמר ✓");
+      assert.equal(await isLocked(page, "step4"), false);
+      assert.deepEqual((await lsState(page)).times, times);
+      await page.waitForFunction(() => document.getElementById("cloudProgress").hidden);
+    });
+
+    await step(`${tag} שורות ריקות בין הבתים ⇐ בית לכל פסקה; "פזמון" ⇐ אחרי כל בית`, async () => {
+      const lines = LD_TEXT.split("\n");
+      const half = l => { const w = l.split(" "); const k = w.findIndex(x => x.endsWith(",")) + 1; return [w.slice(0, k).join(" "), w.slice(k).join(" ")]; };
+      const text = [half(lines[0]).join("\n"), lines[1], lines[2]].join("\n\n");
+      await page.fill("#freeText", text);
+      await page.click("#textLoadBtn");
+      // (גם הטקסט הקודם היה 4 שורות — מחכים לספירת הכתוביות החדשה)
+      await page.waitForFunction(() => document.getElementById("loadOk").textContent === "נטען: לכה דודי · 4 שורות · 10 כתוביות");
+      assert.equal(await txt(page, "#perfStatus"), "סדר הביצוע: לפי הטקסט, בלי חזרות.", "טקסט חדש — המבנה הקודם נמחק");
+      assert.equal((await lsState(page)).perf, null);
+      await page.click("#perfBtn");
+      assert.deepEqual(await page.$$eval("#perfList .pblock", b => b.map(x => x.querySelectorAll(".pline").length)), [2, 4, 4]);
+      assert.deepEqual(await page.$$eval("#perfList .plabel", b => b.map(x => x.textContent)), ["שורה 1", "שורה 3", "שורה 4"]);
+      await perfClick(page, '.pblock[data-b="0"] [data-act="refrain"]');
+      assert.deepEqual(await editorOrder(page), [...LD_R, ...LD_S1, ...LD_R, ...LD_S2, ...LD_R]);
+      await page.click("#perfCancel");
+    });
+  } else {
+    const times = LD_ORDER3.map((_, k) => +(k * 0.6).toFixed(3)), endTime = 11;
+    const segsOf = order => order.map(i => segs[i]);
+    await step(`${tag} סנכרון: performance נשלח, התוצאה — כתובית לכל הופעה`, async () => {
+      await page.setInputFiles("#audioFile", { name: "lecha.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+      await page.waitForFunction(() => !document.getElementById("done2").hidden);
+      cloud.statusQueue.push(null, { body: { srt: srtFor(segsOf(LD_ORDER3), times, endTime), report: "" } });
+      await page.click("#startCloud");
+      await until(() => cloud.submits.length === 1, "submit");
+      const { fields } = cloud.submits[0];
+      assert.deepEqual(Object.keys(fields).sort(), ["max_words", "performance", "source", "splits", "title", "token", "units"]);
+      assert.equal(fields.performance, JSON.stringify(LD_ORDER3));
+      assert.deepEqual(JSON.parse(fields.splits), segs.map(s => s.display.split(" ").length));
+      assert.ok(Math.max(...LD_ORDER3) < JSON.parse(fields.splits).length, "בטווח (params.py)");
+      assert.deepEqual((await until(async () => (await lsState(page)).cloudJob, "cloudJob נשמר")).perf, LD_ORDER3);
+      await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+      for (const id of ["stepReport", "step4", "step5"]) assert.equal(await isLocked(page, id), false, id);
+      const rows = await cueRows(page);
+      assert.equal(rows.length, LD_ORDER3.length);
+      assert.deepEqual(rows[0], ["כתובית 1", segs[0].display]);
+      assert.deepEqual(rows[5], ["כתובית 1 · חזרה 2", segs[0].display]);
+      assert.deepEqual(rows[11], ["כתובית 7 · חזרה 2", segs[6].display]);
+      assert.deepEqual(rows[16], ["כתובית 2 · חזרה 3", segs[1].display]);
+      const st = await lsState(page);
+      assert.deepEqual(st.timesOrder, LD_ORDER3);
+      assert.deepEqual(st.times, times);
+      assert.equal(st.cloudJob, null);
+      await page.waitForFunction(() => document.getElementById("cloudProgress").hidden);
+      // ברשימה הנגללת — מ"חזרה 2" של הפזמון
+      await page.evaluate(() => { const l = document.getElementById("timeList"); l.scrollTop = l.children[4].offsetTop - l.offsetTop; });
+      await shot(page, profile, "perf-6-review");
+    });
+
+    await step(`${tag} כוונון וייצוא SRT על הרצף הפרוס; שחזור אחרי טעינה מחדש`, async () => {
+      await page.click('#timeList button[data-act="plus"][data-i="5"]');   // "חזרה 2" של כתובית 1
+      times[5] = +(times[5] + 0.2).toFixed(10);
+      assert.equal(await page.$$eval("#timeList .timerow .t", t => t[5].textContent), "00:03,20");
+      await page.evaluate(() => {
+        const orig = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () { window.__lastDownload = this.download; return orig.call(this); };
+      });
+      const [dl] = await Promise.all([page.waitForEvent("download"), page.click("#dlBtn")]);
+      assert.equal(await page.evaluate(() => window.__lastDownload), "לכה_דודי.srt");
+      const content = fs.readFileSync(await dl.path(), "utf-8");
+      const expected = "﻿" + LD_ORDER3.map((i, k) => {
+        const a = times[k];
+        let b = k + 1 < LD_ORDER3.length ? times[k + 1] : endTime + 0.25;
+        b = Math.max(b, a + 0.3);
+        return `${k + 1}\n${fmtSrt(a)} --> ${fmtSrt(b)}\n${segs[i].display}\n`;
+      }).join("\n");
+      assert.equal(content, expected);
+      assert.equal(content.split(segs[0].display).length - 1, 3, "הפזמון שלוש פעמים בקובץ");
+      await page.reload();
+      await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+      for (const id of ["stepReport", "step4", "step5"]) assert.equal(await isLocked(page, id), false, id);
+      const rows = await cueRows(page);
+      assert.equal(rows.length, LD_ORDER3.length);
+      assert.deepEqual(rows[5], ["כתובית 1 · חזרה 2", segs[0].display]);
+      assert.equal(await page.$$eval("#timeList .timerow .t", t => t[5].textContent), "00:03,20");
+      assert.equal(await page.evaluate(() => buildSrt()), expected);
+    });
+
+    await step(`${tag} תוצאה שלא תואמת את סדר הביצוע ⇐ שגיאה; שינוי המבנה מאפס את הזמנים`, async () => {
+      // עבודה ששוחזרה עם perf, וה-SRT חזר לפי סדר הטקסט (15 במקום 17)
+      const now = await page.evaluate(() => Date.now());
+      await page.evaluate(job => {
+        const st = JSON.parse(localStorage.getItem("kriat-hatora-v1"));
+        Object.assign(st, { times: null, endTime: null, timesOrder: null, cloudJob: job });
+        localStorage.setItem("kriat-hatora-v1", JSON.stringify(st));
+      }, { id: "fc-perf-2", t0: now - 1000, ts: now - 2000, est: 100, push: false, perf: LD_ORDER3 });
+      cloud.statusQueue.length = 0;
+      cloud.statusQueue.push({ body: { srt: srtFor(segs, segs.map((_, i) => i), 16), report: "" } });
+      await page.reload();
+      await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון נכשל"), null, { timeout: 15000 });
+      assert.ok((await txt(page, "#timingMsg")).includes(`חזרו 15 כתוביות אבל בסדר הביצוע ${LD_ORDER3.length}`), await txt(page, "#timingMsg"));
+      assert.equal(await isLocked(page, "step4"), true);
+      // ושוב עם התוצאה הנכונה
+      await page.evaluate(job => {
+        const st = JSON.parse(localStorage.getItem("kriat-hatora-v1"));
+        st.cloudJob = job;
+        localStorage.setItem("kriat-hatora-v1", JSON.stringify(st));
+      }, { id: "fc-perf-3", t0: now - 1000, ts: now - 2000, est: 100, push: false, perf: LD_ORDER3 });
+      cloud.statusQueue.length = 0;
+      cloud.statusQueue.push({ body: { srt: srtFor(segsOf(LD_ORDER3), times, endTime), report: "" } });
+      await page.reload();
+      await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+      assert.equal((await cueRows(page)).length, LD_ORDER3.length);
+      // שינוי המבנה (עכשיו הוא נשלח) ⇐ הזמנים כבר לא שייכים לו
+      await page.click("#perfBtn");
+      await page.click("#perfAfter");
+      await page.click("#perfSave");
+      assert.equal(await txt(page, "#loadMsg"), "מבנה הביצוע נשמר ✓ — הזמנים אופסו, יש להריץ את הסנכרון מחדש");
+      for (const id of ["stepReport", "step4", "step5"]) assert.equal(await isLocked(page, id), true, id);
+      const st = await lsState(page);
+      assert.equal(st.times, null);
+      assert.equal(st.timesOrder, null);
+      const errs = errors.filter(e => e.includes("status of"));
+      assert.deepEqual(errs, []);
+    });
+  }
+
+  await step(`${tag} (מבנה הביצוע) אין שגיאות קונסול ואין יציאה לרשת`, async () => {
+    assertNoErrors(errors);
+    assert.ok(cloud.external.every(h => /^fonts\.(googleapis|gstatic)\.com$/.test(h)), cloud.external.join(","));
+  });
+  await context.close();
+}
+
+/* לכה דודי מהסידור (נוסח ספרד): הפזמון כבר כתוב אחרי כל בית — סימון "פזמון"
+   מסמן את כל ההופעות שלו, והתוצאה נשארת כסדר הטקסט; דילוג על הפזמון השני */
+async function flowPerformanceSiddur(browser, base, profile) {
+  const { context, page, cloud, errors } = await newSession(browser, base, profile);
+  const LD = mockApi("siddur", { path: SEFARD_KS, from: "17", to: "38" }).body;
+  const n = LD.segments.length;
+  await step(`[${profile}] מבנה הביצוע בסידור: פזמון שכתוב בטקסט מזוהה, דילוג על פסקה`, async () => {
+    await gotoReady(page, base);
+    await page.evaluate(([data]) => localStorage.setItem("kriat-hatora-v1", JSON.stringify({
+      query: { book: "בראשית", chapter: "1", verse_start: "1", verse_end: "1", chapter_end: "1" },
+      data: Object.assign(data, { source: "siddur", label: "לכה דודי" }), times: null, endTime: null,
+      audioName: null, report: null, cloudJob: null, splits: null,
+      baseSplits: data.segments.map(s => s.display.split(" ").filter(Boolean).length),
+      source: "tanakh", freeText: { text: "", title: "" },
+    })), [LD]);
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+    assert.equal(await page.evaluate(() => dataSource()), "siddur");
+    assert.equal(await isHidden(page, "perfRow"), false);
+    await page.click("#perfBtn");
+    const labels = [...new Set(LD.segments.map(s => s.label))];
+    assert.equal(labels.length, 20);
+    assert.deepEqual(await page.$$eval("#perfList .plabel", b => b.map(x => x.textContent)), labels, "בית לכל פסקה");
+    await perfClick(page, '.pblock[data-b="0"] [data-act="refrain"]');
+    const refrains = await page.$$eval("#perfList .pblock.refrain .plabel", b => b.map(x => x.textContent.split(" · ")[1]));
+    assert.deepEqual(refrains, ["17", "18", "20", "22", "25", "27", "29", "31", "33", "35", "38"]);
+    assert.deepEqual(await editorOrder(page), range(0, n - 1), "הפזמון כבר כתוב אחרי כל בית — בלי תוספות");
+    assert.ok((await txt(page, "#perfCount")).includes("כמו סדר הטקסט"));
+    await perfClick(page, '.pblock[data-b="1"] .bctl [data-act="bskip"]');   // הפזמון השני בהתחלה
+    const order = range(0, n - 1).filter(i => i !== 2 && i !== 3);
+    assert.deepEqual(await editorOrder(page), order);
+    await shot(page, profile, "perf-7-siddur", false);
+    await page.click("#perfSave");
+    assert.equal(await txt(page, "#perfStatus"),
+      `סדר הביצוע: ${n - 2} כתוביות בהקלטה (בטקסט ${n}) — פזמון אחרי כל בית, דילוג על 2 כתוביות.` + PERF_SOON);
+    assert.deepEqual(await page.evaluate(() => performanceOrder()), order);
+    assert.equal(await page.evaluate(() => sentPerformance()), null, "הדגל כבוי");
+  });
+  await step(`[${profile}] (מבנה הביצוע בסידור) אין שגיאות קונסול`, async () => assertNoErrors(errors));
+  await context.close();
+}
+
 /* =================== הרצה =================== */
 const server = await startServer();
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -1345,6 +1742,9 @@ try {
     await flowFreeText(browser, base, profile);
     await flowSiddur(browser, base, profile);
     await flowOldState(browser, base, profile);
+    await flowPerformance(browser, base, profile, false);
+    await flowPerformance(browser, base, profile, true);
+    await flowPerformanceSiddur(browser, base, profile);
   }
   if (!only || only === "sw") {
     console.log("\n== service worker ==");

@@ -105,10 +105,11 @@ $("editSave").addEventListener("click", () => {
   closeSplitEditor();
   if (!changed) return;
   const hadTimes = !!S.times;
-  applySplits(E.sizes);
+  const perfNote = applySplits(E.sizes);
   $("loadMsg").innerHTML =
     '<p class="okline">החלוקה עודכנה ✓' +
-    (hadTimes ? " — הזמנים אופסו, יש להריץ את הסנכרון מחדש" : "") + "</p>";
+    (hadTimes ? " — הזמנים אופסו, יש להריץ את הסנכרון מחדש" : "") + "</p>" +
+    (perfNote ? `<p class="hint">${escapeHtml(perfNote)}</p>` : "");
 });
 
 /* בחירה בהקשה + גרירה במגע (Pointer Events — עובד גם באייפון) */

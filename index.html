@@ -23,6 +23,7 @@
 <script defer src="/js/source-siddur.js"></script>
 <script defer src="/js/segments.js"></script>
 <script defer src="/js/split-editor.js"></script>
+<script defer src="/js/performance.js"></script>
 <script defer src="/js/audio.js"></script>
 <script defer src="/js/cloud.js"></script>
 <script defer src="/js/review.js"></script>
@@ -176,6 +177,11 @@
       <p class="okline" id="loadOk"></p>
       <div class="seglist bible" id="segPreview"></div>
       <p class="hint" id="segHint">בדיקת עיניים: החיתוך לפי טעמי המקרא — כל שורה תהיה כתובית אחת. אפשר לשנות את החלוקה בכפתור העריכה שבפינה.</p>
+      <!-- מבנה הביצוע — רק בתפילה ובטקסט חופשי (js/performance.js) -->
+      <div id="perfRow" class="perfRow" hidden>
+        <button type="button" class="secondary mt" id="perfBtn">🔁 מבנה הביצוע — חזרות, פזמון, דילוגים</button>
+        <p class="hint" id="perfStatus"></p>
+      </div>
     </div>
   </section>
 
@@ -250,6 +256,33 @@
     </div>
     <div class="editBar" style="border-top:none;padding-top:0">
       <button id="editReset" class="ghost">🔄 חזרה לחלוקה לפי הטעמים</button>
+    </div>
+  </div>
+</div>
+
+<!-- מבנה הביצוע: חזרות, פזמון ודילוגים (js/performance.js, PLAN_TEFILA.md 4.3.1) -->
+<div id="perfOverlay">
+  <div id="perfSheet">
+    <div class="sheetHead">
+      <h3>מבנה הביצוע</h3>
+      <button id="perfCancel">ביטול</button>
+      <button id="perfSave" class="primary">שמירה</button>
+    </div>
+    <div class="perfTabs" role="tablist" aria-label="תצוגה">
+      <button type="button" role="tab" id="perfTabEdit" aria-selected="true">סימון הבתים</button>
+      <button type="button" role="tab" id="perfTabPreview" aria-selected="false">התוצאה</button>
+    </div>
+    <!-- הכול מתחת ללשוניות נגלל יחד — ההסבר לא תופס את המסך בטלפון -->
+    <div class="perfBody" id="perfBody">
+      <p class="sheetHint">סמנו מה שרים בפועל בהקלטה: מה חוזר, איזה בית הוא הפזמון ועל מה מדלגים. הקישו על שורה כדי לחזור עליה, לדלג עליה או להתחיל ממנה בית חדש.</p>
+      <p id="perfSoon" class="sheetSoon" hidden>⏳ בקרוב: הסנכרון של חזרות. אפשר כבר לסמן את המבנה — בינתיים הסנכרון בענן ייעשה לפי סדר הטקסט.</p>
+      <label class="perfAfter" id="perfAfterWrap" hidden><input type="checkbox" id="perfAfter"> הוסף את הפזמון אחרי כל בית</label>
+      <div class="perfList" id="perfList"></div>
+      <div class="perfList" id="perfPreview" hidden></div>
+    </div>
+    <div id="perfCount"></div>
+    <div class="editBar">
+      <button id="perfReset" class="ghost">🔄 חזרה לסדר הרגיל (לפי הטקסט)</button>
     </div>
   </div>
 </div>

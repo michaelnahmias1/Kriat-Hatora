@@ -72,13 +72,16 @@ function segmentsFromSplits(words, sizes) {
 function currentSplits() {
   return S.data.segments.map(s => tokensOf(s.display).length);
 }
-/* החלת חלוקה חדשה — הזמנים הישנים כבר לא תקפים (מספר הכתוביות השתנה) */
+/* החלת חלוקה חדשה — הזמנים הישנים כבר לא תקפים (מספר הכתוביות השתנה).
+   מבנה הביצוע (performance.js) מותאם לחלוקה החדשה; מוחזרת הודעה עליו, או "" */
 function applySplits(sizes) {
   const words = flatWords();
   S.data.segments = segmentsFromSplits(words, sizes);
   S.splits = sizes.slice();
-  S.times = null; S.endTime = null; S.report = null;
+  S.times = null; S.endTime = null; S.report = null; S.timesOrder = null;
+  const perfNote = perfAfterSplits();
   renderTextLoaded();
   refreshTimingSteps();
   save();
+  return perfNote;
 }
