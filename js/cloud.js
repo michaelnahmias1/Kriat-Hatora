@@ -39,6 +39,39 @@ const CLOUD_JOB_LIMIT_MS = (2 * 60 + 10) * 60 * 1000;
 const MAX_UNITS_BYTES = 200 * 1024;
 if (AI_ENDPOINT) $("startCloud").hidden = false;
 
+/* ---------- מתג "שירה / חזנות" (PLAN_TEFILA.md 4.3.5, 8.27) ----------
+   רק בתפילה ובטקסט חופשי — לתנ״ך אין פרופיל שירה (params.py דוחה אותו).
+   כבוי כברירת מחדל: בלי השדה ה-worker מסנכרן כקריאה, כמו תמיד. הבחירה
+   נשמרת (S.singing), והעבודה שנשלחה זוכרת את הפרופיל שלה (cloudJob.profile)
+   — גם כשחוזרים אליה אחרי סגירת האפליקציה. */
+function singingAvailable() { return !!(AI_ENDPOINT && S.data && isUnitsSource()); }
+function sentSinging() { return singingAvailable() && !!S.singing; }
+function renderSingToggle() {
+  $("singWrap").hidden = !singingAvailable();
+  $("singing").checked = !!S.singing;
+  $("singWrap").classList.toggle("on", !!S.singing);
+}
+$("singing").addEventListener("change", () => {
+  S.singing = $("singing").checked;
+  renderSingToggle();
+  save();
+});
+
+/* ---------- חלון הפריסה ----------
+   הממשק וה-worker נפרסים יחד מ-main, אבל ה-worker הישן עוד עונה כמה דקות:
+   הוא דוחה performance ו-profile=singing ב-NotImplementedError, ו-worker
+   שהתעלם מסדר הביצוע היה מחזיר כתובית לכל כתובית בטקסט ולא לכל הופעה. */
+function deployWindowError(job, detail) {
+  const without = [];
+  if (job.perf) without.push("בלי חזרות");
+  if (job.profile === "singing") without.push('בלי "שירה / חזנות"');
+  let msg = "הענן עדיין לא עודכן — נסו שוב בעוד כמה דקות";
+  if (without.length) msg += " או שלחו " + without.join(" ו");
+  const e = new Error(msg + (detail ? ` (${detail})` : ""));
+  e.deployWindow = true;
+  return e;
+}
+
 /* האזהרה היחידה שנשארה בשלב 3: אדומה כל עוד ההעלאה רצה, ירוקה ברגע
    שהיא נגמרה — מאותו רגע העיבוד ממשיך בענן בלי תלות בטלפון. */
 function setStayNotice(mode) {
@@ -59,6 +92,7 @@ function cloudBusy(on) {
   const b = $("startCloud");
   b.disabled = on;
   b.textContent = on ? "⏳ מעבד בענן…" : CLOUD_BTN_LABEL;
+  $("singing").disabled = on;   // העבודה שרצה כבר נשלחה עם הפרופיל שלה
 }
 
 /* הערכת זמן מותאמת לקובץ שהועלה: חימום ה-GPU (קבוע) + עיבוד שגדל עם אורך
@@ -142,11 +176,13 @@ async function ensurePushSubscription() {
   } catch (e) { return null; }
 }
 
-/* העלאה עם מד אחוזים אמיתי (fetch לא חושף התקדמות העלאה — לכן XHR) */
-function uploadToCloud(fd, signal, onProgress) {
+/* העלאה עם מד אחוזים אמיתי (fetch לא חושף התקדמות העלאה — לכן XHR).
+   ‏route — ‏"/submit" (סנכרון) או "/identify" (זיהוי הקטע, identify.js);
+   לשגיאה מצורף status — worker ישן בלי /identify עונה 404 */
+function uploadToCloud(fd, signal, onProgress, route = "/submit") {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", AI_ENDPOINT + "/submit");
+    xhr.open("POST", AI_ENDPOINT + route);
     xhr.responseType = "json";
     xhr.upload.onprogress = ev => {
       if (ev.lengthComputable && onProgress) onProgress(ev.loaded / ev.total);
@@ -154,7 +190,7 @@ function uploadToCloud(fd, signal, onProgress) {
     xhr.onload = () => {
       const data = xhr.response || {};
       if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new Error(data.error || "שגיאה " + xhr.status));
+      else reject(Object.assign(new Error(data.error || "שגיאה " + xhr.status), { status: xhr.status }));
     };
     xhr.onerror = () => reject(new Error("ההעלאה נכשלה — בדוק את החיבור ונסה שוב"));
     xhr.onabort = () => reject(new DOMException("בוטל", "AbortError"));
@@ -188,9 +224,21 @@ async function pollCloudJob(signal) {
       S.cloudJob = null; save();
       if (res.status === 404)
         throw new Error("התוצאה כבר לא שמורה בענן (נשמרת כשבוע מסיום העיבוד) — העלה את ההקלטה שוב");
-      if (!res.ok) throw new Error(data.error || "שגיאה " + res.status);
-      applySrtTimes(data.srt, isUnitsSource() ? "ודא שהטקסט תואם את ההקלטה"
-                                           : "ודא שטווח הפסוקים תואם את ההקלטה", job.perf);
+      if (!res.ok) {
+        const err = String(data.error || "שגיאה " + res.status);
+        if (/NotImplementedError/.test(err)) throw deployWindowError(job);
+        throw new Error(err);
+      }
+      try {
+        applySrtTimes(data.srt, isUnitsSource() ? "ודא שהטקסט תואם את ההקלטה"
+                                             : "ודא שטווח הפסוקים תואם את ההקלטה", job.perf);
+      } catch (e) {
+        // ‏worker ישן שהתעלם מסדר הביצוע: כתובית לכל כתובית בטקסט, לא לכל הופעה
+        const got = (String(data.srt || "").match(/-->/g) || []).length;
+        if (job.perf && got && got === S.data.segments.length && got !== job.perf.length)
+          throw deployWindowError(job, `חזרו ${got} כתוביות במקום ${job.perf.length}`);
+        throw e;
+      }
       S.report = (data.report || "").trim() || null;
       stopCloudTimer(true);
       setStayNotice(null);
@@ -224,6 +272,8 @@ async function trackCloudJob() {
     setStayNotice(null);
     if (e && e.name === "AbortError")
       $("timingMsg").innerHTML = '<p class="hint">הסנכרון בוטל.</p>';
+    else if (e && e.deployWindow)
+      $("timingMsg").innerHTML = `<p class="error">⏳ ${escapeHtml(e.message)}</p>`;
     else
       $("timingMsg").innerHTML =
         `<p class="error">הסנכרון נכשל: ${escapeHtml(String(e.message || e))}\nנסה שוב בעוד כמה דקות.</p>`;
@@ -265,7 +315,7 @@ async function runCloudTiming() {
   $("timingMsg").innerHTML = "";
   setStayNotice("warn");
   holdWakeLock();
-  let subData, pushSub = null, sentPerf = null;
+  let subData, pushSub = null, sentPerf = null, singing = false;
   try {
     // הרשאת ההתראות מתבקשת עכשיו — צמוד ללחיצת המשתמש
     setProcLabel("מכין את ההעלאה…");
@@ -306,6 +356,9 @@ async function runCloudTiming() {
       // הטקסט, ורק כשהסנכרון של חזרות פעיל ב-worker (PERFORMANCE_ENABLED)
       sentPerf = sentPerformance();
       if (sentPerf) fd.append("performance", JSON.stringify(sentPerf));
+      // פרופיל שירה — רק כשהמתג דלוק; בלי השדה ה-worker מסנכרן כקריאה
+      singing = sentSinging();
+      if (singing) fd.append("profile", "singing");
     } else {
       for (const [k, v] of Object.entries(readQuery())) if (v) fd.append(k, v);
     }
@@ -336,6 +389,7 @@ async function runCloudTiming() {
   // ‏t0 — סיום ההעלאה (בסיס למגבלת הזמן); ts — תחילת הטיימר בתצוגה
   S.cloudJob = { id: subData.call_id, t0: Date.now(), ts: timerStart, est, push: !!pushSub };
   if (sentPerf) S.cloudJob.perf = sentPerf;   // התוצאה תחזור עם כתובית לכל הופעה
+  if (singing) S.cloudJob.profile = "singing";
   save();
   announceCloudProcessing();
   await trackCloudJob();

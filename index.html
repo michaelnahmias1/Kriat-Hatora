@@ -26,6 +26,7 @@
 <script defer src="/js/performance.js"></script>
 <script defer src="/js/audio.js"></script>
 <script defer src="/js/cloud.js"></script>
+<script defer src="/js/identify.js"></script>
 <script defer src="/js/review.js"></script>
 <script defer src="/js/export.js"></script>
 <script defer src="/js/pwa.js"></script>
@@ -143,6 +144,21 @@
       <label class="sdAll" id="sdAllWrap" hidden><input type="checkbox" id="sdAll"> חיפוש בכל הנוסחים</label>
       <div id="sdResults" class="sdResults" hidden aria-live="polite"></div>
       <div id="sdMain">
+        <!-- זיהוי הקטע מההקלטה (js/identify.js, PLAN_TEFILA.md 4.5.2) — ההקלטה קודם, הטקסט אחר-כך -->
+        <div id="idWrap" class="idWrap" hidden>
+          <input type="file" id="idFile" accept="audio/*,video/*" hidden>
+          <button type="button" id="idBtn" class="secondary idBtn">🔎 זהה לי את הקטע מההקלטה</button>
+          <p class="hint" id="idHint">לא בטוחים איזה קטע בהקלטה? בחרו אותה — המערכת תאזין ותציע את הקטע מהסידור (נוסח, תפילה וטווח).</p>
+          <p class="hint" id="idFileNote" hidden>ההקלטה: <b id="idFileName"></b> · <button type="button" id="idOther" class="linkBtn">קובץ אחר…</button></p>
+          <div id="idProgress" class="procrow" hidden>
+            <span class="spin"></span>
+            <span class="plabel" id="idLabel"></span>
+            <span class="ptime" id="idTime">0:00</span>
+            <button type="button" class="cancel" id="idCancel" title="ביטול הזיהוי" aria-label="ביטול הזיהוי">✕</button>
+          </div>
+          <div id="idMsg" aria-live="polite"></div>
+          <div id="idResults" class="idResults"></div>
+        </div>
         <label for="sdNusach" class="mt">נוסח</label>
         <select id="sdNusach"><option value="">בחרו נוסח…</option></select>
         <div id="sdBrowse" hidden>
@@ -218,6 +234,14 @@
   <!-- שלב 3: תזמון -->
   <section class="card locked" id="step3">
     <h2><span class="n">3</span> תזמון <span class="done" id="done3" hidden>✓</span></h2>
+    <!-- פרופיל שירה (PLAN_TEFILA.md 4.3.5) — רק בתפילה ובטקסט חופשי, כבוי כברירת מחדל (8.27) -->
+    <label class="singToggle" id="singWrap" hidden>
+      <input type="checkbox" id="singing" role="switch">
+      <span class="singTxt">
+        <b>🎵 שירה / חזנות</b>
+        <small>הדליקו אם ההקלטה מושרת או בנוסח חזנות — המערכת תדלג על דיבורים שאינם בטקסט (פתיחה, שם המנגינה)</small>
+      </span>
+    </label>
     <button id="startCloud" hidden>✨ סנכרון אוטומטי של הכתוביות</button>
     <div id="cloudProgress" hidden>
       <div class="procrow">

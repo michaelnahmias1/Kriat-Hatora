@@ -227,7 +227,7 @@ details summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
 }
 .repItem.bad { border-inline-start-color: var(--err); }
 .repItem .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.repItem .time {
+.repItem .time, .repNote .time {
   font-variant-numeric: tabular-nums; background: var(--verse-chip);
   border: none; border-radius: 8px; padding: 3px 9px; font-size: .8rem;
   color: var(--accent); width: auto; font-weight: 700; cursor: pointer;
@@ -238,6 +238,49 @@ details summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
 .repItem.bad .repBar > i { background: var(--err); }
 .repItem .txt { margin-top: 8px; font-size: 1.02rem; }
 .repItem .why { margin-top: 6px; font-size: .78rem; color: var(--muted); }
+
+/* דוח: מה עוד זוהה — פרופיל, דיבור שאינו בטקסט, "כנראה דולג" (PLAN_TEFILA.md 4.3.4–4.3.5) */
+.repProfile {
+  display: inline-block; margin-top: 10px; padding: 4px 10px; border-radius: 99px;
+  font-size: .8rem; font-weight: 700; color: var(--ink);
+  background: color-mix(in srgb, var(--gold) 16%, var(--card)); border: 1px solid var(--gold);
+}
+.repExtra { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 6px; }
+.repExtra h4 { margin: 8px 0 2px; font-size: .9rem; color: var(--accent); }
+.repExtra .sub { margin: 0 0 4px; font-size: .78rem; color: var(--muted); line-height: 1.45; }
+.repNote { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.repExtra h4 + .sub + .repNote, .repExtra h4 + .repNote { border-top: none; }
+.repNote .time { flex: none; }
+.repNote .body { flex: 1; min-width: 0; font-size: .88rem; line-height: 1.5; overflow-wrap: anywhere; }
+.repNote .body .meta { display: block; font-size: .76rem; color: var(--muted); }
+.repNote .body .bible { font-size: 1rem; }
+.repHint {
+  margin-top: 12px; padding: 10px 12px; border-radius: 12px; font-size: .88rem; line-height: 1.5;
+  border: 1px solid var(--gold); background: color-mix(in srgb, var(--gold) 10%, var(--card));
+}
+
+/* מתג "שירה / חזנות" בשלב 3 — מתג גדול לאצבע, ההסבר מתחתיו */
+label.singToggle {
+  display: flex; align-items: flex-start; gap: 12px; margin: 0 0 10px; padding: 11px 12px;
+  border: 1px solid var(--line); border-radius: 12px; cursor: pointer; color: var(--ink);
+  background: color-mix(in srgb, var(--verse-chip) 50%, var(--card)); font-size: .95rem;
+}
+label.singToggle.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, var(--card)); }
+.singToggle input {
+  -webkit-appearance: none; appearance: none; flex: none; position: relative; cursor: pointer;
+  width: 48px; height: 28px; margin: 1px 0 0; padding: 0; border: none; border-radius: 99px;
+  background: var(--line); transition: background .2s;
+}
+.singToggle input::before {
+  content: ""; position: absolute; top: 3px; right: 3px; width: 22px; height: 22px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .2s;
+}
+.singToggle input:checked { background: var(--accent); }
+.singToggle input:checked::before { transform: translateX(-20px); }
+.singToggle input:disabled { opacity: .5; cursor: default; }
+.singTxt { flex: 1; min-width: 0; }
+.singTxt b { display: block; font-size: .98rem; }
+.singTxt small { display: block; margin-top: 2px; font-size: .8rem; color: var(--muted); line-height: 1.45; }
 
 /* שורת ההודעה של שלב 3 — אדומה בזמן העלאה, ירוקה כשמותר לצאת */
 .notice {
@@ -543,3 +586,45 @@ label.sdAll input { width: 20px; height: 20px; margin: 0; padding: 0; flex: none
 #perfCount .error { margin: 0; font-size: .8rem; }
 /* שלב 5: כתובית שחוזרת בסדר הביצוע — מספרה בטקסט ו"חזרה 2" */
 .timerow .cueTag { display: block; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: .68rem; color: var(--muted); }
+
+/* ---------- זיהוי הקטע מההקלטה (js/identify.js, PLAN_TEFILA.md 4.5.2) ---------- */
+.idWrap {
+  margin-top: 12px; padding: 12px; border-radius: 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--verse-chip) 55%, transparent);
+}
+.idBtn { color: var(--accent); font-size: 1.02rem; min-height: 50px; }
+.idWrap > .hint { margin: 8px 0 0; }
+.linkBtn {
+  width: auto; padding: 2px 4px; font-size: inherit; font-weight: 600;
+  background: transparent; color: var(--accent); text-decoration: underline; border-radius: 6px;
+}
+.idResults:empty { display: none; }
+.idResults { display: grid; gap: 10px; margin-top: 10px; }
+.idCand {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  padding: 10px; display: grid; gap: 8px;
+}
+.idCand .hint { margin: 0; }
+.idHead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: .95rem; }
+.idNum {
+  flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: .8rem; font-weight: 700;
+  background: var(--accent); color: var(--accent-ink);
+}
+.idConf { font-size: .78rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+.idConf.high { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+.idConf.medium { color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, transparent); }
+.idConf.low { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.idTimeRange { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.idPart {
+  display: flex; align-items: center; gap: 10px; text-align: start; min-height: 52px;
+  padding: 10px 12px; border-radius: 10px; font-weight: 500;
+  background: var(--verse-chip); color: var(--ink); border: 1px solid transparent;
+}
+.idPart.on { border-color: var(--accent); }
+.idPart .tt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.idPart .nm { display: block; font-weight: 700; color: var(--accent); }
+.idPart small { display: block; color: var(--muted); font-size: .8rem; font-weight: 400; }
+.idPart small.fw { color: var(--ink); font-size: 1rem; }
+.idPart .go { flex: none; color: var(--muted); font-size: 1.2rem; }

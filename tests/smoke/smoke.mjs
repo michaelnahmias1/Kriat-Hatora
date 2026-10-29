@@ -153,30 +153,35 @@ const GLOBAL_FUNCTIONS = `heNumeral fmtClock fmtSrt setLocked escapeHtml save re
   dataSource isFreeText isUnitsSource alignMode unitLabel sourceTitle setSourceTab titleSrtName
   siddurSaved siddurRestore siddurActivate selectLeaf loadSiddurLeaf copySiddurToText
   perfAvailable performanceOrder sentPerformance cueOrder cueList cueCount perfAfterSplits perfRestore
-  renderPerfStatus openPerfEditor`.split(/\s+/);
+  renderPerfStatus openPerfEditor singingAvailable sentSinging renderSingToggle deployWindowError
+  parseReportExtras secPerWordMedian looksLikeSinging renderReportExtras adoptAudioFile
+  renderIdentifyButton identifyRecording pollIdentify renderIdentifyResults openIdentified`.split(/\s+/);
 const GLOBAL_BINDINGS = `$ STORE_KEY AI_ENDPOINT AI_TOKEN VAPID_PUBLIC_KEY S HE_LETTER_RE NIQQUD_RE MAQAF
   bookChapters FALLBACK_CHAPTERS player audioReady audioFileObj audioDurationSec lastObjectUrl
   MAX_UPLOAD_MB MAX_DECODE_MB CLOUD_POLL_MS CLOUD_JOB_LIMIT_MS MAX_UNITS_BYTES cloudAbort cloudTimerInt
-  CLOUD_BTN_LABEL wakeLock E settingsOverlay installPrompt PERFORMANCE_ENABLED PERF_MAX_LEN PE`.split(/\s+/);
+  CLOUD_BTN_LABEL wakeLock E settingsOverlay installPrompt PERFORMANCE_ENABLED PERF_MAX_LEN PE
+  SINGING_HINT_SEC_PER_WORD SINGING_HINT_MIN_CUES`.split(/\s+/);
 
 /* ---------- הקשר דפדפן עם כל ה-mocks ---------- */
-/* ‏perfEnabled: מגישים את js/config.js עם PERFORMANCE_ENABLED = true (הקובץ בריפו — false) */
-async function newSession(browser, base, profile, { serviceWorkers = "block", perfEnabled = false } = {}) {
+/* ‏perfEnabled=false: מגישים את js/config.js עם PERFORMANCE_ENABLED = false — המסלול
+   "בקרוב" (הקובץ בריפו — true מאז ש-4.3.2 מוזג) */
+async function newSession(browser, base, profile, { serviceWorkers = "block", perfEnabled = true } = {}) {
   const ctxOpts = profile === "mobile"
     ? (({ defaultBrowserType, ...d }) => d)(devices["iPhone 13"])
     : { viewport: { width: 1280, height: 860 } };
   const context = await browser.newContext({ ...ctxOpts, locale: "he-IL", serviceWorkers });
-  const cloud = { submits: [], statusCalls: [], cancels: [], statusQueue: [], external: [], api: [], override: null };
+  const cloud = { submits: [], statusCalls: [], cancels: [], statusQueue: [], external: [], api: [], override: null,
+                  identifies: [], identifyResp: null };
   const origin = new URL(base).origin;
   const cors = { "Access-Control-Allow-Origin": "*" };
   await context.route("**/*", async route => {
     const req = route.request();
     const url = new URL(req.url());
     if (url.origin === origin) {
-      if (perfEnabled && url.pathname === "/js/config.js") {
+      if (!perfEnabled && url.pathname === "/js/config.js") {
         const src = fs.readFileSync(path.join(ROOT, "js", "config.js"), "utf-8");
-        const patched = src.replace("const PERFORMANCE_ENABLED = false;", "const PERFORMANCE_ENABLED = true;");
-        assert.notEqual(patched, src, "PERFORMANCE_ENABLED = false ב-config.js");
+        const patched = src.replace("const PERFORMANCE_ENABLED = true;", "const PERFORMANCE_ENABLED = false;");
+        assert.notEqual(patched, src, "PERFORMANCE_ENABLED = true ב-config.js");
         return route.fulfill({ status: 200, contentType: "text/javascript; charset=utf-8", body: patched });
       }
       if (url.pathname.startsWith("/api/")) {
@@ -196,6 +201,12 @@ async function newSession(browser, base, profile, { serviceWorkers = "block", pe
       if (url.pathname === "/submit") {
         cloud.submits.push(parseMultipart(req.postDataBuffer() || Buffer.alloc(0)));
         return route.fulfill({ status: 200, headers: cors, contentType: "application/json", body: JSON.stringify({ call_id: "fc-test-1" }) });
+      }
+      if (url.pathname === "/identify") {
+        // זיהוי הקטע (4.5.2); ‏identifyResp — למשל 404 של worker ישן בחלון הפריסה
+        cloud.identifies.push(parseMultipart(req.postDataBuffer() || Buffer.alloc(0)));
+        const r = cloud.identifyResp || { status: 200, body: { call_id: "fc-id-1" } };
+        return route.fulfill({ status: r.status, headers: cors, contentType: "application/json", body: JSON.stringify(r.body) });
       }
       if (url.pathname === "/status") {
         cloud.statusCalls.push(url.searchParams.get("call_id"));
@@ -396,6 +407,9 @@ async function flowMain(browser, base, profile) {
     assert.equal(fields.chapter_end, "2");
     assert.equal(fields.splits, JSON.stringify(expectedSplits));
     assert.equal(fields.push_sub, undefined, "אין VAPID — אין push_sub");
+    assert.equal(fields.profile, undefined, "בתנ״ך אין פרופיל שירה");
+    assert.equal(fields.performance, undefined);
+    assert.equal(await isHidden(page, "singWrap"), true, "בתנ״ך אין מתג שירה");
     assert.equal(files.file.filename, "aliyah.wav");
     // אחרי ההעלאה: העבודה שמורה, האזהרה ירוקה
     await until(async () => (await lsState(page)).cloudJob, "cloudJob נשמר");
@@ -1836,8 +1850,10 @@ async function flowPerformance(browser, base, profile, enabled) {
       cloud.statusQueue.length = 0;
       cloud.statusQueue.push({ body: { srt: srtFor(segs, segs.map((_, i) => i), 16), report: "" } });
       await page.reload();
-      await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון נכשל"), null, { timeout: 15000 });
-      assert.ok((await txt(page, "#timingMsg")).includes(`חזרו 15 כתוביות אבל בסדר הביצוע ${LD_ORDER3.length}`), await txt(page, "#timingMsg"));
+      // ‏worker ישן (חלון הפריסה) שהתעלם מסדר הביצוע ⇐ הודעה ברורה, לא "הסנכרון נכשל"
+      await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הענן עדיין לא עודכן"), null, { timeout: 15000 });
+      assert.equal(await txt(page, "#timingMsg"),
+        `⏳ הענן עדיין לא עודכן — נסו שוב בעוד כמה דקות או שלחו בלי חזרות (חזרו 15 כתוביות במקום ${LD_ORDER3.length})`);
       assert.equal(await isLocked(page, "step4"), true);
       // ושוב עם התוצאה הנכונה
       await page.evaluate(job => {
@@ -1861,6 +1877,25 @@ async function flowPerformance(browser, base, profile, enabled) {
       assert.equal(st.timesOrder, null);
       const errs = errors.filter(e => e.includes("status of"));
       assert.deepEqual(errs, []);
+    });
+
+    await step(`${tag} חלון הפריסה: worker ישן דוחה performance ⇐ "הענן עדיין לא עודכן … בלי חזרות"`, async () => {
+      const now = await page.evaluate(() => Date.now());
+      await page.evaluate(job => {
+        const st = JSON.parse(localStorage.getItem("kriat-hatora-v1"));
+        st.cloudJob = job;
+        localStorage.setItem("kriat-hatora-v1", JSON.stringify(st));
+      }, { id: "fc-perf-old", t0: now - 1000, ts: now - 2000, est: 100, push: false, perf: LD_ORDER3 });
+      cloud.statusQueue.length = 0;
+      cloud.statusQueue.push({ status: 500, body: { error: "העיבוד נכשל (NotImplementedError): תסריט ביצוע (performance) עוד לא נתמך — משימה 4.3" } });
+      await page.reload();
+      await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הענן עדיין לא עודכן"), null, { timeout: 15000 });
+      assert.equal(await txt(page, "#timingMsg"), "⏳ הענן עדיין לא עודכן — נסו שוב בעוד כמה דקות או שלחו בלי חזרות");
+      assert.equal((await lsState(page)).cloudJob, null);
+      assert.equal(await page.$eval("#startCloud", b => b.disabled), false);
+      const i500 = errors.findIndex(e => e.includes("status of 500"));
+      assert.ok(i500 >= 0, errors.join("\n"));
+      errors.splice(i500, 1);
     });
   }
 
@@ -1890,6 +1925,8 @@ async function flowPerformanceSiddur(browser, base, profile) {
     await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
     assert.equal(await page.evaluate(() => dataSource()), "siddur");
     assert.equal(await isHidden(page, "perfRow"), false);
+    assert.equal(await isHidden(page, "singWrap"), false, "מתג \"שירה / חזנות\" גם בסידור");
+    assert.equal(await page.evaluate(() => S.singing), false, "מצב שמור בלי singing ⇐ כבוי");
     await page.click("#perfBtn");
     const labels = [...new Set(LD.segments.map(s => s.label))];
     assert.equal(labels.length, 20);
@@ -1905,11 +1942,385 @@ async function flowPerformanceSiddur(browser, base, profile) {
     await shot(page, profile, "perf-7-siddur", false);
     await page.click("#perfSave");
     assert.equal(await txt(page, "#perfStatus"),
-      `סדר הביצוע: ${n - 2} כתוביות בהקלטה (בטקסט ${n}) — פזמון אחרי כל בית, דילוג על 2 כתוביות.` + PERF_SOON);
+      `סדר הביצוע: ${n - 2} כתוביות בהקלטה (בטקסט ${n}) — פזמון אחרי כל בית, דילוג על 2 כתוביות.`);
     assert.deepEqual(await page.evaluate(() => performanceOrder()), order);
-    assert.equal(await page.evaluate(() => sentPerformance()), null, "הדגל כבוי");
+    assert.deepEqual(await page.evaluate(() => sentPerformance()), order, "הדגל דולק — נשלח");
   });
   await step(`[${profile}] (מבנה הביצוע בסידור) אין שגיאות קונסול`, async () => assertNoErrors(errors));
+  await context.close();
+}
+
+/* =================== שירה / חזנות (PLAN_TEFILA.md 4.3.5, 8.26–8.27) ===================
+   הדוחות וה-SRT — פלט אמיתי של tools/run_local.py על samples/nishmat (תמלול כמו בענן,
+   ‏--profile singing / reading), שמור ב-tests/fixtures/singing. */
+const SING_DIR = path.join(ROOT, "tests", "fixtures", "singing");
+const NISHMAT_TEXT = fs.readFileSync(path.join(ROOT, "samples", "nishmat", "text.txt"), "utf-8");
+const readFx = name => fs.readFileSync(path.join(SING_DIR, name), "utf-8");
+/* זמני ההתחלה מתוך SRT */
+function srtStarts(srt) {
+  const re = /(\d+):(\d+):(\d+),(\d+)\s*-->/g;
+  const starts = [];
+  let m;
+  while ((m = re.exec(srt))) starts.push(+m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000);
+  return starts;
+}
+// "כנראה דולג" — בדיוק הפורמט של hybrid._skipped_lines (הופק ממנו; בנשמת הוא לא ירה)
+const SKIPPED_LINES = [
+  "כנראה דולג — יחידות של 6+ מילים שאף מילה מהן לא זוהתה בתמלול (הצעה בלבד; אם באמת דולגו — הסירו אותן מסדר הביצוע ונסו שוב):",
+  "  כתובית 7 · שורה 3 | 8 מילים | וְעָלוּ מושִׁעִים בְּהַר צִיּון לִשְׁפּט אֶת הַר עֵשָׂו. …",
+  "  כתובית 20 · — | 6 מילים | אֵין לָנוּ מֶלֶךְ עוזֵר וְסומֵךְ אֶלָּא",
+].join("\n");
+const singState = page => page.evaluate(() => ({
+  shown: !document.getElementById("singWrap").hidden,
+  checked: document.getElementById("singing").checked,
+  disabled: document.getElementById("singing").disabled,
+  on: document.getElementById("singWrap").classList.contains("on"),
+  S: S.singing,
+}));
+
+async function flowSinging(browser, base, profile) {
+  const tag = `[${profile} · שירה]`;
+  const { context, page, cloud, errors } = await newSession(browser, base, profile);
+  const ts = mockApi("text_segments", { text: NISHMAT_TEXT, mode: "tefila" }).body;
+  const singSrt = readFx("nishmat_singing.srt"), singReport = readFx("nishmat_singing.report.txt");
+  const readSrt = readFx("nishmat_reading.srt");
+  const readReport = readFx("nishmat_reading.report.txt") + "\n\n" + SKIPPED_LINES;
+  const viewShot = async (id, name) => {
+    if (!SHOTS_DIR || profile !== "mobile") return;
+    // מתחת לכותרת הדביקה
+    await page.evaluate(id => scrollTo(0, document.getElementById(id).getBoundingClientRect().top + scrollY
+      - document.querySelector("header").getBoundingClientRect().height - 8), id);
+    await shot(page, profile, name, false);
+  };
+  const waitDone = () => page.waitForFunction(() =>
+    document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+
+  await step(`${tag} המתג: מוסתר בתנ״ך, גלוי בטקסט חופשי — כבוי כברירת מחדל`, async () => {
+    await gotoReady(page, base);
+    assert.deepEqual(await singState(page), { shown: false, checked: false, disabled: false, on: false, S: false });
+    await page.click("#loadBtn");
+    await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+    assert.equal((await singState(page)).shown, false, "תנ״ך — אין מתג שירה");
+    await page.click('.srcTabs [data-src="text"]');
+    await page.fill("#freeText", NISHMAT_TEXT);
+    await page.fill("#textTitle", "נשמת");
+    await page.click("#textLoadBtn");
+    await page.waitForFunction(() => document.getElementById("loadOk").textContent.startsWith("נטען: נשמת"));
+    assert.equal(ts.segments.length, 21);
+    assert.deepEqual(await singState(page), { shown: true, checked: false, disabled: false, on: false, S: false });
+    assert.equal(await txt(page, "#singWrap b"), "🎵 שירה / חזנות");
+    assert.equal(await txt(page, "#singWrap small"),
+      "הדליקו אם ההקלטה מושרת או בנוסח חזנות — המערכת תדלג על דיבורים שאינם בטקסט (פתיחה, שם המנגינה)");
+    assert.equal(await page.evaluate(() => sentSinging()), false);
+    assert.equal((await lsState(page)).singing, false);
+    // בתוך שלב 3, לפני כפתור הסנכרון
+    assert.equal(await page.evaluate(() => document.getElementById("singWrap").closest("section").id), "step3");
+    assert.equal(await page.evaluate(() => document.getElementById("singWrap").nextElementSibling.id), "startCloud");
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+  });
+
+  await step(`${tag} הדלקה נשמרת ומשוחזרת; נשלח profile=singing; העבודה זוכרת אותו גם אחרי סגירה`, async () => {
+    await page.setInputFiles("#audioFile", { name: "nishmat.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+    await page.waitForFunction(() => !document.getElementById("done2").hidden);
+    await page.click("#singWrap");
+    assert.deepEqual(await singState(page), { shown: true, checked: true, disabled: false, on: true, S: true });
+    assert.equal((await lsState(page)).singing, true);
+    await viewShot("step3", "sing-1-toggle");
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+    assert.deepEqual(await singState(page), { shown: true, checked: true, disabled: false, on: true, S: true });
+    await page.setInputFiles("#audioFile", { name: "nishmat.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+    await page.waitForFunction(() => !document.getElementById("done2").hidden);
+    cloud.statusQueue.length = 0;
+    cloud.statusQueue.push(null);   // רץ — עד שנחליף את התשובה
+    await page.click("#startCloud");
+    await until(() => cloud.submits.length === 1, "submit");
+    const { fields } = cloud.submits[0];
+    assert.equal(fields.profile, "singing");
+    assert.equal(fields.source, "text");
+    assert.equal(fields.title, "נשמת");
+    assert.equal(fields.performance, undefined);
+    const job = await until(async () => (await lsState(page)).cloudJob, "cloudJob נשמר");
+    assert.equal(job.profile, "singing");
+    assert.equal(job.perf, undefined);
+    assert.equal((await singState(page)).disabled, true, "בזמן העיבוד אי אפשר להחליף פרופיל");
+    // סגירה וחזרה — העבודה ממשיכה עם הפרופיל שלה
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("cloudProgress").hidden);
+    assert.equal((await lsState(page)).cloudJob.profile, "singing");
+    assert.deepEqual(await singState(page), { shown: true, checked: true, disabled: true, on: true, S: true });
+    cloud.statusQueue.length = 0;
+    cloud.statusQueue.push({ body: { srt: "﻿" + singSrt, report: singReport } });
+    await waitDone();
+    assert.equal(cloud.submits.length, 1, "חידוש — בלי העלאה נוספת");
+    assert.equal((await singState(page)).disabled, false);
+    const st = await lsState(page);
+    assert.equal(st.cloudJob, null);
+    assert.deepEqual(st.times, srtStarts(singSrt));
+    assert.equal(st.singing, true);
+    assert.equal(st.report, singReport.trim());
+  });
+
+  await step(`${tag} הדוח (נשמת, פרופיל שירה): "פרופיל: שירה" ודיבור שאינו בטקסט`, async () => {
+    for (const id of ["stepReport", "step4", "step5"]) assert.equal(await isLocked(page, id), false, id);
+    assert.deepEqual(await page.$$eval(".repTile .v", v => v.map(x => x.textContent)), ["21", "30%", "12"]);
+    assert.equal(await txt(page, ".repProfile"), "🎵 פרופיל: שירה");
+    assert.equal(await page.$("#repSingHint"), null, "כבר סונכרן בשירה — בלי הצעה");
+    assert.equal(await page.$("#repSkipped"), null);
+    assert.equal(await txt(page, "#repNontext h4"), "🗣️ זוהה דיבור שאינו בטקסט");
+    const notes = await page.$$eval("#repNontext .repNote", r => r.map(x => [
+      x.querySelector("button.time").dataset.t, x.querySelector("button.time").textContent,
+      x.querySelector(".meta").textContent, x.querySelector(".body").textContent]));
+    assert.equal(notes.length, 2);
+    assert.deepEqual(notes[0].slice(0, 3), ["4.6", "▶ 0:04", "עד 0:09"]);
+    assert.ok(notes[0][3].endsWith("«רוצה להקריא לכם תפילת שחרית של שבת. בסוף כל קטע אתם עונים …»"), notes[0][3]);
+    assert.deepEqual(notes[1].slice(0, 3), ["57.5", "▶ 0:57", "עד 0:58"]);
+    assert.ok(notes[1][3].endsWith("«לקראת דודי ארוץ»"), notes[1][3]);
+    // רשימת המקטעים לבדיקה — אחרי החלק הזה, כמו קודם
+    assert.equal(await page.$$eval(".repItem", r => r.length), 12);
+    assert.ok(await page.evaluate(() => !!(document.getElementById("repNontext")
+      .compareDocumentPosition(document.querySelector(".repItem")) & Node.DOCUMENT_POSITION_FOLLOWING)));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    await viewShot("stepReport", "sing-2-report");
+  });
+
+  await step(`${tag} הקלטה מושרת שסונכרנה כקריאה ⇐ הצעה "נראה שזו שירה"; "כנראה דולג"`, async () => {
+    // אחרי הסגירה והחזרה הקובץ אבד — בוחרים אותו שוב (שלב 3 נעול בלעדיו)
+    assert.equal(await isLocked(page, "step3"), true);
+    await page.setInputFiles("#audioFile", { name: "nishmat.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+    await page.waitForFunction(() => !document.getElementById("done2").hidden && !document.getElementById("step3").classList.contains("locked"));
+    await page.click("#singWrap");   // כיבוי
+    assert.deepEqual(await singState(page), { shown: true, checked: false, disabled: false, on: false, S: false });
+    await page.waitForFunction(() => document.getElementById("cloudProgress").hidden);
+    cloud.statusQueue.length = 0;
+    cloud.statusQueue.push({ body: { srt: readSrt, report: readReport } });
+    await page.click("#startCloud");
+    await until(() => cloud.submits.length === 2, "submit 2");
+    assert.equal(cloud.submits[1].fields.profile, undefined, "כבוי — בלי השדה (ברירת המחדל של ה-worker)");
+    await waitDone();
+    const rt = srtStarts(readSrt);
+    assert.deepEqual((await lsState(page)).times, rt);
+    assert.equal(await page.$(".repProfile"), null, "קריאה — בלי תגית פרופיל");
+    assert.equal(await page.$("#repNontext"), null);
+    const hint = await txt(page, "#repSingHint");
+    assert.ok(hint.startsWith("💡 נראה שההקלטה מושרת — כ-1.2 שניות למילה (בקריאה רגילה כחצי שנייה)."), hint);
+    assert.ok(Math.abs(await page.evaluate(() => secPerWordMedian()) - 1.16) < 0.02);
+    const skipped = await page.$$eval("#repSkipped .repNote", r => r.map(x => [
+      x.querySelector("button.time").dataset.t, x.querySelector(".meta").textContent,
+      x.querySelector(".bible").textContent]));
+    assert.deepEqual(skipped, [
+      [String(rt[6]), "כתובית 7 · שורה 3 · 8 מילים", "וְעָלוּ מושִׁעִים בְּהַר צִיּון לִשְׁפּט אֶת הַר עֵשָׂו. …"],
+      [String(rt[19]), "כתובית 20 · 6 מילים", "אֵין לָנוּ מֶלֶךְ עוזֵר וְסומֵךְ אֶלָּא"],
+    ]);
+    assert.equal(await txt(page, "#repSkipped h4"), "⏭ כנראה דולג");
+    // רשימת המקטעים לבדיקה לא נפגעה מהשורות הנוספות
+    assert.equal(await page.$$eval(".repItem", r => r.length), 12);
+    await viewShot("stepReport", "sing-3-hint");
+    // הכפתור בהצעה מדליק את המתג בשלב 3
+    await page.click("#repSingOn");
+    assert.deepEqual(await singState(page), { shown: true, checked: true, disabled: false, on: true, S: true });
+    assert.equal(await page.$("#repSingOn"), null);
+    assert.equal((await lsState(page)).singing, true);
+    // בתנ״ך אין הצעה — גם על אותם זמנים
+    assert.equal(await page.evaluate(() => {
+      const d = S.data.source; S.data.source = "tanakh";
+      const r = looksLikeSinging(parseReportExtras(S.report));
+      S.data.source = d; return r;
+    }), null);
+  });
+
+  await step(`${tag} חלון הפריסה: worker ישן דוחה profile=singing ⇐ "הענן עדיין לא עודכן"`, async () => {
+    await page.waitForFunction(() => document.getElementById("cloudProgress").hidden);
+    cloud.statusQueue.length = 0;
+    cloud.statusQueue.push({ status: 500, body: { error: "העיבוד נכשל (NotImplementedError): פרופיל 'singing' עוד לא נתמך — רק \"reading\" (משימה 4.3.5)" } });
+    await page.click("#startCloud");
+    await until(() => cloud.submits.length === 3, "submit 3");
+    assert.equal(cloud.submits[2].fields.profile, "singing");
+    await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הענן עדיין לא עודכן"), null, { timeout: 15000 });
+    assert.equal(await txt(page, "#timingMsg"), "⏳ הענן עדיין לא עודכן — נסו שוב בעוד כמה דקות או שלחו בלי \"שירה / חזנות\"");
+    assert.equal((await lsState(page)).cloudJob, null);
+    assert.equal((await singState(page)).disabled, false);
+    assert.equal(await page.$eval("#startCloud", b => b.disabled), false);
+    // שני השדות יחד — ההודעה מציעה לוותר על שניהם
+    assert.equal(await page.evaluate(() => deployWindowError({ perf: [0, 1, 0], profile: "singing" }).message),
+      "הענן עדיין לא עודכן — נסו שוב בעוד כמה דקות או שלחו בלי חזרות ובלי \"שירה / חזנות\"");
+    const i500 = errors.findIndex(e => e.includes("status of 500"));
+    assert.ok(i500 >= 0, errors.join("\n"));
+    errors.splice(i500, 1);
+  });
+
+  await step(`${tag} מעבר לתנ״ך: המתג מוסתר ולא נשלח, גם כשהוא דלוק`, async () => {
+    await page.click('.srcTabs [data-src="tanakh"]');
+    await page.click("#loadBtn");
+    await page.waitForFunction(() => document.getElementById("loadOk").textContent.startsWith("נטען: Genesis"));
+    assert.deepEqual(await singState(page), { shown: false, checked: true, disabled: false, on: true, S: true });
+    assert.equal(await page.evaluate(() => sentSinging()), false);
+    await page.setInputFiles("#audioFile", { name: "aliyah.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+    await page.waitForFunction(() => !document.getElementById("done2").hidden);
+    cloud.statusQueue.length = 0;
+    cloud.statusQueue.push(null);
+    await page.click("#startCloud");
+    await until(() => cloud.submits.length === 4, "submit 4");
+    assert.equal(cloud.submits[3].fields.profile, undefined);
+    assert.equal(cloud.submits[3].fields.book, "בראשית");
+    await page.click("#cancelCloud");
+    await page.waitForFunction(() => document.getElementById("timingMsg").textContent === "הסנכרון בוטל.");
+  });
+
+  await step(`${tag} אין שגיאות קונסול ואין יציאה לרשת`, async () => {
+    assertNoErrors(errors);
+    assert.ok(cloud.external.every(h => /^fonts\.(googleapis|gstatic)\.com$/.test(h)), cloud.external.join(","));
+  });
+  await context.close();
+}
+
+/* =================== זיהוי הקטע מההקלטה (PLAN_TEFILA.md 4.5.2) =================== */
+// תשובת /identify מזויפת (במבנה של src/siddur/identify.py); הקטע הראשון — לכה דודי
+// בספרד, שיש לו תשובת Sefaria מוקלטת, כך שהטעינה עוברת ב-/api/siddur האמיתי
+const ID_RESULT = {
+  kind: "identify", asr_words: 180, duration: 122, limited: false, model: "ivrit-ai/whisper-large-v3-turbo-ct2",
+  vad_filter: false, transcript: "לכה דודי לקראת כלה פני שבת נקבלה",
+  candidates: [
+    { nusach: "sefard", nusach_title: "ספרד", score: 120.5, coverage: 0.8, confidence: "high", start: 12.3, end: 118.7,
+      parts: [{ path: SEFARD_KS, title: "קבלת שבת", breadcrumb: ["שבת"], from: 17, to: 38, total: 43,
+                first_words: "לְכָה דוֹדִי לִקְרַאת כַּלָּה", matched: 150, ref_words: 190, start: 12.3, end: 118.7 }],
+      also: [] },
+    { nusach: "ashkenaz", nusach_title: "אשכנז", score: 80, coverage: 0.5, confidence: "medium", start: 12.3, end: 118.7,
+      parts: [
+        { path: "ashkenaz/shabbat/kabbalat-shabbat/lekha-dodi", title: "לכה דודי", breadcrumb: ["שבת", "קבלת שבת"],
+          from: 1, to: 19, total: 19, first_words: "לְכָה דוֹדִי", matched: 60, ref_words: 90, start: 12.3, end: 80 },
+        { path: "ashkenaz/shabbat/kabbalat-shabbat/psalm-92", title: "מזמור שיר ליום השבת", breadcrumb: ["שבת", "קבלת שבת"],
+          from: 1, to: 1, total: 1, first_words: "מִזְמוֹר שִׁיר", matched: 20, ref_words: 40, start: 81, end: 118.7 }],
+      also: [{ nusach: "ashkenaz", path: "x", title: "y", breadcrumb: [] }] },
+    { nusach: "edot-hamizrach", nusach_title: "עדות המזרח", score: 40, coverage: 0.3, confidence: "low", start: 20, end: 60,
+      parts: [{ path: "edot-hamizrach/shabbat/arvit", title: "ערבית", breadcrumb: ["שבת"], from: 3, to: 3, total: 40,
+                first_words: "", matched: 20, ref_words: 40, start: 20, end: 60 }], also: [] },
+    { nusach: "sefard", nusach_title: "ספרד", score: 10, coverage: 0.1, confidence: "low", start: 1, end: 2,
+      parts: [{ path: "sefard/x", title: "רביעי", breadcrumb: [], from: 1, to: 1, total: 1, first_words: "", start: 1, end: 2 }], also: [] },
+  ],
+};
+
+async function flowIdentify(browser, base, profile) {
+  const { context, page, cloud, errors } = await newSession(browser, base, profile);
+  const LDK = mockApi("siddur", { path: SEFARD_KS, from: "17", to: "38" }).body;
+  const tag = `[${profile}] זיהוי:`;
+
+  await step(`${tag} הכפתור בראש לשונית התפילה, לפני בחירת נוסח`, async () => {
+    await gotoReady(page, base);
+    await page.click('.srcTabs [data-src="siddur"]');
+    await page.waitForFunction(() => document.getElementById("sdNusach").options.length === 4);
+    assert.equal(await page.isVisible("#idBtn"), true);
+    assert.equal(await txt(page, "#idBtn"), "🔎 זהה לי את הקטע מההקלטה");
+    assert.equal(await visible(page, "idFileNote"), false, "עוד לא נבחר קובץ");
+    assert.equal(await visible(page, "idProgress"), false);
+    const top = id => page.evaluate(id => document.getElementById(id).getBoundingClientRect().top, id);
+    assert.ok(await top("sdSearch") < await top("idBtn") && await top("idBtn") < await top("sdNusach"));
+    assert.ok(await page.evaluate(() => document.getElementById("idBtn").getBoundingClientRect().height >= 44), "כפתור גדול");
+    await shot(page, profile, "identify-1-button");
+  });
+
+  await step(`${tag} בחירת הקלטה ⇐ העלאה ל-/identify ⇐ 3 מועמדים`, async () => {
+    cloud.statusQueue = [null, { status: 200, body: ID_RESULT }];
+    await page.setInputFiles("#idFile", { name: "nishmat.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+    await page.waitForFunction(() => document.querySelectorAll("#idResults .idCand").length === 3, null, { timeout: 15000 });
+    assert.equal(cloud.identifies.length, 1);
+    const sent = cloud.identifies[0];
+    assert.equal(sent.fields.token, await page.evaluate(() => AI_TOKEN));
+    assert.equal(sent.fields.nusach, undefined, "בלי נוסח שנבחר — בלי השדה");
+    assert.equal(sent.files.file.filename, "nishmat.wav");
+    assert.ok(cloud.statusCalls.includes("fc-id-1"));
+    assert.equal(cloud.submits.length, 0, "זיהוי — לא סנכרון");
+    assert.equal(await visible(page, "idProgress"), false);
+    // ההקלטה נקלטה גם בשלב 2
+    assert.ok((await txt(page, "#audioInfo")).includes("nishmat.wav"));
+    assert.equal(await visible(page, "idFileNote"), true);
+    assert.equal(await txt(page, "#idFileName"), "nishmat.wav");
+    assert.ok((await txt(page, "#idMsg")).includes("נמצאו 3 התאמות"));
+    const cards = await page.$$eval("#idResults .idCand", cs => cs.map(c => ({
+      head: c.querySelector(".idHead").textContent,
+      parts: [...c.querySelectorAll(".idPart")].map(b => [b.dataset.path, b.textContent]),
+      hints: [...c.querySelectorAll(".hint")].map(h => h.textContent) })));
+    assert.ok(cards[0].head.includes("ספרד") && cards[0].head.includes("התאמה טובה") && cards[0].head.includes("0:12–1:58"), cards[0].head);
+    assert.equal(cards[0].parts.length, 1);
+    assert.equal(cards[0].parts[0][0], SEFARD_KS);
+    assert.ok(cards[0].parts[0][1].includes("קבלת שבת") && cards[0].parts[0][1].includes("פסקאות 17–38 מתוך 43")
+              && cards[0].parts[0][1].includes("«לְכָה דוֹדִי לִקְרַאת כַּלָּה…»"), cards[0].parts[0][1]);
+    assert.ok(cards[1].head.includes("אשכנז") && cards[1].head.includes("התאמה חלקית"));
+    assert.equal(cards[1].parts.length, 2);
+    assert.ok(cards[1].parts[1][1].startsWith("ואחריו: מזמור שיר ליום השבת"));
+    assert.ok(cards[1].parts[0][1].includes("הקטע כולו"));
+    assert.ok(cards[1].hints.some(h => h.includes("כל אחד בנפרד")));
+    assert.ok(cards[1].hints.some(h => h.includes("גם ב-1 מקומות")));
+    assert.ok(cards[2].head.includes("עדות המזרח") && cards[2].head.includes("התאמה חלשה"));
+    assert.ok(cards[2].parts[0][1].includes("פסקה 3 מתוך 40"));
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    await shot(page, profile, "identify-2-results");
+  });
+
+  await step(`${tag} הקשה על מועמד ⇐ הנוסח, הקטע והטווח נטענים; ההקלטה כבר בשלב 2`, async () => {
+    await page.click(`#idResults .idPart[data-path="${SEFARD_KS}"]`);
+    await page.waitForFunction(n => document.querySelectorAll("#segPreview .segrow:not(.instr)").length === n, LDK.segments.length);
+    assert.deepEqual(leafCalls(cloud, SEFARD_KS).map(c => c.params), [{ path: SEFARD_KS, from: "17", to: "38" }],
+      "בקשה אחת לקטע — selectLeaf ואחריו loadSiddurLeaf על אותה תשובה");
+    assert.equal(await val(page, "sdNusach"), "sefard");
+    assert.deepEqual(await checkedParas(page), range(17, 38));
+    const d = await page.evaluate(() => ({ source: S.data.source, label: S.data.label, path: S.data.path }));
+    assert.deepEqual(d, { source: "siddur", label: "קבלת שבת (פסקאות 17–38)", path: SEFARD_KS });
+    assert.equal(await isLocked(page, "step2"), false);
+    assert.equal(await isLocked(page, "step3"), false, "יש קובץ — שלב 3 פתוח בלי לבחור שוב");
+    assert.ok((await txt(page, "#idMsg")).includes("נטען «קבלת שבת (פסקאות 17–38)» ✓"));
+    assert.ok(await page.$eval(`#idResults .idPart[data-path="${SEFARD_KS}"]`, b => b.classList.contains("on")));
+    await shot(page, profile, "identify-3-loaded");
+    // הסנכרון יוצא עם אותו קובץ
+    cloud.statusQueue = [null];
+    await page.click("#startCloud");
+    await until(() => cloud.submits.length === 1, "submit");
+    assert.equal(cloud.submits[0].files.file.filename, "nishmat.wav");
+    assert.equal(cloud.submits[0].fields.source, "siddur");
+    assert.equal(cloud.submits[0].fields.title, "קבלת שבת (פסקאות 17–38)");
+    await page.click("#cancelCloud");
+    await page.waitForFunction(() => document.getElementById("timingMsg").textContent === "הסנכרון בוטל.");
+  });
+
+  await step(`${tag} worker ישן (404) ⇐ "הענן עדיין לא עודכן"`, async () => {
+    cloud.identifyResp = { status: 404, body: { detail: "Not Found" } };
+    await page.click("#idBtn");   // הקובץ כבר נבחר ⇐ ישר לזיהוי
+    await page.waitForFunction(() => document.getElementById("idMsg").textContent.includes("הענן עדיין לא עודכן"));
+    assert.equal(cloud.identifies.at(-1).fields.nusach, "sefard", "הנוסח שנבחר נשלח");
+    assert.equal(await page.$$eval("#idResults .idCand", c => c.length), 0);
+    assert.equal(await page.isDisabled("#idBtn"), false);
+    cloud.identifyResp = null;
+  });
+
+  await step(`${tag} לא זוהה / נכשל / בוטל — הודעות בעברית`, async () => {
+    cloud.statusQueue = [{ status: 200, body: { kind: "identify", asr_words: 7, candidates: [], transcript: "שלום לכם מה שלומכם" } }];
+    await page.click("#idBtn");
+    await page.waitForFunction(() => document.getElementById("idMsg").textContent.includes("לא זוהה קטע מהסידור"));
+    assert.ok((await txt(page, "#idMsg")).includes("«שלום לכם מה שלומכם…»"));
+    cloud.statusQueue = [{ status: 500, body: { error: "העיבוד נכשל (RuntimeError): boom" } }];
+    await page.click("#idBtn");
+    await page.waitForFunction(() => document.getElementById("idMsg").textContent.includes("הזיהוי נכשל: העיבוד נכשל (RuntimeError): boom"));
+    cloud.statusQueue = [null];
+    const nCancel = cloud.cancels.length;
+    await page.click("#idBtn");
+    await page.waitForFunction(() => !document.getElementById("idProgress").hidden &&
+      document.getElementById("idLabel").textContent.startsWith("מאזין להקלטה"));
+    assert.equal(await page.isDisabled("#idBtn"), true);
+    await page.click("#idCancel");
+    await page.waitForFunction(() => document.getElementById("idMsg").textContent === "הזיהוי בוטל.");
+    await until(() => cloud.cancels.length === nCancel + 1, "cancel");
+    assert.equal(cloud.cancels.at(-1).fields.call_id, "fc-id-1");
+    assert.equal(await visible(page, "idProgress"), false);
+    // ה-404 וה-500 המכוונים מופיעים בקונסול כ-"Failed to load resource" — צפוי
+    const expected = errors.filter(e => /Failed to load resource: .*status of (404|500)/.test(e));
+    assert.equal(expected.length, 2, errors.join("\n"));
+    for (const e of expected) errors.splice(errors.indexOf(e), 1);
+  });
+
+  await step(`${tag} אין שגיאות קונסול ואין יציאה לרשת`, async () => {
+    assertNoErrors(errors);
+    assert.ok(cloud.external.every(h => /^fonts\.(googleapis|gstatic)\.com$/.test(h)), cloud.external.join(","));
+  });
   await context.close();
 }
 
@@ -1931,6 +2342,8 @@ try {
     await flowPerformance(browser, base, profile, false);
     await flowPerformance(browser, base, profile, true);
     await flowPerformanceSiddur(browser, base, profile);
+    await flowSinging(browser, base, profile);
+    await flowIdentify(browser, base, profile);
   }
   if (!only || only === "sw") {
     console.log("\n== service worker ==");
