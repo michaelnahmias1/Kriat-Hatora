@@ -245,6 +245,60 @@ class WikisourceHtmlTest(unittest.TestCase):
         self.assertEqual(ws.parse_params(2971772, 14)["oldid"], "2971772")
 
 
+class WikisourceSnapshotTest(unittest.TestCase):
+    """הצילום בגיט (data/siddur/wikisource) — מה שה-API מגיש."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cat = load_catalog()
+        cls.ws_leaves = [lf["ws"] for _, lf in cls.cat.leaves("") if lf.get("ws")]
+
+    def test_snapshot_per_revision_with_attribution(self):
+        revs = {w["rev"] for w in self.ws_leaves}
+        files = {p.name for p in ws.SNAPSHOT_DIR.glob("*.json.gz")}
+        self.assertEqual(files, {f"{r}.json.gz" for r in revs})  # בלי צילומים יתומים
+        for r in revs:
+            snap = ws.load_snapshot(r)
+            with self.subTest(rev=r):
+                self.assertEqual(snap["rev"], r)
+                self.assertEqual(snap["license"], "CC-BY-SA")
+                self.assertEqual(snap["license_url"], ws.LICENSE_URL)
+                self.assertIn(f"oldid={r}", snap["page_url"])
+                self.assertIn("action=history", snap["history_url"])
+                self.assertRegex(snap["fetched"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_every_leaf_section_in_snapshot(self):
+        for w in self.ws_leaves:
+            sec = ws.load_snapshot(w["rev"])["sections"][w["section"]]
+            self.assertTrue(ws.same_heading(sec["heading"], w["heading"]))
+            self.assertTrue(markup.has_vocalized(sec["paragraphs"]))
+
+    def test_deployed_with_function(self):
+        """הצילום חייב להגיע לפונקציה ב-Vercel: לא ב-.vercelignore ולא ב-excludeFiles."""
+        ignore = (ROOT / ".vercelignore").read_text(encoding="utf-8").split()
+        self.assertFalse(any(x.rstrip("/") in ("data", "data/siddur", "data/siddur/wikisource")
+                             or x.startswith("data/siddur/wikisource") for x in ignore), ignore)
+        cfg = json.loads((ROOT / "vercel.json").read_text(encoding="utf-8"))
+        excl = cfg["functions"]["api/siddur.py"].get("excludeFiles", "")
+        self.assertNotIn("data", excl)
+        total = sum(p.stat().st_size for p in ws.SNAPSHOT_DIR.glob("*.json.gz"))
+        self.assertLess(total, 2 * 1024 * 1024)
+
+    def test_write_load_roundtrip(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            snap = ws.make_snapshot("דף/בדיקה", 5, "2026-10-29", {"2": ("כותרת", ["א", "ב"])})
+            p1 = ws.write_snapshot(snap, tmp)
+            b1 = p1.read_bytes()
+            ws.write_snapshot(snap, tmp)
+            self.assertEqual(p1.read_bytes(), b1)  # דטרמיניסטי — diff נקי בגיט
+            got = ws.snapshot_paragraphs({"page": "דף/בדיקה", "rev": 5, "section": "2",
+                                          "heading": "כותרת"}, tmp)
+            self.assertEqual(got, ["א", "ב"])
+            with self.assertRaises(ws.WikisourceError):
+                ws.snapshot_paragraphs({"page": "דף אחר", "rev": 5, "section": "2"}, tmp)
+
+
 # =============================================================================
 # 3. מקורות: שורת מקור, מהדורה לינארית
 # =============================================================================
@@ -320,72 +374,63 @@ class ApiCollectionsTest(unittest.TestCase):
     def setUpClass(cls):
         cls.cat = load_catalog()
 
-    def run_api(self, fake, html=None, **params):
-        # בלי רשת: גם הגיבוי לדף המוצג של ויקיטקסט (_get_html) מוחלף
-        page = mock.Mock(return_value=html) if html is not None else \
-            mock.Mock(side_effect=OSError("no network in tests"))
-        with mock.patch.object(api, "_get_json", side_effect=fake), \
-                mock.patch.object(api, "_get_html", page):
-            self.html_calls = page.call_args_list
+    def run_api(self, fake, **params):
+        with mock.patch.object(api, "_get_json", side_effect=fake):
             return api.respond(urllib.parse.urlencode(params))
 
-    def test_wikisource_leaf(self):
+    def test_wikisource_leaf_from_snapshot_without_network(self):
+        """עלה מוויקיטקסט מוגש מהצילום שבגיט — אף בקשת רשת — והפסקאות זהות
+        לתשובה האמיתית של ה-API של ויקיטקסט לאותו סעיף (הוקלטה 29.10.2026)."""
         path = _find(self.cat, lambda lf: (lf.get("ws") or {}).get("heading") == "כל נדרי")
-        fake = FakeSources(ws_data=fixture("ws_yk_kol_nidrei"))
-        payload, status, _ = self.run_api(fake, path=path)
+        fake = FakeSources(ws_exc=AssertionError("אסור לפנות לרשת"))
+        payload, status, headers = self.run_api(fake, path=path)
         self.assertEqual(status, 200, payload.get("error"))
-        url, params = fake.calls[0]
-        w = self.cat.leaf(path)["ws"]
-        self.assertEqual(params["oldid"], str(w["rev"]))
-        self.assertEqual(params["section"], w["section"])
+        self.assertEqual(fake.calls, [])
+        self.assertIn("s-maxage", headers["Cache-Control"])
+        live = ws.section_paragraphs(fixture("ws_yk_kol_nidrei"), "כל נדרי")
+        self.assertEqual(ws.snapshot_paragraphs(self.cat.leaf(path)["ws"]), live)
+        self.assertEqual(payload["range"]["total"], len(live))
         self.assertEqual(payload["license"], "CC-BY-SA")
         a = payload["attribution"]
         self.assertEqual(a["source"], "ויקיטקסט")
         self.assertEqual(a["license_name"], "CC BY-SA 4.0")
+        self.assertIn("action=history", a["history_url"])
         self.assertEqual(payload["source_url"], a["source_url"])
         kinds = {u["kind"] for u in payload["units"]}
-        self.assertEqual(kinds, {"paragraph", "instruction"})
+        self.assertTrue({"paragraph", "instruction"} <= kinds, kinds)
         self.assertTrue(payload["segments"])
         self.assertFalse(any("יאהדונהי" in u["text"] for u in payload["units"]))
 
-    def test_wikisource_errors_in_hebrew(self):
-        path = _find(self.cat, lambda lf: (lf.get("ws") or {}).get("heading") == "כל נדרי")
-        err = urllib.error.HTTPError(ws.API_URL, 429, "Too Many", {}, None)
-        payload, status, headers = self.run_api(FakeSources(ws_exc=err), path=path)
-        self.assertEqual(status, 503)
-        self.assertIn("ויקיטקסט", payload["error"])
-        self.assertEqual(headers["Cache-Control"], "no-store")
-        # סעיף אחר מהצפוי (הדף נערך? הקטלוג ישן?) — שגיאה, לא טקסט אחר
-        other = _find(self.cat, lambda lf: (lf.get("ws") or {}).get("heading") not in
-                      (None, "כל נדרי"))
-        payload, status, _ = self.run_api(
-            FakeSources(ws_data=fixture("ws_yk_kol_nidrei")), path=other)
-        self.assertEqual(status, 502)
-        self.assertIn("סעיף אחר", payload["error"])
+    def test_every_wikisource_leaf_served_from_snapshot(self):
+        fake = FakeSources(ws_exc=AssertionError("אסור לפנות לרשת"))
+        paths = [p for p, lf in self.cat.leaves("") if lf.get("ws")]
+        for p in paths:
+            with self.subTest(path=p):
+                w = self.cat.leaf(p)["ws"]
+                self.assertTrue(ws.snapshot_paragraphs(w))
+        # מדגם דרך ה-API (כולם — איטי מדי בלי צורך)
+        for p in paths[::10]:
+            payload, status, _ = self.run_api(fake, path=p)
+            self.assertIn(status, (200, 413), (p, payload.get("error")))
+        self.assertEqual(fake.calls, [])
 
-    def test_wikisource_429_falls_back_to_rendered_page(self):  # דף סינתטי
-        """ה-API של ויקיטקסט ב-429 ⇐ הדף המוצג (CDN), רק כשהוא בגרסה שבקטלוג."""
+    def test_missing_or_mismatched_snapshot_is_hebrew_error(self):
+        import tempfile
         path = _find(self.cat, lambda lf: (lf.get("ws") or {}).get("heading") == "כל נדרי")
         w = self.cat.leaf(path)["ws"]
-        n = int(w["section"])
-        heads = "".join(
-            f'<div class="mw-heading mw-heading2"><h2 id="s{i}">כותרת {i}</h2></div><p>א</p>'
-            for i in range(1, n))
-        page = ('<script>"wgRevisionId":%d,</script><div class="mw-content-rtl mw-parser-output">'
-                + heads + '<div class="mw-heading mw-heading2"><h2 id="כל_נדרי">כל נדרי</h2></div>'
-                '<p><small>החזן אומר</small><br>כָּל נִדְרֵי וֶאֱסָרֵי</p>'
-                '<div class="printfooter">x</div>')
-        err = urllib.error.HTTPError(ws.API_URL, 429, "Too Many", {}, None)
-        payload, status, _ = self.run_api(FakeSources(ws_exc=err), html=page % w["rev"],
-                                          path=path)
-        self.assertEqual(status, 200, payload.get("error"))
-        self.assertIn("/wiki/", self.html_calls[0][0][0])
-        self.assertEqual([u["text"] for u in payload["units"]],
-                         ["החזן אומר", "כָּל נִדְרֵי וֶאֱסָרֵי"])
-        # הדף נערך מאז (גרסה אחרת) ⇐ לא משתמשים בו; השגיאה המקורית
-        payload, status, _ = self.run_api(FakeSources(ws_exc=err),
-                                          html=page % (w["rev"] + 1), path=path)
-        self.assertEqual(status, 503)
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(ws, "SNAPSHOT_DIR", Path(tmp)):
+                payload, status, headers = self.run_api(FakeSources(), path=path)
+                self.assertEqual(status, 502)
+                self.assertIn("צילום", payload["error"])
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                # צילום עם כותרת אחרת באותו סעיף ⇐ שגיאה, לא טקסט אחר
+                ws.write_snapshot(ws.make_snapshot(
+                    w["page"], w["rev"], "2026-10-29",
+                    {w["section"]: ("קבלת שבת", ["שָׁלוֹם"])}), tmp)
+                payload, status, _ = self.run_api(FakeSources(), path=path)
+                self.assertEqual(status, 502)
+                self.assertIn("צילום", payload["error"])
 
     def test_selichot_chapter_leaf(self):
         ref = "Selichot Nusach Polin, First Day 3"

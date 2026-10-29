@@ -560,6 +560,11 @@ class WikisourceClient:
         self._last = 0.0
         self.n_network = self.n_cached = 0
 
+    def fetched(self, rev: int) -> str:
+        """תאריך המשיכה של הדף (מה-cache) — נרשם בצילום שבגיט."""
+        f = self.cache_dir / f"{int(rev)}.html"
+        return datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d")
+
     def page_html(self, page: str, rev: int) -> str:
         f = self.cache_dir / f"{int(rev)}.html"
         if f.exists():
@@ -651,6 +656,7 @@ def build_wikisource_part(wclient, part: dict, vid: str, log) -> tuple:
     tree = ws_section_tree(all_sections, part.get("include"),
                            part.get("under"), set(part.get("skip", [])))
     rep = {"skipped_no_text": [], "leaves": 0, "big": []}
+    used = {}  # הסעיפים שהקטלוג משתמש בהם ⇐ צילום בגיט (ה-API לא פונה לוויקיטקסט)
 
     def paragraphs(s):
         return texts[str(s["index"])]
@@ -663,6 +669,7 @@ def build_wikisource_part(wclient, part: dict, vid: str, log) -> tuple:
         fw = first_words(paras)
         if fw:
             leaf["first"] = fw
+        used[str(s["index"])] = (s["line"], paras)
         rep["leaves"] += 1
         if len(paras) > 300:
             rep["big"].append(f"{s['line']} ({len(paras)} פסקאות)")
@@ -693,6 +700,7 @@ def build_wikisource_part(wclient, part: dict, vid: str, log) -> tuple:
         return out
 
     children = visit(tree, {"intro"})
+    rep["snapshot"] = ws.make_snapshot(page, rev, wclient.fetched(rev), used)
     log(f"  ויקיטקסט {page} (גרסה {rev}): {rep['leaves']} עלים")
     return children, rep
 
@@ -725,6 +733,7 @@ def build_collections(client, wclient, ncfg: dict, cfg: dict, log) -> tuple:
                 report["skipped_no_text"] += [f"{part['page']}: {t}"
                                               for t in rep["skipped_no_text"]]
                 report["big"] += rep["big"]
+                report.setdefault("snapshots", []).append(rep["snapshot"])
             else:
                 raise BuildError(f"מקור לא מוכר: {ver['source']}")
             if lic not in ALLOWED_LICENSES:
@@ -813,6 +822,8 @@ def main(argv=None):
     ap.add_argument("--base", default=sv.SEFARIA_BASE)
     ap.add_argument("--wikisource-cache-dir",
                     default=str(Path.home() / ".cache" / "kriat-hatora-wikisource"))
+    ap.add_argument("--wikisource-snapshot-dir", default=str(ws.SNAPSHOT_DIR),
+                    help="צילום הטקסט של עלי ויקיטקסט בגיט (נקרא ע״י api/siddur.py)")
     ap.add_argument("--wikisource-delay", type=float, default=2.0,
                     help="שניות בין בקשות לוויקיטקסט (מגבלת קצב — 429)")
     args = ap.parse_args(argv)
@@ -871,6 +882,20 @@ def main(argv=None):
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(text, encoding="utf-8")
     log(f"✅ נכתב: {args.out} ({len(text.encode('utf-8')):,} בתים)")
+    # צילומי ויקיטקסט (4.4.1): ה-API מגיש מהם, בלי רשת
+    snaps = [sn for rep in report.values()
+             for sn in (rep.get("collections") or {}).get("snapshots", [])]
+    keep = set()
+    for sn in snaps:
+        p = ws.write_snapshot(sn, args.wikisource_snapshot_dir)
+        keep.add(p.name)
+        log(f"✅ צילום ויקיטקסט: {p} ({p.stat().st_size:,} בתים, "
+            f"{len(sn['sections'])} סעיפים, גרסה {sn['rev']})")
+    if not args.nusach:  # צילום של גרסה שכבר לא בקטלוג — נמחק
+        for old in Path(args.wikisource_snapshot_dir).glob("*.json.gz"):
+            if old.name not in keep:
+                old.unlink()
+                log(f"   נמחק צילום ישן: {old}")
     for key, st in stats.items():
         log(f"• {key}: סוגי יום {st['day_types']}, תפילות {st['prayers']}, "
             f"עלים {st['leaves']}, זמינים {st['available']}, "
