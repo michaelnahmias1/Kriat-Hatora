@@ -1504,7 +1504,8 @@ async function flowSiddur(browser, base, profile) {
     assert.equal(await page.$eval('#sdSeason button[data-season="winter"]', b => b.getAttribute("aria-pressed")), "true");
     assert.ok(offTexts(A_RCW).some(t => t.startsWith("מוֹרִיד הַטָּל")));
     assert.ok(!offTexts(A_RCW).some(t => t.startsWith("מַשִּׁיב הָרֽוּחַ")));
-    assert.deepEqual((await lsState(page)).siddur.days, { day: "auto", season: "winter", on: ["rosh-chodesh"], off: [] });
+    const today = await page.evaluate(() => sdToday());
+    assert.deepEqual((await lsState(page)).siddur.days, { day: "auto", season: "winter", on: ["rosh-chodesh"], off: [], date: today });
     await scrollUnderHeader("#sdDays");
     await shot(page, profile, "days-2-rosh-chodesh-winter", false);
     // הטקסט שנטען: יעלה ויבוא — כתוביות; חוה"מ — באפור עם שם היום
@@ -1517,7 +1518,7 @@ async function flowSiddur(browser, base, profile) {
     await shot(page, profile, "days-3-loaded-text", false);
   });
 
-  await step(`[${profile}] מה אומרים היום: כיבוי ⇐ שוב באפור; "ראש חודש" מהתפריט; נזכר אחרי טעינה מחדש`, async () => {
+  await step(`[${profile}] מה אומרים היום: כיבוי ⇐ שוב באפור; "ראש חודש" מהתפריט; נזכר באותו יום, מתאפס ביום חדש (העונה נשארת)`, async () => {
     await chip("ראש חודש").click();
     await loadedWith(A_W);
     assert.equal(await chip("ראש חודש").getAttribute("aria-pressed"), "false");
@@ -1534,6 +1535,31 @@ async function flowSiddur(browser, base, profile) {
     assert.equal(await page.$eval('#sdSeason button[data-season="winter"]', b => b.getAttribute("aria-pressed")), "true");
     assert.equal(await page.$$eval("#segPreview .segrow:not(.instr)", r => r.length), A_RCP.segments.length);
     assert.ok(!siddurCalls({ api: cloud.api.slice(nApi) }).some(c => c.params.path === EDOT_AMIDA), "בלי בקשה — מהטקסט השמור");
+    assert.equal((await lsState(page)).siddur.days.date, await page.evaluate(() => sdToday()), "באותו יום — הבחירה נשמרת");
+    assert.equal(await visible(page, "sdDayNote"), true);
+    // 8.29ב: בחירה מאתמול ⇐ היום "לפי הקטע" (והמתגים מתאפסים), העונה נשארת; הטקסט שנטען לא משתנה
+    await page.evaluate(() => {
+      const st = JSON.parse(localStorage.getItem("kriat-hatora-v1"));
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      const pad = n => String(n).padStart(2, "0");
+      st.siddur.days = { day: "rosh-chodesh", season: "winter", on: ["chanukah"], off: [],
+                         date: `${y.getFullYear()}-${pad(y.getMonth() + 1)}-${pad(y.getDate())}` };
+      localStorage.setItem("kriat-hatora-v1", JSON.stringify(st));
+    });
+    const nApi2 = cloud.api.length;
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("sdDays").hidden);
+    assert.equal(await val(page, "sdDay"), "auto");
+    assert.equal(await page.$eval('#sdSeason button[data-season="winter"]', b => b.getAttribute("aria-pressed")), "true");
+    assert.deepEqual(siddurCalls({ api: cloud.api.slice(nApi2) }).filter(c => c.params.path === EDOT_AMIDA).map(c => c.params),
+      [{ path: EDOT_AMIDA, day: "auto", season: "winter" }], "המתגים לפי ברירת המחדל של היום");
+    await page.waitForFunction(n => document.querySelectorAll("#sdConds .sdChip").length === n,
+      A_W.conditions.filter(c => c.group !== "season").length);
+    assert.equal(await chip("ראש חודש").getAttribute("aria-pressed"), "false");
+    assert.equal(await page.$$eval("#segPreview .segrow:not(.instr)", r => r.length), A_RCP.segments.length,
+      "הטקסט שנטען (ומה שנשלח לענן) נשאר כפי שנטען");
+    assert.ok((await txt(page, "#loadMsg")).includes("בחירת היום אופסה"));
+    assert.deepEqual((await lsState(page)).siddur.days, { day: "auto", season: "winter", on: [], off: [] });
     // חזרה לברירת המחדל — כדי שהשלבים הבאים יתחילו נקי
     await page.selectOption("#sdDay", "auto");
     await page.click('#sdSeason button[data-season="winter"]');
