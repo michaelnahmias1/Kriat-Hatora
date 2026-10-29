@@ -9,6 +9,7 @@
 """
 
 import sys
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from chunker import (  # noqa: E402
     clean_sefaria_text,
     is_ketiv,
     is_tefila_divine_name,
+    letters_only,
     regroup_words,
     rank_table_for,
     segments_for_pipeline,
@@ -314,7 +316,7 @@ class TestTefilaMode(unittest.TestCase):
             self.assertEqual(self.align(form, True), [self.ADONAI], form)
 
     def test_other_geresh_words_are_not_the_name(self):
-        for word in ["ג'", "ה'תשפ\"ו", "לַה'", "הּ", "ה", "צ'יפס", "וכו'"]:
+        for word in ["ג'", "ה'תשפ\"ו", "הּ", "ה", "צ'יפס", "וכו'"]:
             self.assertFalse(is_tefila_divine_name(word), word)
         self.assertEqual(self.align("ג'"), ["ג"])
 
@@ -342,6 +344,138 @@ class TestTefilaMode(unittest.TestCase):
         verse = "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃"
         self.assertEqual(segments_for_pipeline(verse, mode="tefila"),
                          segments_for_pipeline(verse))
+
+
+def nfc(text):
+    return unicodedata.normalize("NFC", text)
+
+
+class TestTefilaDivineNameForms(unittest.TestCase):
+    """שם ה׳ עם תחיליות, קריאת "אלהים" וצורות קבליות (PLAN_TEFILA 8.21,
+    צורות וספירות: docs/siddur_survey.md "ממצאי המשך" סעיף ג). רק בעותקי
+    היישור — התצוגה לא משתנה — ורק במצב תפילה."""
+
+    def align(self, word, keep_niqqud):
+        return [nfc(w) for w in
+                to_alignment_words(nfc(word), keep_niqqud, mode="tefila")]
+
+    def check(self, word, vocalized, plain):
+        self.assertTrue(is_tefila_divine_name(nfc(word)), word)
+        self.assertEqual(self.align(word, True), [nfc(vocalized)], word)
+        self.assertEqual(self.align(word, False), [plain], word)
+
+    def test_prefixed_yhwh(self):
+        """תחילית בפתח בולעת את האל״ף; תחילית בתנועה אחרת שומרת חטף."""
+        cases = [
+            ("לַיהֹוָה", "לַאדֹנָי", "לאדני"),
+            ("לַיהוָה", "לַאדֹנָי", "לאדני"),
+            ("וַיהֹוָה", "וַאדֹנָי", "ואדני"),
+            ("בַּיהֹוָה", "בַּאדֹנָי", "באדני"),
+            ("כַּיהֹוָה", "כַּאדֹנָי", "כאדני"),
+            ("וּבַיהֹוָה", "וּבַאדֹנָי", "ובאדני"),
+            ("וְלַיהֹוָה", "וְלַאדֹנָי", "ולאדני"),
+            ("שֶׁבַּיהֹוָה", "שֶׁבַּאדֹנָי", "שבאדני"),
+            ("הֲלַיהוָה", "הֲלַאדֹנָי", "הלאדני"),
+            ("שֶׁיְהֹוָה", "שֶׁאֲדֹנָי", "שאדני"),
+            ("מֵיְהֹוָה", "מֵאֲדֹנָי", "מאדני"),
+            ("וּמֵיְהֹוָה", "וּמֵאֲדֹנָי", "ומאדני"),
+            ("ליהוה", "לאֲדֹנָי", "לאדני"),  # תחילית לא מנוקדת נשארת כך
+        ]
+        for word, vocalized, plain in cases:
+            self.check(word, vocalized, plain)
+
+    def test_prefixed_yhwh_with_taamim(self):
+        """פסוק מצוטט (מוטעם) — הטעמים והמתג יורדים, הקריאה זהה."""
+        self.check("לַֽיהוָ֔ה", "לַאדֹנָי", "לאדני")
+
+    def test_prefixed_abbreviation(self):
+        cases = [
+            ("לַה'", "לַאדֹנָי", "לאדני"),
+            ("וַה'", "וַאדֹנָי", "ואדני"),
+            ("בַּה'", "בַּאדֹנָי", "באדני"),
+            ("וְה'", "וַאדֹנָי", "ואדני"),  # שווא + אֲ ⇒ פתח, כמו וַאדֹנָי
+            ("וּבַה׳", "וּבַאדֹנָי", "ובאדני"),
+            ("שֶׁבַּה’", "שֶׁבַּאדֹנָי", "שבאדני"),
+            ("לה'", "לאֲדֹנָי", "לאדני"),
+            ("וה'", "ואֲדֹנָי", "ואדני"),
+            ("בה'", "באֲדֹנָי", "באדני"),
+            ("שה'", "שאֲדֹנָי", "שאדני"),
+            ("מה'", "מאֲדֹנָי", "מאדני"),
+            ("(לה'),", "לאֲדֹנָי", "לאדני"),
+        ]
+        for word, vocalized, plain in cases:
+            self.check(word, vocalized, plain)
+
+    def test_prefixed_yy(self):
+        for word, vocalized, plain in [("לַייָ", "לַאדֹנָי", "לאדני"),
+                                       ("בַּיְיָ", "בַּאדֹנָי", "באדני"),
+                                       ("וַיְיָ", "וַאדֹנָי", "ואדני"),
+                                       ("ליי", "לאֲדֹנָי", "לאדני")]:
+            self.check(word, vocalized, plain)
+
+    def test_words_ending_in_yy_are_not_the_name(self):
+        """התאמות השווא מהסקר: יו״ד ראשונה בחיריק/צירה/פתח/דגש."""
+        for word, plain in [("בִּכְיִי", "בכיי"), ("לְוִיַּי", "לויי"),
+                            ("שְׁבוּיֵי", "שבויי")]:
+            self.assertFalse(is_tefila_divine_name(nfc(word)), word)
+            self.assertEqual(self.align(word, False), [plain])
+            self.assertEqual(self.align(word, True), [nfc(word)])
+
+    def test_non_divine_geresh_words(self):
+        """רק ה' הוא הבסיס: מספרים (ד' ג'), קיצורים (ר' וכד' ע"ה)."""
+        for word in ["ד'", "ד׳", "ר'", "ר׳", "וכד'", "ע\"ה", "ג'", "בד'",
+                     "לד'", "ה'תשפ\"ו", "בה'תשפ\"ו", "וכו'", "שנה'",
+                     "אה'", "מָה", "לָה"]:
+            self.assertFalse(is_tefila_divine_name(word), word)
+            self.assertNotIn("אדני", self.align(word, False), word)
+
+    def test_elohim_vowels(self):
+        """יהוה בניקוד "אלהים" (חיריק בו״ו, ה״א אחרונה בלי תנועה) ⇒ אלהים."""
+        cases = [
+            ("יֱהֹוִה", "אֱלֹהִים", "אלהים"),
+            ("יֱהוִֹה", "אֱלֹהִים", "אלהים"),
+            ("יְהוִה", "אֱלֹהִים", "אלהים"),
+            ("וְלֵיהֹוִה", "וְלֵאלֹהִים", "ולאלהים"),
+            ("לֵיהֹוִה", "לֵאלֹהִים", "לאלהים"),
+            ("בֵּיהֹוִה", "בֵּאלֹהִים", "באלהים"),
+            ("מֵיֱהֹוִה", "מֵאלֹהִים", "מאלהים"),
+            ("וְיֱהֹוִה", "וֵאלֹהִים", "ואלהים"),  # שווא ⇒ צירה, כמו וֵאלֹהֵי
+            ("שֶׁיֱהֹוִה", "שֶׁאֱלֹהִים", "שאלהים"),
+        ]
+        for word, vocalized, plain in cases:
+            self.check(word, vocalized, plain)
+
+    def test_kabbalistic_vowels_are_adonai(self):
+        """הצורות הקבליות של עדות המזרח נאמרות "אדני" — גם עם חיריק בו״ו."""
+        for word in ["יִהִוִהִ", "יֻהֻוֻהֻ", "יַהַוַהַ", "יֶהֶוֶהֶ", "יְהֹוָה",
+                     "יְהוָה", "יהוה"]:
+            self.check(word, "אֲדֹנָי", "אדני")
+        self.check("בְּיִהִוִהִ", "בַּאדֹנָי", "באדני")
+
+    def test_one_alignment_word_per_piece(self):
+        """המיפוי לעולם לא מוסיף/מוריד מילה: חלק עם אות ⇒ מילת יישור אחת —
+        בדיוק מה ש-isAudible ב-js/segments.js מניח במצב תפילה."""
+        for word in ["לַיהֹוָה", "וַה'", "לַייָ", "יֱהֹוִה", "יִהִוִהִ", "ד'",
+                     "אֶל" + MAQAF + "ה'", "בִּכְיִי"]:
+            pieces = [p for p in nfc(word).split(MAQAF) if letters_only(p)]
+            for keep in (True, False):
+                self.assertEqual(len(self.align(word, keep)), len(pieces))
+
+    def test_display_never_changes(self):
+        words = [nfc(w) for w in ["הוֹדוּ", "לַיהֹוָה", "כִּי", "טוֹב"]]
+        seg = build_segment(words, mode="tefila")
+        self.assertEqual(seg["display"], " ".join(words))
+        self.assertEqual(seg["align_plain"],
+                         ["הודו", "לאדני", "כי", "טוב"])
+
+    def test_tanakh_mode_unchanged(self):
+        """בתנ״ך: תחילית לא ממופה (כמו היום), קריאת "אלהים" עדיין "אדני"."""
+        self.assertEqual(to_alignment_words(nfc("לַיהֹוָה"), False), ["ליהוה"])
+        self.assertEqual(to_alignment_words(nfc("לַיהֹוָה"), True),
+                         [nfc("לַיהֹוָה")])
+        self.assertEqual(to_alignment_words(nfc("יֱהֹוִה"), False), ["אדני"])
+        self.assertEqual(to_alignment_words("לַה'", False), ["לה"])
+        self.assertEqual(to_alignment_words("לה'", False), [])  # כתיב
 
 
 if __name__ == "__main__":
