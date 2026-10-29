@@ -1120,7 +1120,14 @@ async function flowSiddur(browser, base, profile) {
     assert.equal(await visible(page, "sdLeaf"), true);
     assert.equal(await txt(page, "#sdLeafTitle"), "לכה דודי");
     const meta = (await txt(page, "#sdLeafMeta")).replace(/[\u2068\u2069]/g, "");
-    assert.ok(meta.startsWith("מתוך «קבלת שבת» · ספרד › שבת") && meta.includes("מהדורה: Torat Emet 357"), meta);
+    assert.ok(meta.startsWith("מתוך «קבלת שבת» · ספרד › שבת"), meta);
+    // שורת המקור והרישיון (4.4.1): מקור + מהדורה + רישיון, עם קישור ל-Sefaria
+    const srcLine = (await txt(page, "#sdLeafSource")).replace(/[⁨⁩]/g, "");
+    assert.ok(srcLine.startsWith("מקור: Sefaria — ") && srcLine.includes("תורת אמת 357") &&
+              srcLine.includes("רישיון: נחלת הכלל"), srcLine);
+    const srcHref = await page.locator("#sdLeafSource a").first().getAttribute("href");
+    assert.ok(srcHref.startsWith("https://www.sefaria.org/Siddur_Sefard,_Kabbalat_Shabbat?"), srcHref);
+    assert.equal(await page.locator("#sdLeafSource a").first().getAttribute("target"), "_blank");
     assert.deepEqual(await checkedParas(page), range(17, 38));
     assert.equal(await val(page, "sdFrom"), "17");
     assert.equal(await val(page, "sdTo"), "38");

@@ -119,7 +119,7 @@ class TestChildren(SiddurTestCase):
                          {"key": "weekday", "path": "ashkenaz/weekday",
                           "title": "ימי חול", "title_en": "Weekday",
                           "is_leaf": False, "available": True, "count": 3})
-        self.assertEqual(len(payload["children"]), 7)
+        self.assertEqual(len(payload["children"]), 8)  # + ימים נוראים (4.4.1)
         self.assertEqual(payload["breadcrumb"],
                          [{"key": "ashkenaz", "path": "ashkenaz",
                            "title": "אשכנז"}])

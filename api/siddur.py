@@ -69,6 +69,7 @@ _ts = _load_by_path("text_segments", _API_DIR / "text_segments.py")
 from aligner.pipeline import _unit_chunk  # noqa: E402
 from siddur import load_aliases, load_catalog, split_path  # noqa: E402
 from siddur.catalog import is_leaf  # noqa: E402
+from siddur import sources as _sources, wikisource as _ws  # noqa: E402 (4.4.1)
 from siddur.markup import (INSTRUCTION, SPOKEN, classify_paragraph,  # noqa: E402
                            display_word, first_words, flatten, has_vocalized)
 
@@ -321,7 +322,7 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
     max_words = _read_max_words(q.get("max_words"))
     start, end = _read_pos(q, "from"), _read_pos(q, "to")
 
-    paragraphs, ver, vid, fallback = _fetch_with_policy(cat, keys, leaf, src)
+    paragraphs, ver, vid, fallback = _fetch_leaf_text(cat, keys, leaf, src)
     parts = [classify_paragraph(p) for p in paragraphs]
     info = [_paragraph_info(n, ps) for n, ps in enumerate(parts, 1)]
 
@@ -383,10 +384,78 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
         "version": ver.get("versionTitle"),
         "license": lic,
         "version_fallback": fallback,
-        "source_url": f"{SEFARIA_BASE}/{urllib.parse.quote(src['ref'])}",
+        "source_url": _sources.source_url(src),
+        "attribution": cat.attribution(keys),  # שורת מקור ורישיון (4.4.1)
         "range": {"from": start, "to": end, "total": total},
         "paragraphs": info,
     }
+
+
+# --- מקורות נוספים: ויקיטקסט ומהדורות לינאריות (4.4.1) ------------------------------
+# עלה של אוסף (מחזור, סליחות, קינות, הגדה) יכול לבוא מוויקיטקסט — סעיף בדף בגרסה
+# קבועה (oldid) — או ממהדורה "לינארית" של Sefaria (שורה לכל קטע). ההמרה ל-HTML
+# בסגנון Sefaria — src/siddur/wikisource.py; איחוד השורות — src/siddur/sources.py.
+# משם הכל ממשיך באותו מסלול (סיווג הוראות, יחידות, מקטעים).
+
+WIKISOURCE_TIMEOUT_MSG = ("ויקיטקסט לא ענה בזמן ({} שניות) — נסו שוב בעוד רגע")
+
+
+def _wikisource_error(e: Exception) -> ApiError:
+    if isinstance(e, urllib.error.HTTPError):
+        if e.code == 429:
+            return ApiError(503, "ויקיטקסט מגביל כרגע את קצב הבקשות (429) — "
+                                 "נסו שוב בעוד דקה")
+        return ApiError(502, f"תקלה בגישה לוויקיטקסט (HTTP {e.code})")
+    reason = getattr(e, "reason", e)
+    if isinstance(e, (socket.timeout, TimeoutError)) or isinstance(
+            reason, (socket.timeout, TimeoutError)):
+        return ApiError(504, WIKISOURCE_TIMEOUT_MSG.format(SEFARIA_TIMEOUT))
+    return ApiError(502, "תקלה בגישה לוויקיטקסט — נסו שוב בעוד רגע")
+
+
+def _get_html(url: str) -> str:
+    """GET לדף HTML (הדף המוצג של ויקיטקסט). נקודת החלפה של הבדיקות."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=SEFARIA_TIMEOUT) as resp:
+        body = resp.read(MAX_SEFARIA_BYTES + 1)
+    if len(body) > MAX_SEFARIA_BYTES:
+        raise ApiError(502, "הדף בוויקיטקסט גדול מדי")
+    return body.decode("utf-8", "replace")
+
+
+def fetch_wikisource_leaf(w: dict) -> list:
+    """סעיף אחד מדף בוויקיטקסט, בגרסה הקבועה שבקטלוג ⇐ פסקאות (HTML בסגנון
+    Sefaria). כותרת אחרת מהצפוי ⇐ 502 (לא טקסט אחר בשקט).
+
+    ה-API של ויקיטקסט מגביל קצב לפי IP (429). אז — ורק אז — הדף המוצג
+    (/wiki/…, מוגש מה-CDN) משמש גיבוי, בתנאי שהוא עדיין בדיוק בגרסה שבקטלוג;
+    מפוצל באותו מימוש שבנה את הקטלוג (src/siddur/wikisource.py)."""
+    try:
+        data = _get_json(_ws.API_URL, _ws.parse_params(w["rev"], w["section"]))
+    except (OSError, http.client.HTTPException) as e:  # רשת, timeout, 429
+        err = _wikisource_error(e)
+        try:
+            page = _get_html(_ws.page_url(w["page"]))
+            return _ws.paragraphs_from_page(page, w["rev"], w["section"],
+                                            w.get("heading"))
+        except (OSError, http.client.HTTPException, _ws.WikisourceError):
+            raise err
+    try:
+        return _ws.section_paragraphs(data, w.get("heading"))
+    except _ws.WikisourceError as e:
+        raise ApiError(502, str(e))
+
+
+def _fetch_leaf_text(cat, keys: list, leaf: dict, src: dict):
+    """הטקסט של עלה לפי המקור שלו ⇐ (פסקאות, גרסה, version_id, fallback)."""
+    if src.get("source") == "wikisource":
+        paragraphs = fetch_wikisource_leaf(src["ws"])
+        ver = {"versionTitle": src["version"], "license": src.get("license")}
+        return paragraphs, ver, src["version_id"], None
+    paragraphs, ver, vid, fallback = _fetch_with_policy(cat, keys, leaf, src)
+    if src.get("lines"):
+        paragraphs = _sources.merge_lines(paragraphs)
+    return paragraphs, ver, vid, fallback
 
 
 # --- קיצורים: הקטעים הנפוצים (4.2.3) ----------------------------------------------

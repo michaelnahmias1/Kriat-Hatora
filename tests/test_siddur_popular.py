@@ -32,7 +32,9 @@ HEBREW = re.compile(r"[א-ת]")
 # נשמת וישתבח; "שוכן עד" (ובעדות המזרח "שועת עניים") — המקום שהחזן מתחיל בו
 PLAN_ITEMS = ["קבלת שבת", "לכה דודי", "אשרי", "קדיש", "קדושה", "הלל", "עלינו",
               "אדון עולם", "יגדל", "אין כאלהינו", "אנעים זמירות", "אבינו מלכנו",
-              "נשמת", "ישתבח", "שוכן עד", "שועת עניים"]
+              "נשמת", "ישתבח", "שוכן עד", "שועת עניים",
+              # אוספים (4.4.1): מחזורים וסליחות — "ונתנה תוקף" ו"כל נדרי" ברשימה של 4.2.3
+              "ונתנה תוקף", "כל נדרי", "הנה כחומר", "סליחות"]
 
 
 def load():
@@ -106,9 +108,10 @@ class TestPopularFile(unittest.TestCase):
                 total = e["paragraph_count"]
                 self.assertIsInstance(total, int)
                 self.assertGreaterEqual(total, 1)
-                self.assertLessEqual(total, api.MAX_PARAGRAPHS)
                 self.assertEqual("from" in e, "to" in e)
                 start, end = e.get("from", 1), e.get("to", total)
+                # הטווח (לא העלה כולו) בגבול הבקשה — "הנה כחומר" בעלה של 307
+                self.assertLessEqual(end - start + 1, api.MAX_PARAGRAPHS)
                 self.assertIsInstance(start, int)
                 self.assertIsInstance(end, int)
                 self.assertTrue(1 <= start <= end <= total, (start, end, total))

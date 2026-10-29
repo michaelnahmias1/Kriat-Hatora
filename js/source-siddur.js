@@ -34,7 +34,8 @@ function siddurSaved() {
   return {
     nusach: SD.nusach, path: SD.path,
     leaf: l && { path: l.path, title: l.title, label: l.label, base: l.base,
-                 from: l.from, to: l.to, total: l.total, paragraphs: l.paragraphs, meta: l.meta },
+                 from: l.from, to: l.to, total: l.total, paragraphs: l.paragraphs, meta: l.meta,
+                 attr: l.attr || null },
   };
 }
 /* נקרא מ-main.js לפני setSourceTab. מצב ישן בלי siddur — פשוט אין בחירה */
@@ -48,6 +49,7 @@ function siddurRestore(saved) {
       path: l.path, title: l.title || "", label: l.label || "", base: l.base || null,
       from: +l.from || null, to: +l.to || null, total: +l.total || 0,
       paragraphs: Array.isArray(l.paragraphs) ? l.paragraphs : [], meta: l.meta || "",
+      attr: sdCleanAttribution(l.attr),
     };
   }
 }
@@ -380,7 +382,7 @@ function selectLeaf(sel) {
     path: sel.path, title: sel.title || "", label: sel.label || "",
     base: sel.from ? { from: +sel.from, to: +(sel.to || sel.from) } : null,
     from: sel.from ? +sel.from : null, to: sel.from ? +(sel.to || sel.from) : null,
-    total: 0, paragraphs: [], meta: "",
+    total: 0, paragraphs: [], meta: "", attr: null,
   };
   SD.payload = null;
   siddurMsg("");
@@ -427,6 +429,7 @@ async function fetchLeafRange() {
     l.from = data.range.from; l.to = data.range.to;
     l.paragraphs = data.paragraphs || [];
     l.meta = leafMeta(data);
+    l.attr = sdCleanAttribution(data.attribution);
     SD.payload = data;
     renderLeaf(); save();
     return data;
@@ -456,6 +459,7 @@ function leafMeta(data) {
   const ver = String(data.version || "").trim();
   // שמות המהדורה והרישיון באנגלית — מבודדים (FSI…PDI), שלא יתערבבו בעברית סביבם
   const iso = t => "\u2068" + t + "\u2069";
+  if (data.attribution) return crumbs;  // המהדורה והרישיון — בשורת המקור (4.4.1)
   return [crumbs, ver && `מהדורה: ${iso(ver)}`,
           data.license && data.license !== "unknown" && `רישיון: ${iso(data.license)}`]
     .filter(Boolean).join(" · ");
@@ -465,6 +469,7 @@ function renderLeaf() {
   if (!l) return;
   $("sdLeafTitle").textContent = l.label || l.title || "…";
   const fromTitle = l.label && l.title && l.label !== l.title ? `מתוך «${l.title}»` : "";
+  renderLeafSource();
   $("sdLeafMeta").textContent = [fromTitle, l.meta].filter(Boolean).join(" · ") ||
     (l.total ? "" : "טוען את הקטע…");
   const many = l.total > 1 && l.paragraphs.length === l.total;
@@ -606,3 +611,54 @@ async function copySiddurToText() {
   if (units && units.length) copyUnitsToFreeText(units, title);
 }
 $("sdCopyBtn").addEventListener("click", copySiddurToText);
+
+/* ---------- שורת המקור והרישיון של הקטע (4.4.1) ----------
+   כל קטע מציג מאיפה הטקסט, איזו מהדורה, באיזה רישיון — וקישור למקור. ב-CC-BY
+   וב-CC-BY-SA (ויקיטקסט, מחזור מצודה) זו חובה. לא נכנס לקובץ הכתוביות. */
+function sdSafeUrl(u) {
+  return typeof u === "string" && /^https?:\/\//i.test(u) ? u : "";
+}
+function sdCleanAttribution(a) {
+  if (!a || typeof a !== "object") return null;
+  const str = v => (typeof v === "string" ? v.slice(0, 300) : "");
+  const out = {
+    source: str(a.source), edition: str(a.edition), credit: str(a.credit),
+    license: str(a.license), license_name: str(a.license_name),
+    license_url: sdSafeUrl(a.license_url), source_url: sdSafeUrl(a.source_url),
+    history_url: sdSafeUrl(a.history_url),
+  };
+  if (a.origin && typeof a.origin === "object")
+    out.origin = { name: str(a.origin.name), url: sdSafeUrl(a.origin.url) };
+  return out.source || out.license ? out : null;
+}
+function renderLeafSource() {
+  const box = $("sdLeafSource");
+  if (!box) return;
+  const a = SD.leaf && SD.leaf.attr;
+  box.textContent = "";
+  box.hidden = !a;
+  if (!a) return;
+  const iso = t => "\u2068" + t + "\u2069";
+  const link = (text, url) => {
+    if (!url) return document.createTextNode(text);
+    const el = document.createElement("a");
+    el.href = url; el.target = "_blank"; el.rel = "noopener noreferrer";
+    el.textContent = text;
+    return el;
+  };
+  const parts = [];
+  parts.push([document.createTextNode("מקור: "),
+              link(iso(a.source || "?"), a.source_url),
+              document.createTextNode(a.edition ? ` — ${iso(a.edition)}` : "")]);
+  if (a.credit) parts.push([document.createTextNode(a.credit)]);
+  if (a.origin && a.origin.name)
+    parts.push([document.createTextNode("במקור: "), link(iso(a.origin.name), a.origin.url)]);
+  if (a.license)
+    parts.push([document.createTextNode("רישיון: "),
+                link(iso(a.license_name || a.license), a.license_url)]);
+  if (a.history_url) parts.push([link("רשימת התורמים", a.history_url)]);
+  parts.forEach((p, i) => {
+    if (i) box.appendChild(document.createTextNode(" · "));
+    p.forEach(n => box.appendChild(n));
+  });
+}

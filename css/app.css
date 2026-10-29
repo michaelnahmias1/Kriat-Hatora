@@ -450,7 +450,7 @@ label.sdAll input { width: 20px; height: 20px; margin: 0; padding: 0; flex: none
 .sdLeafHead { display: flex; align-items: center; gap: 10px; }
 .sdLeafHead button { flex: none; }
 .sdLeafHead h3 { margin: 0; font-size: 1.1rem; min-width: 0; overflow-wrap: anywhere; }
-#sdLeafMeta { overflow-wrap: anywhere; }
+#sdLeafMeta, #sdLeafSource { overflow-wrap: anywhere; }
 .sdParas {
   max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px;
   margin-top: 8px; -webkit-overflow-scrolling: touch;
