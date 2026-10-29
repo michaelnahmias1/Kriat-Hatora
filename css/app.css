@@ -465,6 +465,31 @@ label.sdAll input { width: 20px; height: 20px; margin: 0; padding: 0; flex: none
 .sdPara .pt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.05rem; }
 .sdPara.on { background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
 .sdPara.instr .pt { color: var(--muted); font-family: inherit; font-size: .88rem; }
+.sdPara .pc {
+  flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .72rem; color: var(--gold); font-family: inherit;
+}
+/* "מה אומרים היום?" — סוג היום, עונה, ומתג לכל תוספת שבקטע (4.4.2) */
+.sdDays .range-title { margin-bottom: 6px; }
+.sdSubTitle { font-size: .85rem; color: var(--muted); margin: 10px 0 4px; }
+.sdSeg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.sdSeg button { text-align: start; }
+.sdSeg button, .sdChip {
+  width: auto; min-height: 42px; padding: 8px 10px; border-radius: 10px; font-size: .9rem;
+  line-height: 1.25; font-weight: 600; background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); overflow-wrap: anywhere;
+}
+.sdSeg button[aria-pressed="true"], .sdChip[aria-pressed="true"] {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+}
+.sdChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sdChip { display: inline-flex; align-items: center; gap: 6px; }
+.sdChip .n { font-size: .75rem; font-weight: 400; opacity: .8; }
+.sdNeed {
+  margin-top: 10px; padding: 8px 10px; border-radius: 10px; font-size: .88rem; line-height: 1.45;
+  color: var(--ink); background: color-mix(in srgb, var(--gold) 18%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent); white-space: pre-line;
+}
 /* הוראות מהסידור בתצוגת הטקסט שנטען — באפור, בלי מספר כתובית */
 .segrow.instr .txt {
   color: var(--muted); font-size: .85rem;
@@ -561,3 +586,45 @@ label.sdAll input { width: 20px; height: 20px; margin: 0; padding: 0; flex: none
 #perfCount .error { margin: 0; font-size: .8rem; }
 /* שלב 5: כתובית שחוזרת בסדר הביצוע — מספרה בטקסט ו"חזרה 2" */
 .timerow .cueTag { display: block; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: .68rem; color: var(--muted); }
+
+/* ---------- זיהוי הקטע מההקלטה (js/identify.js, PLAN_TEFILA.md 4.5.2) ---------- */
+.idWrap {
+  margin-top: 12px; padding: 12px; border-radius: 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--verse-chip) 55%, transparent);
+}
+.idBtn { color: var(--accent); font-size: 1.02rem; min-height: 50px; }
+.idWrap > .hint { margin: 8px 0 0; }
+.linkBtn {
+  width: auto; padding: 2px 4px; font-size: inherit; font-weight: 600;
+  background: transparent; color: var(--accent); text-decoration: underline; border-radius: 6px;
+}
+.idResults:empty { display: none; }
+.idResults { display: grid; gap: 10px; margin-top: 10px; }
+.idCand {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  padding: 10px; display: grid; gap: 8px;
+}
+.idCand .hint { margin: 0; }
+.idHead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: .95rem; }
+.idNum {
+  flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: .8rem; font-weight: 700;
+  background: var(--accent); color: var(--accent-ink);
+}
+.idConf { font-size: .78rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+.idConf.high { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+.idConf.medium { color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, transparent); }
+.idConf.low { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.idTimeRange { font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.idPart {
+  display: flex; align-items: center; gap: 10px; text-align: start; min-height: 52px;
+  padding: 10px 12px; border-radius: 10px; font-weight: 500;
+  background: var(--verse-chip); color: var(--ink); border: 1px solid transparent;
+}
+.idPart.on { border-color: var(--accent); }
+.idPart .tt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.idPart .nm { display: block; font-weight: 700; color: var(--accent); }
+.idPart small { display: block; color: var(--muted); font-size: .8rem; font-weight: 400; }
+.idPart small.fw { color: var(--ink); font-size: 1rem; }
+.idPart .go { flex: none; color: var(--muted); font-size: 1.2rem; }

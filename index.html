@@ -26,6 +26,7 @@
 <script defer src="/js/performance.js"></script>
 <script defer src="/js/audio.js"></script>
 <script defer src="/js/cloud.js"></script>
+<script defer src="/js/identify.js"></script>
 <script defer src="/js/review.js"></script>
 <script defer src="/js/export.js"></script>
 <script defer src="/js/pwa.js"></script>
@@ -143,6 +144,21 @@
       <label class="sdAll" id="sdAllWrap" hidden><input type="checkbox" id="sdAll"> חיפוש בכל הנוסחים</label>
       <div id="sdResults" class="sdResults" hidden aria-live="polite"></div>
       <div id="sdMain">
+        <!-- זיהוי הקטע מההקלטה (js/identify.js, PLAN_TEFILA.md 4.5.2) — ההקלטה קודם, הטקסט אחר-כך -->
+        <div id="idWrap" class="idWrap" hidden>
+          <input type="file" id="idFile" accept="audio/*,video/*" hidden>
+          <button type="button" id="idBtn" class="secondary idBtn">🔎 זהה לי את הקטע מההקלטה</button>
+          <p class="hint" id="idHint">לא בטוחים איזה קטע בהקלטה? בחרו אותה — המערכת תאזין ותציע את הקטע מהסידור (נוסח, תפילה וטווח).</p>
+          <p class="hint" id="idFileNote" hidden>ההקלטה: <b id="idFileName"></b> · <button type="button" id="idOther" class="linkBtn">קובץ אחר…</button></p>
+          <div id="idProgress" class="procrow" hidden>
+            <span class="spin"></span>
+            <span class="plabel" id="idLabel"></span>
+            <span class="ptime" id="idTime">0:00</span>
+            <button type="button" class="cancel" id="idCancel" title="ביטול הזיהוי" aria-label="ביטול הזיהוי">✕</button>
+          </div>
+          <div id="idMsg" aria-live="polite"></div>
+          <div id="idResults" class="idResults"></div>
+        </div>
         <label for="sdNusach" class="mt">נוסח</label>
         <select id="sdNusach"><option value="">בחרו נוסח…</option></select>
         <div id="sdBrowse" hidden>
@@ -161,6 +177,20 @@
           </div>
           <p class="hint" id="sdLeafMeta"></p>
           <p class="hint" id="sdLeafSource" hidden></p>
+          <!-- "מה אומרים היום?" — תוספות תלויות-יום (PLAN_TEFILA.md 4.4.2) -->
+          <div id="sdDays" class="sdBlock sdDays mt" hidden>
+            <div class="range-title">מה אומרים היום?</div>
+            <label for="sdDay">איזה יום?</label>
+            <select id="sdDay"></select>
+            <div id="sdSeasonWrap" hidden>
+              <div class="sdSubTitle">עונה</div>
+              <div id="sdSeason" class="sdSeg" role="group" aria-label="עונה"></div>
+            </div>
+            <div id="sdNeed" class="sdNeed" role="status" hidden></div>
+            <div class="sdSubTitle" id="sdCondsTitle">תוספות בקטע (הקשה מדליקה / מכבה)</div>
+            <div id="sdConds" class="sdChips"></div>
+            <p class="hint" id="sdDaysSum"></p>
+          </div>
           <div id="sdRange" hidden>
             <div class="row mt">
               <div>

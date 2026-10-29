@@ -10,7 +10,14 @@
 
    העץ והטקסט נטענים מה-API (‏api/siddur.py) — לא משוכפלים לדף (6.4), ורק
    כשהלשונית "תפילה" נפתחת. כל טקסט שמגיע מה-API מוצג כטקסט (textContent /
-   escapeHtml), לעולם לא כ-HTML. */
+   escapeHtml), לעולם לא כ-HTML.
+
+   "מה אומרים היום?" (4.4.2): תוספות תלויות-יום (יעלה ויבוא, עשי"ת, משיב
+   הרוח…) מזוהות בשרת (src/siddur/markup.py). כאן רק הבחירה: סוג יום (ברירת
+   מחדל — לפי הקטע), עונה, ומתג לכל תוספת; הבחירה נזכרת ונשלחת כ-day/season/
+   days, והשרת מחזיר את היחידות לפיה — תוספת כבויה היא kind="conditional"
+   (מוצגת באפור עם שם היום), ולפני השמירה ב-S.data היא הופכת ל-"instruction"
+   כדי שה-worker (שלא מכיר "conditional") ידלג עליה כמו על הוראה. */
 
 const SD = {
   nusachim: null,   // [{key, title}] — מה-API, פעם אחת
@@ -24,6 +31,12 @@ const SD = {
   req: 0,           // מונה בקשות העץ — תשובה ישנה לא דורסת חדשה
   searchReq: 0,     // אותו דבר לבקשות החיפוש
   leafReq: 0,       // ולבקשות הקטע
+  // "מה אומרים היום?" (נשמר): ‏day — סוג יום או "auto" (לפי הקטע); ‏season —
+  // ""|summer|winter|between; ‏on/off — תנאים שהודלקו/כובו ביד מעל סוג היום
+  days: { day: "auto", season: "", on: [], off: [] },
+  payloadKey: "",   // הבחירה שאיתה נטענה SD.payload
+  autoDay: null,    // {path, label} — מה "לפי הקטע" אומר בקטע הנוכחי
+  daysShown: null,  // {path, data} — המתגים שמוצגים עכשיו
 };
 const SD_SEARCH_DELAY_MS = 350;
 const SD_SEARCH_MIN = 2;
@@ -36,6 +49,7 @@ function siddurSaved() {
     leaf: l && { path: l.path, title: l.title, label: l.label, base: l.base,
                  from: l.from, to: l.to, total: l.total, paragraphs: l.paragraphs, meta: l.meta,
                  attr: l.attr || null },
+    days: SD.days,
   };
 }
 /* נקרא מ-main.js לפני setSourceTab. מצב ישן בלי siddur — פשוט אין בחירה */
@@ -50,6 +64,15 @@ function siddurRestore(saved) {
       from: +l.from || null, to: +l.to || null, total: +l.total || 0,
       paragraphs: Array.isArray(l.paragraphs) ? l.paragraphs : [], meta: l.meta || "",
       attr: sdCleanAttribution(l.attr),
+    };
+  }
+  const d = saved.days;   // מצב ישן בלי days — ברירת המחדל
+  if (d && typeof d === "object") {
+    const list = x => Array.isArray(x) ? x.filter(v => typeof v === "string") : [];
+    SD.days = {
+      day: typeof d.day === "string" && d.day ? d.day : "auto",
+      season: typeof d.season === "string" ? d.season : "",
+      on: list(d.on), off: list(d.off),
     };
   }
 }
@@ -71,7 +94,8 @@ function siddurErrorText(status, data) {
   // ההודעות של ה-API בעברית; "from/to" הם שמות פרמטרים — לא למשתמש
   let msg = String(data.error || "").replace(/\s*\(from\/to\)/g, "").replace(/\s*— from\/to/g, "");
   if (!msg) msg = `${SIDDUR_STATUS[status] || "שגיאה"} (${status})`;
-  const tip = status === 413 || (status === 400 && data.paragraphs)
+  const tip = status === 400 && data.conditions ? ""   // ההודעה כבר אומרת לבחור יום
+    : status === 413 || (status === 400 && data.paragraphs)
     ? "סמנו טווח פסקאות קצר יותר ברשימה ולחצו שוב על \"טען את הקטע\"."
     : status === 422 ? "אפשר ללחוץ על \"העתק לטקסט חופשי\" ולסנכרן משם."
     : status >= 500 ? "נסו שוב בעוד רגע." : "";
@@ -97,7 +121,12 @@ function siddurError(prefix, e) {
 /* ---------- הפעלה (בפתיחה הראשונה של הלשונית) ---------- */
 async function siddurActivate() {
   renderSiddurPanels();
-  if (SD.leaf) renderLeaf();
+  if (SD.leaf) {
+    renderLeaf();
+    // בטעינת הדף הלשונית נפתחת לפני ש-S.data משוחזר (main.js) — המתגים של
+    // "מה אומרים היום" מהטקסט שנטען מוצגים מיד אחרי השחזור
+    setTimeout(() => renderDays(daysData()), 0);
+  }
   if (SD.started) return;
   SD.started = true;
   try {
@@ -389,8 +418,9 @@ function selectLeaf(sel) {
   renderSiddurPanels();
   renderLeaf();
   save();
-  fetchLeafRange();
+  const loading = fetchLeafRange();
   $("sdLeaf").scrollIntoView({ block: "nearest" });
+  return loading;   // ‏identify.js מחכה לטעינה ואז טוען את הקטע
 }
 $("sdBack").addEventListener("click", () => {
   SD.leaf = null; SD.payload = null;
@@ -404,13 +434,13 @@ $("sdBack").addEventListener("click", () => {
 function leafRangeParams() {
   const l = SD.leaf, p = { path: l.path };
   if (l.from && l.to && !(l.from === 1 && l.to === l.total)) { p.from = l.from; p.to = l.to; }
-  return p;
+  return Object.assign(p, daysParams());
 }
 /* תשובה שמורה שמתאימה לקטע ולטווח הנוכחיים. withErrors — גם גוף שגיאה
    שיש בו יחידות (422 — לא מנוקד; 400 — רק הוראות), להעתקה לטקסט חופשי */
 function currentPayload(withErrors) {
   const p = SD.payload, l = SD.leaf;
-  if (!p || !l || p.path !== l.path) return null;
+  if (!p || !l || p.path !== l.path || SD.payloadKey !== daysKey()) return null;
   if (p.error && !withErrors) return null;
   return p.range && p.range.from === l.from && p.range.to === l.to ? p : null;
 }
@@ -431,6 +461,7 @@ async function fetchLeafRange() {
     l.meta = leafMeta(data);
     l.attr = sdCleanAttribution(data.attribution);
     SD.payload = data;
+    SD.payloadKey = daysKey();
     renderLeaf(); save();
     return data;
   } catch (e) {
@@ -441,9 +472,14 @@ async function fetchLeafRange() {
       l.total = d.paragraphs.length;
       if (!l.from || l.to > l.total) { l.from = 1; l.to = l.total; }
     }
-    if (Array.isArray(d.units))   // 422/400 — הטקסט עצמו זמין להעתקה
+    if (Array.isArray(d.units)) {   // 422/400 — הטקסט עצמו זמין להעתקה
       SD.payload = { error: e.status, path: l.path, units: d.units,
                      range: { from: l.from, to: l.to, total: l.total } };
+      // 400 "רק תוספות כבויות" — המתגים מוצגים, כדי להדליק את היום המתאים
+      for (const k of ["conditions", "needs_choice", "day", "season", "days", "presets", "seasons"])
+        if (k in d) SD.payload[k] = d[k];
+      SD.payloadKey = daysKey();
+    }
     renderLeaf(); save();
     siddurError("טעינת הקטע נכשלה: ", e);
     return null;
@@ -472,6 +508,7 @@ function renderLeaf() {
   renderLeafSource();
   $("sdLeafMeta").textContent = [fromTitle, l.meta].filter(Boolean).join(" · ") ||
     (l.total ? "" : "טוען את הקטע…");
+  renderDays(daysData());
   const many = l.total > 1 && l.paragraphs.length === l.total;
   $("sdRange").hidden = !many;
   if (!many) return;
@@ -498,6 +535,13 @@ function renderLeaf() {
     const pt = document.createElement("span");
     pt.className = "pt bible"; pt.textContent = (p.first_words || "—") + "…";
     row.append(cb, pn, pt);
+    if (p.condition_label) {
+      // פסקה עם תוספת תלויית-יום — שם היום, בזהב
+      const pc = document.createElement("span");
+      pc.className = "pc";
+      pc.textContent = p.condition_label;
+      row.appendChild(pc);
+    }
     box.appendChild(row);
   });
   updateRangeUi();
@@ -561,7 +605,11 @@ async function loadSiddurLeaf() {
   if (!data || data.error) return;
   // עותק — עריכת החלוקה מחליפה את S.data.segments, והתשובה השמורה נשארת נקייה
   const d = JSON.parse(JSON.stringify(data));
+  // תוספת כבויה ⇐ "instruction": מוצגת באפור ולא נשלחת ליישור — ה-worker
+  // מכיר רק את סוגי היחידות הישנים (modal_worker/params.py ‏UNIT_KINDS)
+  d.units = d.units.map(u => u.kind === "conditional" ? Object.assign({}, u, { kind: "instruction" }) : u);
   d.source = "siddur";   // מכאן — מצב יישור, שליחה לענן ושם הקובץ
+  d.daysKey = daysKey();  // הבחירה של "מה אומרים היום" שאיתה נטען
   d.label = siddurLabel();
   S.data = d;
   S.times = null; S.endTime = null; S.report = null;
@@ -573,11 +621,156 @@ async function loadSiddurLeaf() {
 }
 $("sdLoadBtn").addEventListener("click", loadSiddurLeaf);
 
+/* ---------- "מה אומרים היום?" — תוספות תלויות-יום (4.4.2) ----------
+   השרת קובע מה דלוק (src/siddur/days.py); כאן רק שומרים את הבחירה ושולחים
+   אותה. בלי בחירה (‏auto, בלי עונה ובלי מתגים) — אין פרמטרים בכלל: אותה כתובת
+   כמו קודם, ושורת ה-CDN משותפת לגרסה הישנה. */
+function daysParams() {
+  const d = SD.days, p = {};
+  const days = [...d.on, ...d.off.map(s => "-" + s)];
+  if (d.day === "auto" && !d.season && !days.length) return p;
+  p.day = d.day || "auto";
+  if (d.season) p.season = d.season;
+  if (days.length) p.days = days.join(",");
+  return p;
+}
+function daysKey() { return JSON.stringify(daysParams()); }
+/* מאיפה מציגים את המתגים: התשובה האחרונה לקטע ולבחירה הנוכחיים, ואחרת —
+   הטקסט שכבר נטען מהקטע הזה (אחרי טעינה מחדש של הדף, בלי בקשה) */
+function daysData() {
+  const l = SD.leaf;
+  if (!l) return null;
+  if (SD.payload && SD.payload.path === l.path && SD.payloadKey === daysKey()) return SD.payload;
+  if (S.data && dataSource() === "siddur" && S.data.path === l.path &&
+      S.data.daysKey === daysKey()) return S.data;
+  // הבקשה האחרונה נכשלה (רשת) — המתגים האחרונים נשארים, כדי שאפשר לשנות שוב
+  return SD.daysShown && SD.daysShown.path === l.path ? SD.daysShown.data : null;
+}
+function renderDays(data) {
+  const box = $("sdDays");
+  const conds = (data && data.conditions) || [];
+  if (!SD.leaf || !conds.length) { box.hidden = true; return; }
+  box.hidden = false;
+  SD.daysShown = { path: SD.leaf.path, data };
+  const day = data.day || null;
+  if (day && day.auto) SD.autoDay = { path: SD.leaf.path, label: day.label };
+  const autoLabel = SD.autoDay && SD.autoDay.path === SD.leaf.path ? SD.autoDay.label : "";
+  const sel = $("sdDay");
+  sel.innerHTML = "";
+  const opt = (value, text) => {
+    const o = document.createElement("option");
+    o.value = value; o.textContent = text;
+    sel.appendChild(o);
+  };
+  opt("auto", "לפי הקטע" + (autoLabel ? ` (${autoLabel})` : ""));
+  for (const p of data.presets || []) opt(p.key, p.label);
+  sel.value = SD.days.day || "auto";
+  if (sel.value !== (SD.days.day || "auto")) sel.value = "auto";
+  // עונה — רק כשיש בקטע מוריד הטל/משיב הרוח או ותן ברכה/ותן טל ומטר
+  const seasonal = conds.some(c => c.group === "season");
+  $("sdSeasonWrap").hidden = !seasonal;
+  const seg = $("sdSeason");
+  seg.innerHTML = "";
+  for (const s of data.seasons || []) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.season = s.key;
+    const [head, ...rest] = String(s.label).split(" — ");
+    b.textContent = head;
+    if (rest.length) {   // "קיץ · מוריד הטל, ותן ברכה"
+      const small = document.createElement("small");
+      small.className = "n";
+      small.textContent = " · " + rest.join(" — ");
+      b.appendChild(small);
+    }
+    b.setAttribute("aria-pressed", String(SD.days.season === s.key));
+    b.addEventListener("click", () => setSeason(SD.days.season === s.key ? "" : s.key));
+    seg.appendChild(b);
+  }
+  const needs = data.needs_choice || [];
+  $("sdNeed").hidden = !needs.length;
+  $("sdNeed").textContent = needs.map(n => "⚠️ " + n.label).join("\n") +
+    (needs.length ? "\nעד שתבחרו — הנוסחים האלה מוצגים באפור ולא נכנסים לכתוביות." : "");
+  // מתג לכל תוספת שבקטע (העונה — בבורר שלמעלה)
+  const chips = $("sdConds");
+  chips.innerHTML = "";
+  const own = conds.filter(c => c.group !== "season");
+  $("sdCondsTitle").hidden = !own.length;
+  for (const c of own) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "sdChip";
+    b.dataset.slug = c.slug;
+    b.setAttribute("aria-pressed", String(!!c.enabled));
+    b.textContent = (c.enabled ? "✓ " : "") + c.label;
+    if (c.count > 1) {
+      const n = document.createElement("span");
+      n.className = "n";
+      n.textContent = `×${c.count}`;
+      b.appendChild(n);
+    }
+    b.addEventListener("click", () => toggleCondition(c, conds));
+    chips.appendChild(b);
+  }
+  const units = (data.units || []).filter(u => u.condition);
+  const on = units.filter(u => u.kind === "paragraph").length;
+  $("sdDaysSum").textContent = `${on} תוספות נאמרות היום ומסונכרנות · ${units.length - on} באפור ` +
+    "(מוצגות עם שם היום, לא נכנסות לכתוביות).";
+}
+function setSeason(season) {
+  const prev = JSON.parse(JSON.stringify(SD.days));
+  SD.days.season = season;
+  applyDays(prev);
+}
+$("sdDay").addEventListener("change", () => {
+  const prev = JSON.parse(JSON.stringify(SD.days));
+  // סוג יום חדש — המתגים הידניים שהיו מעליו מתאפסים (העונה נשארת)
+  SD.days = { day: $("sdDay").value, season: SD.days.season, on: [], off: [] };
+  applyDays(prev);
+});
+/* הדלקה/כיבוי של תנאי אחד מעל סוג היום. בקבוצה של בחירה אחת (יום בשבוע,
+   איזה חג) הדלקה מכבה את האחרים בקבוצה */
+function toggleCondition(c, conds) {
+  const prev = JSON.parse(JSON.stringify(SD.days));
+  const on = new Set(SD.days.on), off = new Set(SD.days.off);
+  const enable = s => { if (off.has(s)) off.delete(s); else on.add(s); };
+  const disable = s => { if (on.has(s)) on.delete(s); else off.add(s); };
+  if (c.enabled) disable(c.slug);
+  else {
+    enable(c.slug);
+    if (c.group) conds.filter(o => o.group === c.group && o.slug !== c.slug && o.enabled)
+      .forEach(o => disable(o.slug));
+  }
+  SD.days = Object.assign({}, SD.days, { on: [...on], off: [...off] });
+  applyDays(prev);
+}
+/* הבחירה השתנתה ⇐ נשמרת, הקטע נטען מחדש מהשרת, ואם הטקסט שלו כבר נטען —
+   הוא מחושב מחדש (אחרי סנכרון — רק באישור, כי הזמנים נמחקים) */
+async function applyDays(prev) {
+  const l = SD.leaf;
+  if (!l) return;
+  const loaded = dataSource() === "siddur" && S.data && S.data.path === l.path;
+  if (loaded && S.times && !confirm("שינוי היום ייטען את הטקסט מחדש, והזמנים מהסנכרון הקודם יימחקו. להמשיך?")) {
+    SD.days = prev;
+    renderDays(daysData());
+    return;
+  }
+  save();
+  siddurMsg("");
+  const data = await fetchLeafRange();
+  if (!data || l !== SD.leaf) return;
+  if (loaded) {
+    await loadSiddurLeaf();
+    siddurMsg('<p class="okline">הטקסט עודכן לפי היום שנבחר ✓</p>');
+  }
+}
+
 /* ---------- "העתק לטקסט חופשי" ----------
    הטקסט הנאמר בלבד (בלי הוראות), יחידה בשורה — כדי לתקן את הנוסח של בית
    הכנסת ולסנכרן מלשונית הטקסט החופשי. קטע בלי ניקוד (422) — כל הטקסט. */
 function copyUnitsToFreeText(units, title) {
-  const spoken = units.filter(u => u.kind !== "instruction");
+  // רק מה שנאמר היום — בלי הוראות ובלי תוספות כבויות
+  const spoken = units.filter(u => u.kind !== "instruction" && u.kind !== "conditional");
   const text = (spoken.length ? spoken : units).map(u => String(u.text).trim())
     .filter(Boolean).join("\n");
   const cur = $("freeText").value;

@@ -49,6 +49,25 @@ RECORDED = {
         "ashkenaz_shabbat_ashrei_daat",
     ("Siddur Ashkenaz, Berachot, Asher Yatzar Etchem Badin",
      "Daat Siddur Ashkenaz"): "ashkenaz_asher_yatzar_daat",
+    # תוספות תלויות-יום (4.4.2) — עמידה בכל נוסח/מהדורה, שיר של יום
+    ("Siddur Edot HaMizrach, Weekday Shacharit, Amida",
+     " Shaliehsaboo Edition"): "edot_weekday_amida_shaliehsaboo",
+    ("Siddur Sefard, Weekday Shacharit, Amidah", "The Metsudah siddur, 1981"):
+        "sefard_weekday_amidah_metsudah",
+    ("Siddur Ashkenaz, Weekday, Shacharit, Amidah, Temple Service",
+     "The Metsudah siddur, 1981"): "ashkenaz_temple_service_metsudah",
+    ("Siddur Ashkenaz, Weekday, Shacharit, Amidah, Divine Might",
+     "The Metsudah siddur, 1981"): "ashkenaz_divine_might_metsudah",
+    ("Siddur Ashkenaz, Weekday, Shacharit, Amidah, Thanksgiving",
+     "The Metsudah siddur, 1981"): "ashkenaz_thanksgiving_metsudah",
+    ("Siddur Ashkenaz, Weekday, Shacharit, Amidah, Prosperity",
+     "The Metsudah siddur, 1981"): "ashkenaz_prosperity_metsudah",
+    ("Siddur Sefard, Holidays, Maariv, Shacharit & Mincha Amidah",
+     "Torat Emet 357"): "sefard_festival_amidah_torat_emet",
+    ("Siddur Ashkenaz, Shabbat, Shacharit, Amidah, Temple Service",
+     "Daat Siddur Ashkenaz"): "ashkenaz_shabbat_temple_service_daat",
+    ("Siddur Sefard, Weekday Shacharit, Song of the Day",
+     "The Metsudah siddur, 1981"): "sefard_song_of_the_day_metsudah",
 }
 EMPTY = "sefard_ashrei_torat_emet_empty"  # ‏versions ריק — תשובה אמיתית
 
@@ -260,9 +279,12 @@ class TestLeafEdotShaliehsaboo(SiddurTestCase):
     def test_title_citation_and_taamim(self):
         payload, _ = self.ok(path=EDOT_ASHREI)
         kinds = [p["kind"] for p in payload["paragraphs"]]
-        # 1 כותרת לא מנוקדת, 4 ו-6 — מראה מקום באמצע, 5 — הוראת דילוג
+        # 1 כותרת לא מנוקדת, 4 — מראה מקום באמצע, 5 — הוראת דילוג ("ביום שאין
+        # אומרים בו תחנון מדלגים למנצח"), ולכן 6 (למנצח) — תוספת תלויית-יום
+        # (4.4.2): נאמרת בכל יום חוץ מימים שאין בהם תחנון
         self.assertEqual(kinds, ["instruction", "paragraph", "paragraph",
-                                 "mixed", "instruction", "mixed"])
+                                 "mixed", "instruction", "conditional"])
+        self.assertEqual(payload["paragraphs"][5]["conditions"], ["no-tachanun"])
         para4 = [u for u in payload["units"] if u["label"] == "אשרי · 4"]
         self.assertEqual([u["kind"] for u in para4],
                          ["paragraph", "instruction", "paragraph"])
@@ -275,9 +297,11 @@ class TestLeafEdotShaliehsaboo(SiddurTestCase):
 
 
 class TestLeafSefardKabbalatShabbat(SiddurTestCase):
-    def units_of(self, payload, n):
-        return [(u["kind"], u["text"]) for u in payload["units"]
-                if u["label"] == f"קבלת שבת · {n}"]
+    def units_of(self, payload, n, cond=False):
+        """היחידות של פסקה n (תווית "קבלת שבת · n", גם עם תנאי אחריה)."""
+        return [(u["kind"], u["text"]) + ((u.get("condition"),) if cond else ())
+                for u in payload["units"]
+                if u["label"].split(" · ")[:2] == ["קבלת שבת", str(n)]]
 
     def test_vocalized_small_is_spoken(self):
         payload, _ = self.ok(path=SEFARD_KS)
@@ -292,17 +316,20 @@ class TestLeafSefardKabbalatShabbat(SiddurTestCase):
         self.assertEqual(self.units_of(payload, 23), [
             ("instruction", "ביום טוב ובשבת חול המועד מדלגים "
                             "ל:יָמִין וּשְׂמֹאל תִּפְרוֹצִי")])
-        # תוספת ליו״ט / לעשי״ת — ברירת המחדל יום רגיל ⇐ הוראה
-        self.assertIn(("instruction", '(ביו"ט מוסיפים: בְּשִׂמְחָה)'),
-                      self.units_of(payload, 37))
-        self.assertIn(("instruction", '(בעשי"ת הַשָּׁלוֹם)'),
-                      self.units_of(payload, 43))
+        # תוספת ליו״ט / לעשי״ת (4.4.2): ההוראה + התוספת. הקטע של שבת ⇐ ברירת
+        # המחדל שבת, והתוספות כבויות; בקשה בלי day (ממשק ישן) ⇐ "instruction"
+        self.assertEqual(self.units_of(payload, 37, cond=True)[1:3], [
+            ("instruction", '(ביו"ט מוסיפים:', None),
+            ("instruction", "בְּשִׂמְחָה)", "yom-tov")])
+        self.assertEqual(self.units_of(payload, 43, cond=True)[1:3], [
+            ("instruction", '(בעשי"ת', None),
+            ("instruction", "הַשָּׁלוֹם)", "aseret-yemei-teshuva")])
 
     def test_range_inside_leaf(self):
         payload, _ = self.ok(path=SEFARD_KS, **{"from": "17", "to": "38"})
         self.assertEqual(payload["range"], {"from": 17, "to": 38, "total": 43})
         self.assertEqual(len(payload["paragraphs"]), 43)  # לבחירת טווח בממשק
-        labels = {u["label"] for u in payload["units"]}
+        labels = {" · ".join(u["label"].split(" · ")[:2]) for u in payload["units"]}
         self.assertEqual(labels, {f"קבלת שבת · {n}" for n in range(17, 39)})
         self.assertTrue(payload["units"][0]["text"].startswith("לְכָה דוֹדִי"))
         self.assertEqual(len(self.fake.calls), 1)  # עלה אחד, משיכה אחת
