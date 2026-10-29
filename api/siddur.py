@@ -5,7 +5,9 @@ PLAN_TEFILA.md משימה 4.2.2.
 GET /api/siddur                                ⇐ רשימת הנוסחים
 GET /api/siddur?nusach=ashkenaz                ⇐ סוגי היום בנוסח
 GET /api/siddur?nusach=ashkenaz&path=weekday/shacharit   ⇐ הילדים של הצומת
-GET /api/siddur?q=אשרי&nusach=sefard           ⇐ חיפוש (כותרות + מילים ראשונות)
+GET /api/siddur?q=אשרי&nusach=sefard[&all=1]   ⇐ חיפוש: קיצורים ואחריהם קטעים
+                                                  (כותרות, שמות נרדפים, מילים ראשונות;
+                                                  ‏all=1 — כל הנוסחים, הנוכחי קודם)
 GET /api/siddur?popular=1&nusach=sefard        ⇐ קיצורים: הקטעים הנפוצים בנוסח
                                                   (data/siddur/popular.json, 4.2.3)
 GET /api/siddur?path=<עלה>[&from=N&to=M][&max_words=4]   ⇐ טקסט העלה כיחידות
@@ -65,7 +67,7 @@ _load_by_path("siddur", _SRC / "siddur", package=True)
 _ts = _load_by_path("text_segments", _API_DIR / "text_segments.py")
 
 from aligner.pipeline import _unit_chunk  # noqa: E402
-from siddur import load_catalog, split_path  # noqa: E402
+from siddur import load_aliases, load_catalog, split_path  # noqa: E402
 from siddur.catalog import is_leaf  # noqa: E402
 from siddur.markup import (INSTRUCTION, SPOKEN, classify_paragraph,  # noqa: E402
                            display_word, first_words, flatten, has_vocalized)
@@ -84,6 +86,7 @@ MAX_SEFARIA_BYTES = 8 * 1024 * 1024
 # (‏check_units_limits) נבדקת בנפרד.
 MAX_PARAGRAPHS = 300
 MAX_SEARCH_RESULTS = 30
+MAX_SEARCH_SHORTCUTS = 12
 MAX_QUERY_CHARS = 100
 FIRST_WORDS = 5
 MODE = "tefila"               # מילה לא מנוקדת נקראת, שם ה׳ של הסידור (4.1.2)
@@ -227,16 +230,24 @@ def search_payload(cat, q: dict) -> dict:
         raise ApiError(400, f"טקסט החיפוש ארוך מדי — עד {MAX_QUERY_CHARS} תווים")
     keys = _keys(cat, {"nusach": q.get("nusach")})
     nusach = keys[0] if keys else None
-    found = cat.search(query, nusach=nusach, limit=MAX_SEARCH_RESULTS + 1)
+    every = (q.get("all") or "") not in ("", "0")
+    # ההתאמה והדירוג — מימוש יחיד ב-src/siddur/catalog.py (‏Catalog.find)
+    found = cat.find(query, nusach=nusach, all_nusachim=every,
+                     popular=load_popular(), aliases=load_aliases(),
+                     limit=MAX_SEARCH_RESULTS, shortcut_limit=MAX_SEARCH_SHORTCUTS)
     results = []
-    for r in found[:MAX_SEARCH_RESULTS]:
+    for r in found["results"]:
         item = _item(cat, r["path"], cat.node(r["path"]))
         item["breadcrumb"] = r["breadcrumb"]
-        item["match"] = r["match"]  # "title" | "first"
+        item["nusach"] = r["nusach"]
+        item["match"] = r["match"]  # "title" | "first" | "fuzzy"
+        for k in ("via", "hint"):   # "alias" | "inside"; הסבר לתוספת שבתוך תפילה
+            if r.get(k):
+                item[k] = r[k]
         results.append(item)
-    return {"q": query, "nusach": nusach, "results": results,
-            "truncated": len(found) > MAX_SEARCH_RESULTS,
-            "limit": MAX_SEARCH_RESULTS}
+    return {"q": query, "nusach": nusach, "all": every or not nusach,
+            "shortcuts": found["shortcuts"], "results": results,
+            "truncated": found["truncated"], "limit": MAX_SEARCH_RESULTS}
 
 
 # --- עלה: טקסט ⇐ יחידות ⇐ מקטעים ---------------------------------------------
@@ -395,19 +406,9 @@ def popular_payload(cat, q: dict, popular=None) -> dict:
         raise ApiError(400, "חסר נוסח (nusach) לרשימת הקטעים הנפוצים")
     nusach = keys[0]
     popular = popular if popular is not None else load_popular()
-    items = []
-    for entry in popular.get("nusachim", {}).get(nusach, []):
-        leaf = cat.leaf(entry["path"])
-        if leaf is None:
-            continue
-        item = {"label": entry["label"], "path": entry["path"],
-                "title": leaf.get("heTitle", ""),
-                "breadcrumb": cat.breadcrumb(entry["path"]),
-                "available": _available(cat, entry["path"], leaf)}
-        for k in ("from", "to"):
-            if entry.get(k):
-                item[k] = entry[k]
-        items.append(item)
+    items = [it for it in (cat.shortcut_item(e) for e in
+                           popular.get("nusachim", {}).get(nusach, []))
+             if it is not None]
     return {"nusach": nusach, "draft": bool(popular.get("draft")),
             "note": popular.get("note", ""), "items": items}
 

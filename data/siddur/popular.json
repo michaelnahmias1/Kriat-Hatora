@@ -1,12 +1,15 @@
 {
  "schema_version": 1,
- "draft": true,
- "note": "טיוטה — רשימת הקטעים הנפוצים (PLAN_TEFILA.md 4.2.3) לפי הרשימה בתוכנית; ממתינה לאישור בעל הפרויקט (שאלה 8.16). כל רשומה: תווית, נתיב של עלה בקטלוג (data/siddur/catalog.json), וטווח פסקאות from/to כשהקטע הוא חלק מעלה גדול (8.25). paragraph_count/first/last נרשמו בבדיקה מול הטקסט האמיתי ב-Sefaria (tools/verify_siddur_popular.py) — first = המילים הראשונות של פסקת from, ‏last = של פסקת to.",
+ "draft": false,
+ "note": "אושרה ע״י בעל הפרויקט ב-29.10.2026 (PLAN_TEFILA.md 4.2.3, שאלה 8.16), בתוספת נשמת, שוכן עד (בעדות: שועת עניים) וישתבח. רשימת הקטעים הנפוצים לכל נוסח: כל רשומה — תווית, נתיב של עלה בקטלוג (data/siddur/catalog.json), וטווח פסקאות from/to כשהקטע הוא חלק מעלה גדול (8.25). paragraph_count/first/last נרשמו בבדיקה מול הטקסט האמיתי ב-Sefaria (tools/verify_siddur_popular.py) — first = המילים הראשונות של פסקת from, ‏last = של פסקת to.",
  "nusachim": {
   "edot-hamizrach": [
    {"label": "קבלת שבת", "path": "edot-hamizrach/shabbat/kabbalat-shabbat", "paragraph_count": 35, "first": "קבלת שבת", "last": "עוֹשֶׂה שָׁלוֹם בִּמְרוֹמָיו הוּא בְּרַחֲמָיו"},
    {"label": "לכה דודי", "path": "edot-hamizrach/shabbat/kabbalat-shabbat", "from": 9, "to": 24, "paragraph_count": 35, "first": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי", "last": "בֹּאִי כַלָּה שַׁבָּת מַלְכְּתָא"},
    {"label": "אשרי", "path": "edot-hamizrach/weekday/weekday-shacharit/ashrei", "from": 3, "to": 4, "paragraph_count": 6, "first": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ עוֹד יְֽהַלְלוּךָ", "last": "תְּהִלָּה לְדָוִד אֲרוֹמִמְךָ אֱלוֹהַי הַמֶּלֶךְ"},
+   {"label": "נשמת", "path": "edot-hamizrach/shabbat/shabbat-shacharit/pesukei-dzimra", "from": 20, "to": 28, "paragraph_count": 37, "first": "נִשְׁמַת כָּל־חַי תְּבָרֵךְ אֶת שִׁמְךָ", "last": "בְּמִקְהֲלוֹת רִבְבוֹת עַמְּךָ בֵּית יִשְׂרָאֵל"},
+   {"label": "שועת עניים", "path": "edot-hamizrach/shabbat/shabbat-shacharit/pesukei-dzimra", "from": 23, "to": 28, "paragraph_count": 37, "first": "שַׁוְעַת עֲנִיִּים אַתָּה תִשְׁמַע צַעֲקַת", "last": "בְּמִקְהֲלוֹת רִבְבוֹת עַמְּךָ בֵּית יִשְׂרָאֵל"},
+   {"label": "ישתבח", "path": "edot-hamizrach/weekday/weekday-shacharit/pesukei-dzimra", "from": 19, "to": 19, "paragraph_count": 26, "first": "יִשְׁתַּבַּח שִׁמְךָ לָעַד מַלְכֵּֽנוּ הָאֵל", "last": "יִשְׁתַּבַּח שִׁמְךָ לָעַד מַלְכֵּֽנוּ הָאֵל"},
    {"label": "חצי קדיש", "path": "edot-hamizrach/weekday/weekday-shacharit/pesukei-dzimra", "from": 23, "to": 23, "paragraph_count": 26, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן"},
    {"label": "קדיש תתקבל", "path": "edot-hamizrach/weekday/weekday-shacharit/uva-lesion", "from": 5, "to": 8, "paragraph_count": 10, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "עוֹשֶׂה שָׁלוֹם בִּמְרוֹמָיו הוּא בְּרַחֲמָיו"},
    {"label": "קדיש יהא שלמא (יתום)", "path": "edot-hamizrach/weekday/weekday-shacharit/song-of-the-day", "from": 29, "to": 30, "paragraph_count": 30, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "יְהֵא שְׁלָמָא רַבָּא מִן שְׁמַיָּא"},
@@ -22,6 +25,9 @@
    {"label": "קבלת שבת", "path": "sefard/shabbat/kabbalat-shabbat", "paragraph_count": 43, "first": "לְכוּ נְרַנְּנָה לַיהֹוָה נָרִיעָה לְצוּר", "last": "יְהֵא שְׁלָמָא רַבָּא מִן שְׁמַיָּא"},
    {"label": "לכה דודי", "path": "sefard/shabbat/kabbalat-shabbat", "from": 17, "to": 38, "paragraph_count": 43, "first": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי", "last": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי"},
    {"label": "אשרי", "path": "sefard/weekday/weekday-shacharit/ashrei", "from": 1, "to": 1, "paragraph_count": 30, "first": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶֽךָ עוֹד יְהַלְלֽוּךָ", "last": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶֽךָ עוֹד יְהַלְלֽוּךָ"},
+   {"label": "נשמת", "path": "sefard/shabbat/shabbat-morning-services/pesukei-dzimrah", "from": 90, "to": 97, "paragraph_count": 108, "first": "נִשְׁמַת כָּל חַי תְּבָרֵךְ אֶת", "last": "וּבְמַקְהֲלוֹת רִבְבוֹת עַמְּךָ בֵּית יִשְׂרָאֵל"},
+   {"label": "שוכן עד", "path": "sefard/shabbat/shabbat-morning-services/pesukei-dzimrah", "from": 96, "to": 97, "paragraph_count": 108, "first": "שׁוֹכֵן עַד מָרוֹם וְקָדוֹשׁ שְׁמוֹ", "last": "וּבְמַקְהֲלוֹת רִבְבוֹת עַמְּךָ בֵּית יִשְׂרָאֵל"},
+   {"label": "ישתבח", "path": "sefard/weekday/weekday-shacharit/yishtabach", "from": 2, "to": 2, "paragraph_count": 9, "first": "יִשְׁתַּבַּח שִׁמְךָ לָעַד מַלְכֵּֽנוּ הָאֵל", "last": "יִשְׁתַּבַּח שִׁמְךָ לָעַד מַלְכֵּֽנוּ הָאֵל"},
    {"label": "חצי קדיש", "path": "sefard/weekday/weekday-shacharit/yishtabach", "from": 6, "to": 9, "paragraph_count": 9, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא בְּעָלְמָא", "last": "לְעֵֽלָּא וּלְעֵֽלָּא מִכָּל מִן כָּל"},
    {"label": "קדיש שלם (תתקבל)", "path": "sefard/weekday/weekday-shacharit/ashrei", "from": 18, "to": 23, "paragraph_count": 30, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא בְּעָלְמָא", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
    {"label": "קדיש יתום", "path": "sefard/weekday/weekday-shacharit/aleinu", "from": 6, "to": 9, "paragraph_count": 9, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא בְּעָלְמָא", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
@@ -38,6 +44,9 @@
   "ashkenaz": [
    {"label": "לכה דודי", "path": "ashkenaz/shabbat/kabbalat-shabbat/lekha-dodi", "paragraph_count": 19, "first": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי", "last": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי"},
    {"label": "אשרי", "path": "ashkenaz/weekday/shacharit/pesukei-dezimra/ashrei", "paragraph_count": 2, "first": "צריך לכוין בתהלה לדוד דא\"ר", "last": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶֽךָ עוֹד יְהַלְלֽוּךָ"},
+   {"label": "נשמת", "path": "ashkenaz/shabbat/shacharit/pesukei-dezimra/nishmat-kol-chai", "paragraph_count": 1, "first": "נִשְׁמַת כָּל חַי תְּבָרֵךְ אֶת", "last": "נִשְׁמַת כָּל חַי תְּבָרֵךְ אֶת"},
+   {"label": "שוכן עד", "path": "ashkenaz/shabbat/shacharit/pesukei-dezimra/shochen-ad", "from": 2, "to": 4, "paragraph_count": 4, "first": "שׁוכֵן עַד מָרום וְקָדושׁ שְׁמו", "last": "וּבְמַקְהֲלות רִבְבות עַמְּךָ בֵּית יִשרָאֵל"},
+   {"label": "ישתבח", "path": "ashkenaz/weekday/shacharit/pesukei-dezimra/yishtabach", "paragraph_count": 1, "first": "יִשְׁתַּבַּח שִׁמְךָ לָעַד מַלְכֵּנוּ הָאֵל", "last": "יִשְׁתַּבַּח שִׁמְךָ לָעַד מַלְכֵּנוּ הָאֵל"},
    {"label": "חצי קדיש", "path": "ashkenaz/weekday/shacharit/pesukei-dezimra/half-kaddish", "paragraph_count": 6, "first": "ואומר החזן חצי קדיש", "last": "לְעֵֽלָּא מִן־כָּל־ לְעֵֽלָּא לְעֵֽלָּא מִכָּל"},
    {"label": "קדיש שלם", "path": "ashkenaz/weekday/shacharit/concluding-prayers/kaddish-shalem", "paragraph_count": 8, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
    {"label": "קדיש יתום", "path": "ashkenaz/weekday/shacharit/concluding-prayers/mourners-kaddish", "paragraph_count": 7, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
