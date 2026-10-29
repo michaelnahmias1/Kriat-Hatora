@@ -93,6 +93,13 @@ def _segment_interpolated(word_ranges: list, flags: list) -> list:
     return [any(flags[lo:hi + 1]) for lo, hi in word_ranges]
 
 
+def _debug_put(debug, **values):
+    """וו דיבאג: כשנמסר מילון — מעדכן אותו ומחזיר אותו; None ⇒ לא כלום."""
+    if debug is not None:
+        debug.update(values)
+    return debug
+
+
 # --- הפונקציות הראשיות ---------------------------------------------------------
 
 def run_hybrid(book, chapter, audio_path, out_srt_path,
@@ -119,13 +126,17 @@ def run_hybrid(book, chapter, audio_path, out_srt_path,
 
 def run_hybrid_units(units, audio_path, out_srt_path, *, max_words=4,
                      splits=None, performance=None, profile="reading",
-                     mode="tanakh", work_dir=".", asr_model=None):
+                     mode="tanakh", work_dir=".", asr_model=None,
+                     debug=None):
     """הצינור ההיברידי על יחידות טקסט (PLAN_TEFILA.md סעיף 3.1).
 
     ‏units — רשימת {text, label, kind, chunk}; יחידות instruction לא
     נכנסות לכתוביות וליישור. מחזיר את נתיב ה-SRT ומשאיר לצדו דוח איכות.
     ‏performance (סדר ביצוע — חזרות/דילוגים) ו-profile (קריאה/שירה) הם
     משימות 4.3.x; עד אז רק ערכי ברירת המחדל נתמכים.
+    ‏debug — מילון אופציונלי (ברירת מחדל None = בלי שום שינוי): כשנמסר,
+    הצינור ממלא בו את תוצאות הביניים — תמלול, עוגנים, חלונות וסטטוס כל
+    ניסיון יישור, זמני מילים, VAD וביטחון (ראה tools/run_local.py).
     """
     if performance is not None:
         raise NotImplementedError(
@@ -136,11 +147,11 @@ def run_hybrid_units(units, audio_path, out_srt_path, *, max_words=4,
     print("2/8 חותך את הטקסט למקטעים…")
     return _run_units(units, audio_path, out_srt_path, max_words=max_words,
                       splits=splits, mode=mode, work_dir=work_dir,
-                      asr_model=asr_model)
+                      asr_model=asr_model, debug=debug)
 
 
 def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
-               work_dir, asr_model):
+               work_dir, asr_model, debug=None):
     """גוף הצינור מהחיתוך והלאה — משותף לתנ״ך וליחידות.
 
     כותרת שלב 2 מודפסת אצל הקורא, כדי שיומן התנ״ך יישאר כפי שהיה.
@@ -156,6 +167,9 @@ def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
     print(f"    {n_units} {noun} → {len(segments)} מקטעים "
           f"({len(flat_plain)} מילים)")
 
+    _debug_put(debug, segments=segments, flat_plain=flat_plain,
+               flat_vocalized=flat_vocalized)
+
     print("3/8 טוען וממיר את ההקלטה (16kHz מונו)…")
     waveform = load_audio_16k_mono(audio_path, work_dir)
     wav_path = str(Path(work_dir) / WAV16K_NAME)
@@ -164,10 +178,14 @@ def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
 
     print("4/8 תמלול עברי (עוגנים בלבד — לא התזמון הסופי)…")
     asr_words, asr_name = asr_mod.transcribe(wav_path, model_name=asr_model)
+    _debug_put(debug, audio_dur=audio_dur, asr_words=asr_words,
+               asr_name=asr_name)
 
     print("5/8 הצלבת התמלול עם טקסט Sefaria — איתור עוגנים…")
     found = anchors_mod.find_anchors(asr_words, flat_plain)
     anchor_list, coverage = found["anchors"], found["coverage"]
+    _debug_put(debug, anchors=anchor_list, coverage=coverage,
+               matches=found["matches"])
     print(f"    כיסוי התאמה: {coverage:.0%} | עוגנים: {len(anchor_list)}")
     if coverage < 0.4:
         print("    ⚠️ כיסוי נמוך — התמלול מתקשה בקריאה הזו. ממשיכים עם "
@@ -177,6 +195,12 @@ def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
     window_list = win_mod.build_windows(anchor_list, len(flat_plain), audio_dur)
     print(f"    {len(window_list)} חלונות")
     aligner = MmsAligner()
+    attempts = _debug_put(debug, windows=window_list, window_attempts=[])
+
+    def note(w, status, spans=None):
+        if attempts is not None:
+            attempts["window_attempts"].append(
+                {"window": dict(w), "status": status, "spans": spans})
 
     def align_fn(w):
         words = flat_vocalized[w["word_lo"]:w["word_hi"] + 1]
@@ -186,19 +210,25 @@ def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
         piece = waveform[:, s0:s1]
         n_tokens = sum(len(r) for r in roman)
         if piece.size(1) / _FRAME_STRIDE < n_tokens * 1.1 + 4:
+            note(w, "too_few_frames")
             return None  # פחות פריימים מטוקנים — העוגן כנראה שגוי
         try:
             spans = aligner.align(piece, roman, offset_sec=w["t_lo"])
         except Exception as e:
             print(f"    ⚠️ חלון מילים {w['word_lo']}–{w['word_hi']} נכשל "
                   f"({type(e).__name__}) — מנסה מיזוג/אינטרפולציה")
+            note(w, f"error:{type(e).__name__}")
             return None
         if any(e - s > _MAX_WORD_SEC for s, e, _ in spans):
+            note(w, "word_too_long", spans)
             return None  # מילה של 12+ שניות = היישור התפרק בחלון
+        note(w, "ok", spans)
         return spans
 
     aligned = win_mod.align_windows(window_list, align_fn, flat_plain)
     spans, interp_flags = win_mod.stitch(aligned, len(flat_plain))
+    _debug_put(debug, aligned=aligned, word_spans=spans,
+               interpolated=interp_flags)
     n_interp = sum(interp_flags)
     if n_interp:
         print(f"    {n_interp} מילים קיבלו זמן משוער (אינטרפולציה) — יסומנו בדוח")
@@ -207,9 +237,11 @@ def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
     word_spans = [(s, e) for s, e, _ in spans]
     starts, _ends = segment_bounds(segments, word_spans)
     unit_flags = _unit_start_flags(segments)
+    _debug_put(debug, starts_raw=list(starts), unit_flags=unit_flags)
     vad_ran = True
     try:
         speech = vad_mod.detect_speech(wav_path)
+        _debug_put(debug, speech=speech)
         starts, snap_dists = vad_mod.snap_boundaries(starts, speech,
                                                      unit_flags)
         print(f"    הוצמדו {sum(1 for d in snap_dists if d is not None)}"
@@ -234,6 +266,8 @@ def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
         "vad_snapped": (snap_dists[i] is not None) if vad_ran else None,
     } for i in range(len(segments))]
     confs = conf_mod.score_segments(infos)
+    _debug_put(debug, starts=starts, snap_dists=snap_dists, vad_ran=vad_ran,
+               infos=infos, confidences=confs)
 
     srt = build_srt(segments, word_spans, starts_override=starts)
     Path(out_srt_path).write_text(srt, encoding="utf-8-sig")
