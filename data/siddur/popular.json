@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "draft": true,
+ "note": "טיוטה — רשימת הקטעים הנפוצים (PLAN_TEFILA.md 4.2.3) לפי הרשימה בתוכנית; ממתינה לאישור בעל הפרויקט (שאלה 8.16). כל רשומה: תווית, נתיב של עלה בקטלוג (data/siddur/catalog.json), וטווח פסקאות from/to כשהקטע הוא חלק מעלה גדול (8.25). paragraph_count/first/last נרשמו בבדיקה מול הטקסט האמיתי ב-Sefaria (tools/verify_siddur_popular.py) — first = המילים הראשונות של פסקת from, ‏last = של פסקת to.",
+ "nusachim": {
+  "edot-hamizrach": [
+   {"label": "קבלת שבת", "path": "edot-hamizrach/shabbat/kabbalat-shabbat", "paragraph_count": 35, "first": "קבלת שבת", "last": "עוֹשֶׂה שָׁלוֹם בִּמְרוֹמָיו הוּא בְּרַחֲמָיו"},
+   {"label": "לכה דודי", "path": "edot-hamizrach/shabbat/kabbalat-shabbat", "from": 9, "to": 24, "paragraph_count": 35, "first": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי", "last": "בֹּאִי כַלָּה שַׁבָּת מַלְכְּתָא"},
+   {"label": "אשרי", "path": "edot-hamizrach/weekday/weekday-shacharit/ashrei", "from": 3, "to": 4, "paragraph_count": 6, "first": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ עוֹד יְֽהַלְלוּךָ", "last": "תְּהִלָּה לְדָוִד אֲרוֹמִמְךָ אֱלוֹהַי הַמֶּלֶךְ"},
+   {"label": "חצי קדיש", "path": "edot-hamizrach/weekday/weekday-shacharit/pesukei-dzimra", "from": 23, "to": 23, "paragraph_count": 26, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן"},
+   {"label": "קדיש תתקבל", "path": "edot-hamizrach/weekday/weekday-shacharit/uva-lesion", "from": 5, "to": 8, "paragraph_count": 10, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "עוֹשֶׂה שָׁלוֹם בִּמְרוֹמָיו הוּא בְּרַחֲמָיו"},
+   {"label": "קדיש יהא שלמא (יתום)", "path": "edot-hamizrach/weekday/weekday-shacharit/song-of-the-day", "from": 29, "to": 30, "paragraph_count": 30, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "יְהֵא שְׁלָמָא רַבָּא מִן שְׁמַיָּא"},
+   {"label": "קדיש על ישראל (דרבנן)", "path": "edot-hamizrach/weekday/weekday-shacharit/kaveh", "from": 14, "to": 16, "paragraph_count": 19, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "יְהֵא שְׁלָמָא רַבָּא מִן שְׁמַיָּא"},
+   {"label": "קדושה", "path": "edot-hamizrach/weekday/weekday-shacharit/amida", "from": 9, "to": 9, "paragraph_count": 108, "first": "נַקְדִּישָׁךְ וְנַעֲרִיצָךְ כְּנֹֽעַם שִֽׂיחַ סוֹד", "last": "נַקְדִּישָׁךְ וְנַעֲרִיצָךְ כְּנֹֽעַם שִֽׂיחַ סוֹד"},
+   {"label": "הלל", "path": "edot-hamizrach/rosh-chodesh/rosh-hodesh/hallel", "from": 5, "to": 25, "paragraph_count": 44, "first": "בָּרוּךְ אַתָּה יְהֹוָה אֱלֹהֵינוּ מֶלֶךְ", "last": "יְהַלְלוּךָ יְהֹוָה אֱלֹהֵינוּ כָּל מַעֲשֶׂיךָ"},
+   {"label": "עלינו", "path": "edot-hamizrach/weekday/weekday-shacharit/alenu", "from": 2, "to": 3, "paragraph_count": 6, "first": "עָלֵֽינוּ לְשַׁבֵּֽחַ לַֽאֲדוֹן הַכֹּל לָתֵת", "last": "עַל כֵּן נְקַוֶּה לָךְ יְהֹוָה"},
+   {"label": "יגדל", "path": "edot-hamizrach/shabbat/shabbat-arvit/alenu", "from": 5, "to": 19, "paragraph_count": 19, "first": "יִגְדַּל אֱלֹהִים חַי וְיִשְׁתַּבַּח נִמְצָא", "last": "תּוֹרַת מֹשֶׁה אֱמֶת וּנְבוּאָתוֹ בָּרוּךְ"},
+   {"label": "אין כאלהינו", "path": "edot-hamizrach/weekday/weekday-shacharit/kaveh", "from": 3, "to": 3, "paragraph_count": 19, "first": "אֵין כֵּאלֹהֵֽינוּ אֵין כַּאדוֹנֵֽנוּ אֵין", "last": "אֵין כֵּאלֹהֵֽינוּ אֵין כַּאדוֹנֵֽנוּ אֵין"},
+   {"label": "אבינו מלכנו", "path": "edot-hamizrach/weekday/weekday-shacharit/amida", "from": 75, "to": 106, "paragraph_count": 108, "first": "אָבִינוּ מַלְכֵּנוּ חָטָאנוּ לְפָנֶיךָ רַחֵם", "last": "אָבִינוּ מַלְכֵּנוּ אַל תְּשִׁיבֵנוּ רֵיקָם"}
+  ],
+  "sefard": [
+   {"label": "קבלת שבת", "path": "sefard/shabbat/kabbalat-shabbat", "paragraph_count": 43, "first": "לְכוּ נְרַנְּנָה לַיהֹוָה נָרִיעָה לְצוּר", "last": "יְהֵא שְׁלָמָא רַבָּא מִן שְׁמַיָּא"},
+   {"label": "לכה דודי", "path": "sefard/shabbat/kabbalat-shabbat", "from": 17, "to": 38, "paragraph_count": 43, "first": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי", "last": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי"},
+   {"label": "אשרי", "path": "sefard/weekday/weekday-shacharit/ashrei", "from": 1, "to": 1, "paragraph_count": 30, "first": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶֽךָ עוֹד יְהַלְלֽוּךָ", "last": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶֽךָ עוֹד יְהַלְלֽוּךָ"},
+   {"label": "חצי קדיש", "path": "sefard/weekday/weekday-shacharit/yishtabach", "from": 6, "to": 9, "paragraph_count": 9, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא בְּעָלְמָא", "last": "לְעֵֽלָּא וּלְעֵֽלָּא מִכָּל מִן כָּל"},
+   {"label": "קדיש שלם (תתקבל)", "path": "sefard/weekday/weekday-shacharit/ashrei", "from": 18, "to": 23, "paragraph_count": 30, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא בְּעָלְמָא", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
+   {"label": "קדיש יתום", "path": "sefard/weekday/weekday-shacharit/aleinu", "from": 6, "to": 9, "paragraph_count": 9, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא בְּעָלְמָא", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
+   {"label": "קדיש דרבנן", "path": "sefard/weekday/weekday-shacharit/kaveh", "from": 13, "to": 18, "paragraph_count": 18, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא בְּעָלְמָא", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
+   {"label": "קדושה", "path": "sefard/weekday/weekday-shacharit/amidah", "from": 23, "to": 33, "paragraph_count": 125, "first": "נַקְדִישָׁךְ וְנַעֲרִיצָךְ כְּנֹֽעַם שִֽׂיחַ סוֹד", "last": "יִמְלֹךְ יְהֹוָה לְעוֹלָם אֱלֹהַֽיִךְ צִיּוֹן"},
+   {"label": "הלל", "path": "sefard/rosh-chodesh/rosh-chodesh/hallel", "from": 3, "to": 25, "paragraph_count": 35, "first": "בָּרוּךְ אַתָּה יְהֹוָה אֱלֹהֵינוּ מֶלֶךְ", "last": "יְהַלְלוּךָ יְהֹוָה אֱלֹהֵינוּ עַל כָּל"},
+   {"label": "עלינו", "path": "sefard/weekday/weekday-shacharit/aleinu", "from": 2, "to": 4, "paragraph_count": 9, "first": "עָלֵֽינוּ לְשַׁבֵּֽחַ לַאֲדוֹן הַכֹּל לָתֵת", "last": "אַל תִּירָא מִפַּחַד פִּתאֹם וּמִשֹׁאַת"},
+   {"label": "אדון עולם", "path": "sefard/shabbat/musaf", "from": 153, "to": 153, "paragraph_count": 155, "first": "אֲדוֹן עוֹלָם אֲשֶׁר מָלַךְ בְּטֶרֶם", "last": "אֲדוֹן עוֹלָם אֲשֶׁר מָלַךְ בְּטֶרֶם"},
+   {"label": "יגדל", "path": "sefard/weekday/upon-arising/upon-entering-synagogue", "from": 18, "to": 42, "paragraph_count": 42, "first": "יִגְדַּל אֱלֹהִים חַי וְיִשְׁתַּבַּח נִמְצָא", "last": "מֵתִים יְחַיֶּה אֵל בְּרֹב חַסְדּוֹ"},
+   {"label": "אין כאלהינו", "path": "sefard/shabbat/musaf", "from": 66, "to": 66, "paragraph_count": 155, "first": "אֵין כֵּאלֹהֵינוּ אֵין כַּאדוֹנֵנוּ אֵין", "last": "אֵין כֵּאלֹהֵינוּ אֵין כַּאדוֹנֵנוּ אֵין"},
+   {"label": "אנעים זמירות", "path": "sefard/shabbat/musaf", "from": 117, "to": 148, "paragraph_count": 155, "first": "אַנְעִים זְמִירוֹת וְשִׁירִים אֶאֱרוֹג כִּי", "last": "לְךָ יְהֹוָה הַגְּדֻלָּה וְהַגְּבוּרָה וְהַתִּפְאֶרֶת"},
+   {"label": "אבינו מלכנו", "path": "sefard/weekday/weekday-shacharit/avinu-malkeinu", "paragraph_count": 55, "first": "בתענית ציבור ובעשי\"ת אומרים כאן", "last": "אָבִֽינוּ מַלְכֵּֽנוּ חָנֵּֽנוּ וַעֲנֵֽנוּ כִּי"}
+  ],
+  "ashkenaz": [
+   {"label": "לכה דודי", "path": "ashkenaz/shabbat/kabbalat-shabbat/lekha-dodi", "paragraph_count": 19, "first": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי", "last": "לְכָה דוֹדִי לִקְרַאת כַּלָּה פְּנֵי"},
+   {"label": "אשרי", "path": "ashkenaz/weekday/shacharit/pesukei-dezimra/ashrei", "paragraph_count": 2, "first": "צריך לכוין בתהלה לדוד דא\"ר", "last": "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶֽךָ עוֹד יְהַלְלֽוּךָ"},
+   {"label": "חצי קדיש", "path": "ashkenaz/weekday/shacharit/pesukei-dezimra/half-kaddish", "paragraph_count": 6, "first": "ואומר החזן חצי קדיש", "last": "לְעֵֽלָּא מִן־כָּל־ לְעֵֽלָּא לְעֵֽלָּא מִכָּל"},
+   {"label": "קדיש שלם", "path": "ashkenaz/weekday/shacharit/concluding-prayers/kaddish-shalem", "paragraph_count": 8, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
+   {"label": "קדיש יתום", "path": "ashkenaz/weekday/shacharit/concluding-prayers/mourners-kaddish", "paragraph_count": 7, "first": "יִתְגַּדַּל וְיִתְקַדַּשׁ שְׁמֵהּ רַבָּא אָמֵן", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
+   {"label": "קדיש דרבנן", "path": "ashkenaz/weekday/shacharit/preparatory-prayers/korbanot/kaddish-derabbanan", "paragraph_count": 9, "first": "מה שאנו אומרין הקדיש בלשון", "last": "עוֹשֶׂה שָׁלוֹם הַשָּׁלוֹם בִּמְרוֹמָיו הוּא"},
+   {"label": "קדושה", "path": "ashkenaz/weekday/shacharit/amidah/kedushah", "paragraph_count": 14, "first": "קהל וחזן", "last": "לְדוֹר וָדוֹר נַגִּיד גָּדְלֶֽךָ וּלְנֵֽצַח"},
+   {"label": "עלינו", "path": "ashkenaz/weekday/shacharit/concluding-prayers/alenu", "paragraph_count": 2, "first": "עָלֵֽינוּ לְשַׁבֵּֽחַ לַאֲדוֹן הַכֹּל לָתֵת", "last": "עַל כֵּן נְקַוֶּה לְךָ יְהֹוָה"},
+   {"label": "אדון עולם", "path": "ashkenaz/weekday/shacharit/preparatory-prayers/adon-olam", "paragraph_count": 10, "first": "אֲדוֹן עוֹלָם אֲשֶׁר מָלַךְ בְּטֶֽרֶם", "last": "וְעִם רוּחִי גְּוִיָּתִי יְהֹוָה לִי"},
+   {"label": "יגדל", "path": "ashkenaz/weekday/shacharit/preparatory-prayers/yigdal", "paragraph_count": 27, "first": "פיוט המיוסד על שלושה עשר", "last": "מֵתִים יְחַיֶּה אֵל בְּרֹב חַסְדּוֹ"},
+   {"label": "אין כאלהינו", "path": "ashkenaz/weekday/shacharit/concluding-prayers/korbanot-israel/ein-kelohenu", "from": 2, "to": 3, "paragraph_count": 3, "first": "אֵין כֵּאלֹהֵינוּ אֵין כַּאדוֹנֵנוּ אֵין", "last": "אַתָּה הוּא שֶׁהִקְטִרוּ אֲבוֹתֵינוּ לְפָנֶיךָ"},
+   {"label": "אנעים זמירות", "path": "ashkenaz/shabbat/musaf-leshabbat/shir-hakavod", "paragraph_count": 2, "first": "פותחים הארון", "last": "אַנְעִים זְמִירות וְשִׁירִים אֶאֱרוג כִּי"},
+   {"label": "אבינו מלכנו", "path": "ashkenaz/weekday/shacharit/post-amidah/avinu-malkenu", "paragraph_count": 54, "first": "בתענית ציבור ובעשי\"ת אומרים כאן", "last": "בשני וחמישי יאמר והוא רחום"}
+  ]
+ }
+}

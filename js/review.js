@@ -81,7 +81,7 @@ function renderTimeList() {
     row.className = "timerow";
     row.innerHTML =
       `<span class="t">${fmtSrt(S.times[i]).slice(3, 11)}</span>` +
-      `<span class="txt bible">${isFreeText() ? escapeHtml(seg.display) : seg.display}</span>` +
+      `<span class="txt bible">${isUnitsSource() ? escapeHtml(seg.display) : seg.display}</span>` +
       `<button class="small secondary" data-act="play" data-i="${i}">▶</button>` +
       `<button class="small secondary" data-act="minus" data-i="${i}">−0.2</button>` +
       `<button class="small secondary" data-act="plus" data-i="${i}">+0.2</button>`;

@@ -14,6 +14,7 @@ function buildSrt() {
 }
 function srtName() {
   if (isFreeText()) return freeTextSrtName();
+  if (dataSource() === "siddur") return titleSrtName(sourceTitle(), "תפילה");
   const q = readQuery();
   let name = `${q.book}_${q.chapter}`;
   if (q.verse_start) name += `_${q.verse_start}`;

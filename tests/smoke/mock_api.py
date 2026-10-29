@@ -6,7 +6,12 @@
 חופשי) כמו שהוא — הוא ממילא לא יוצא לרשת. כך התשובה שהדפדפן מקבל בבדיקה
 היא בדיוק במבנה של הפרודקשן, כולל החיתוך האמיתי של src/chunker.
 
-שימוש: python3 mock_api.py segments|structure|text_segments '<json של הפרמטרים / גוף ה-POST>'
+ו-api/siddur.py (ספריית התפילות) האמיתי, כשהמשיכה מ-Sefaria מוחלפת בתשובות
+האמיתיות שהוקלטו ב-tests/fixtures/siddur (אותו FakeSefaria של
+tests/test_api_siddur.py): עלה שאין לו הקלטה מקבל את התשובה האמיתית של
+‏"versions ריק" ⇐ 502, כמו באתר כשהמהדורה חסרה.
+
+שימוש: python3 mock_api.py segments|structure|text_segments|siddur '<json של הפרמטרים / גוף ה-POST>'
 מדפיס: {"status": <קוד>, "body": <תשובה>}
 """
 
@@ -15,7 +20,7 @@ import json
 import sys
 from pathlib import Path
 from unittest import mock
-from urllib.parse import unquote
+from urllib.parse import unquote, urlencode
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -100,8 +105,19 @@ def text_segments(q):
     return status, payload
 
 
+def siddur(q):
+    spec = importlib.util.spec_from_file_location(
+        "test_api_siddur", ROOT / "tests" / "test_api_siddur.py")
+    tests = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tests)
+    api = tests.api
+    with mock.patch.object(api, "_get_json", side_effect=tests.FakeSefaria()):
+        payload, status, _ = api.respond(urlencode(q))
+    return status, payload
+
+
 if __name__ == "__main__":
     kind, q = sys.argv[1], json.loads(sys.argv[2])
     status, body = {"segments": segments, "structure": structure,
-                    "text_segments": text_segments}[kind](q)
+                    "text_segments": text_segments, "siddur": siddur}[kind](q)
     sys.stdout.write(json.dumps({"status": status, "body": body}, ensure_ascii=False))

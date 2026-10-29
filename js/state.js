@@ -12,7 +12,7 @@ const S = {
   cloudJob: null,    // עבודת ענן פעילה {id, t0, est, push} — שורדת סגירת האפליקציה
   splits: null,      // חלוקה מותאמת אישית: גודל כל כתובית במילים (null = לפי הטעמים)
   baseSplits: null,  // החלוקה המקורית לפי הטעמים — לכפתור האיפוס
-  source: "tanakh",  // הלשונית הפעילה: tanakh | text (מקור הטקסט שנטען — dataSource())
+  source: "tanakh",  // הלשונית הפעילה: tanakh | siddur | text (מקור הטקסט שנטען — dataSource())
 };
 
 /* ---------- עזרי תצוגה ---------- */
@@ -58,6 +58,8 @@ function save() {
       cloudJob: S.cloudJob, splits: S.splits, baseSplits: S.baseSplits,
       // ‏source חדש — מצב שמור בלי source משוחזר כתנ״ך (main.js)
       source: S.source, freeText: readFreeText(),
+      // הבחירה בסידור (נוסח, מיקום בעץ, קטע וטווח) — source-siddur.js
+      siddur: siddurSaved(),
     }));
   } catch (e) {}
 }

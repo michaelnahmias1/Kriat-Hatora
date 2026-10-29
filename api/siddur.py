@@ -6,6 +6,8 @@ GET /api/siddur                                ⇐ רשימת הנוסחים
 GET /api/siddur?nusach=ashkenaz                ⇐ סוגי היום בנוסח
 GET /api/siddur?nusach=ashkenaz&path=weekday/shacharit   ⇐ הילדים של הצומת
 GET /api/siddur?q=אשרי&nusach=sefard           ⇐ חיפוש (כותרות + מילים ראשונות)
+GET /api/siddur?popular=1&nusach=sefard        ⇐ קיצורים: הקטעים הנפוצים בנוסח
+                                                  (data/siddur/popular.json, 4.2.3)
 GET /api/siddur?path=<עלה>[&from=N&to=M][&max_words=4]   ⇐ טקסט העלה כיחידות
                                                   + מקטעים (כמו /api/text_segments)
 
@@ -73,6 +75,7 @@ _read_max_words = _ts._read_max_words
 check_units_limits = _ts.check_units_limits
 segments_payload = _ts.segments_payload
 
+POPULAR_PATH = _API_DIR.parent / "data" / "siddur" / "popular.json"
 SEFARIA_BASE = "https://www.sefaria.org"
 SEFARIA_TIMEOUT = 20          # שניות; ‏maxDuration של הפונקציה — 30
 MAX_SEFARIA_BYTES = 8 * 1024 * 1024
@@ -375,11 +378,47 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
     }
 
 
+# --- קיצורים: הקטעים הנפוצים (4.2.3) ----------------------------------------------
+
+def load_popular(path=None) -> dict:
+    p = Path(path) if path else POPULAR_PATH
+    return json.loads(p.read_text(encoding="utf-8"))
+
+
+def popular_payload(cat, q: dict, popular=None) -> dict:
+    """הקיצורים של נוסח אחד, כל אחד עם הכותרת והזמינות מהקטלוג הנוכחי.
+
+    רשומה שהנתיב שלה כבר לא עלה בקטלוג (הקטלוג נבנה מחדש) — לא מוצגת; זה
+    נבדק גם ב-tests/test_siddur_popular.py, כך שבפועל זה לא אמור לקרות."""
+    keys = _keys(cat, {"nusach": q.get("nusach")})
+    if not keys:
+        raise ApiError(400, "חסר נוסח (nusach) לרשימת הקטעים הנפוצים")
+    nusach = keys[0]
+    popular = popular if popular is not None else load_popular()
+    items = []
+    for entry in popular.get("nusachim", {}).get(nusach, []):
+        leaf = cat.leaf(entry["path"])
+        if leaf is None:
+            continue
+        item = {"label": entry["label"], "path": entry["path"],
+                "title": leaf.get("heTitle", ""),
+                "breadcrumb": cat.breadcrumb(entry["path"]),
+                "available": _available(cat, entry["path"], leaf)}
+        for k in ("from", "to"):
+            if entry.get(k):
+                item[k] = entry[k]
+        items.append(item)
+    return {"nusach": nusach, "draft": bool(popular.get("draft")),
+            "note": popular.get("note", ""), "items": items}
+
+
 # --- ניתוב ------------------------------------------------------------------------
 
 def build_payload(q: dict, cat=None):
     """פרמטרי השאילתה ⇐ (payload, Cache-Control)."""
     cat = cat or load_catalog()
+    if q.get("popular"):
+        return popular_payload(cat, q), CACHE_CATALOG
     if "q" in q:
         return search_payload(cat, q), CACHE_CATALOG
     keys = _keys(cat, q)

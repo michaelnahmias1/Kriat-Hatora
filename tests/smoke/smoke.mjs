@@ -149,7 +149,9 @@ const GLOBAL_FUNCTIONS = `heNumeral fmtClock fmtSrt setLocked escapeHtml save re
   stopCloudTimer setProcLabel cloudSleep holdWakeLock releaseWakeLock b64urlToBytes
   ensurePushSubscription uploadToCloud announceCloudProcessing pollCloudJob trackCloudJob
   resumeCloudJob runCloudTiming editGroupOf editRender editMove editSplitAt editMerge openSplitEditor
-  closeSplitEditor nudge renderTimeList buildSrt srtName srtFile isStandalone refreshInstallUi`.split(/\s+/);
+  closeSplitEditor nudge renderTimeList buildSrt srtName srtFile isStandalone refreshInstallUi
+  dataSource isFreeText isUnitsSource alignMode unitLabel sourceTitle setSourceTab titleSrtName
+  siddurSaved siddurRestore siddurActivate selectLeaf loadSiddurLeaf copySiddurToText`.split(/\s+/);
 const GLOBAL_BINDINGS = `$ STORE_KEY AI_ENDPOINT AI_TOKEN VAPID_PUBLIC_KEY S HE_LETTER_RE NIQQUD_RE MAQAF
   bookChapters FALLBACK_CHAPTERS player audioReady audioFileObj audioDurationSec lastObjectUrl
   MAX_UPLOAD_MB MAX_DECODE_MB CLOUD_POLL_MS CLOUD_JOB_LIMIT_MS MAX_UNITS_BYTES cloudAbort cloudTimerInt
@@ -161,7 +163,7 @@ async function newSession(browser, base, profile, { serviceWorkers = "block" } =
     ? (({ defaultBrowserType, ...d }) => d)(devices["iPhone 13"])
     : { viewport: { width: 1280, height: 860 } };
   const context = await browser.newContext({ ...ctxOpts, locale: "he-IL", serviceWorkers });
-  const cloud = { submits: [], statusCalls: [], cancels: [], statusQueue: [], external: [], api: [] };
+  const cloud = { submits: [], statusCalls: [], cancels: [], statusQueue: [], external: [], api: [], override: null };
   const origin = new URL(base).origin;
   const cors = { "Access-Control-Allow-Origin": "*" };
   await context.route("**/*", async route => {
@@ -174,7 +176,8 @@ async function newSession(browser, base, profile, { serviceWorkers = "block" } =
         const params = req.method() === "POST"
           ? JSON.parse(req.postData() || "{}") : Object.fromEntries(url.searchParams);
         cloud.api.push({ kind, params });
-        const { status, body } = mockApi(kind, params);
+        // תשובה סינתטית לבדיקה מסוימת (למשל 413/504 של הסידור) — אחרת ה-API האמיתי
+        const { status, body } = (cloud.override && cloud.override(kind, params)) || mockApi(kind, params);
         return route.fulfill({ status, contentType: "application/json; charset=utf-8", body: JSON.stringify(body) });
       }
       return route.continue();
@@ -651,11 +654,15 @@ const FREE_TEXT = [
   "",
   "— 3 —",
 ].join("\n");
-const tabState = page => page.evaluate(() => ({
-  sel: [...document.querySelectorAll(".srcTabs [data-src]")].filter(b => b.getAttribute("aria-selected") === "true").map(b => b.dataset.src),
-  tanakh: !document.getElementById("srcTanakh").hidden,
-  text: !document.getElementById("srcText").hidden,
-}));
+const tabState = page => page.evaluate(() => {
+  const st = {
+    sel: [...document.querySelectorAll(".srcTabs [data-src]")].filter(b => b.getAttribute("aria-selected") === "true").map(b => b.dataset.src),
+    tanakh: !document.getElementById("srcTanakh").hidden,
+    text: !document.getElementById("srcText").hidden,
+  };
+  if (!document.getElementById("srcSiddur").hidden) st.siddur = true;  // רק כשהיא פתוחה
+  return st;
+});
 
 async function flowFreeText(browser, base, profile) {
   const { context, page, cloud, errors } = await newSession(browser, base, profile);
@@ -664,11 +671,10 @@ async function flowFreeText(browser, base, profile) {
   const toks = d => d.split(" ").filter(Boolean);
   const base0 = ts.segments.map(s => toks(s.display).length);
 
-  await step(`[${profile}] לשוניות המקור: תנ״ך ⇄ טקסט חופשי ("תפילה" מוסתר)`, async () => {
+  await step(`[${profile}] לשוניות המקור: תנ״ך ⇄ טקסט חופשי`, async () => {
     await gotoReady(page, base);
     assert.deepEqual(await tabState(page), { sel: ["tanakh"], tanakh: true, text: false });
-    assert.equal(await page.$eval('.srcTabs [data-src="siddur"]', b => b.hidden), true);
-    assert.deepEqual(await page.$$eval(".srcTabs [data-src]:not([hidden])", b => b.map(x => x.textContent)), ["תנ״ך", "טקסט חופשי"]);
+    assert.deepEqual(await page.$$eval(".srcTabs [data-src]:not([hidden])", b => b.map(x => x.textContent)), ["תנ״ך", "תפילה", "טקסט חופשי"]);
     await page.click('.srcTabs [data-src="text"]');
     assert.deepEqual(await tabState(page), { sel: ["text"], tanakh: false, text: true });
     assert.equal((await lsState(page)).source, "text");
@@ -950,6 +956,380 @@ async function flowOldState(browser, base, profile) {
   await context.close();
 }
 
+/* =================== ספריית התפילות (PLAN_TEFILA.md 4.2.4) =================== */
+// ‏/api/siddur — api/siddur.py האמיתי עם תשובות Sefaria אמיתיות שהוקלטו
+// (tests/fixtures/siddur; mock_api.py). צילומי מסך: SMOKE_SHOTS=<תיקייה>
+const SHOTS_DIR = process.env.SMOKE_SHOTS || "";
+async function shot(page, profile, name) {
+  if (!SHOTS_DIR || profile !== "mobile") return;
+  fs.mkdirSync(SHOTS_DIR, { recursive: true });
+  await page.evaluate(() => scrollTo(0, 0));   // הכותרת הדביקה — במקומה בצילום של כל הדף
+  await page.screenshot({ path: path.join(SHOTS_DIR, name + ".png"), fullPage: true });
+}
+const SEFARD_KS = "sefard/shabbat/kabbalat-shabbat";
+const SEFARD_ASHREI = "sefard/weekday/weekday-shacharit/ashrei";      // ‏versions ריק ⇐ 502
+const DAAT_ASHER = "ashkenaz/general/berachot/asher-yatzar-etchem-badin";  // לא מנוקד ⇐ 422
+const UNAVAILABLE = "ashkenaz/weekday/shacharit/torah-reading/reading-from-sefer/prayers-for-welfare-of-the-people";
+const siddurCalls = (cloud, pred = () => true) => cloud.api.filter(c => c.kind === "siddur" && pred(c.params));
+const leafCalls = (cloud, p) => siddurCalls(cloud, q => q.path === p);
+const visible = (page, id) => page.evaluate(id => !document.getElementById(id).hidden, id);
+const checkedParas = page => page.$$eval("#sdParas input:checked", c => c.map(x => +x.dataset.n));
+const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+
+async function flowSiddur(browser, base, profile) {
+  const { context, page, cloud, errors } = await newSession(browser, base, profile);
+  const root = mockApi("siddur", {}).body;
+  const pop = mockApi("siddur", { popular: "1", nusach: "sefard" }).body;
+  const sefard = mockApi("siddur", { path: "sefard" }).body;
+  const LD = mockApi("siddur", { path: SEFARD_KS, from: "17", to: "38" }).body;
+  const LD37 = mockApi("siddur", { path: SEFARD_KS, from: "17", to: "37" }).body;
+  const toks = d => d.split(" ").filter(Boolean);
+  const instrCount = d => d.units.filter(u => u.kind === "instruction").length;
+
+  await step(`[${profile}] תפילה: הלשונית נפתחת, הנוסחים מה-API (רק אחרי פתיחה)`, async () => {
+    await gotoReady(page, base);
+    assert.equal(siddurCalls(cloud).length, 0, "בלי בקשות לסידור לפני פתיחת הלשונית");
+    await page.click('.srcTabs [data-src="siddur"]');
+    assert.deepEqual(await tabState(page), { sel: ["siddur"], tanakh: false, text: false, siddur: true });
+    await page.waitForFunction(() => document.getElementById("sdNusach").options.length === 4);
+    assert.deepEqual(siddurCalls(cloud).map(c => c.params), [{}]);
+    assert.deepEqual(await page.$$eval("#sdNusach option", o => o.map(x => [x.value, x.textContent])),
+      [["", "בחרו נוסח…"], ...root.children.map(c => [c.key, c.title])]);
+    assert.equal(await visible(page, "sdBrowse"), false);
+    assert.equal(await visible(page, "sdLeaf"), false);
+    assert.equal((await lsState(page)).source, "siddur");
+    for (const id of ["sdNusach", "sdSearch", "sdFrom", "sdTo"])
+      assert.ok(await page.evaluate(id => parseFloat(getComputedStyle(document.getElementById(id)).fontSize) >= 16, id), id + " ≥16px");
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    await shot(page, profile, "siddur-1-tab");
+  });
+
+  await step(`[${profile}] תפילה: בחירת נוסח ⇐ קטעים נפוצים + העץ, הנוסח נזכר`, async () => {
+    await page.selectOption("#sdNusach", "sefard");
+    await page.waitForFunction(n => document.querySelectorAll("#sdPopular .sdPop").length === n, pop.items.length);
+    await page.waitForFunction(n => document.querySelectorAll("#sdList .sdItem").length === n, sefard.children.length);
+    assert.deepEqual(await page.$$eval("#sdPopular .sdPop", b => b.map(x => x.textContent)), pop.items.map(i => i.label));
+    assert.ok(pop.items.length >= 10 && pop.draft);
+    assert.equal(await visible(page, "sdPopularNote"), true, "הערת הטיוטה");
+    assert.deepEqual(await page.$$eval("#sdCrumbs button", b => b.map(x => x.textContent)), ["ספרד"]);
+    assert.deepEqual(await page.$$eval("#sdList .sdItem .tt", t => t.map(x => x.firstChild.textContent)), sefard.children.map(c => c.title));
+    const calls = siddurCalls(cloud).map(c => c.params);
+    assert.ok(calls.some(p => p.popular === "1" && p.nusach === "sefard"));
+    assert.ok(calls.some(p => p.path === "sefard" && Object.keys(p).length === 1));
+    assert.deepEqual((await lsState(page)).siddur, { nusach: "sefard", path: "sefard", leaf: null });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    await shot(page, profile, "siddur-2-nusach-shortcuts");
+  });
+
+  await step(`[${profile}] תפילה: ניווט בעץ (תיקייה, מיקום, חזרה)`, async () => {
+    await page.click('#sdList .sdItem[data-path="sefard/shabbat"]');
+    await page.waitForFunction(() => document.querySelectorAll("#sdCrumbs button").length === 2);
+    assert.deepEqual(await page.$$eval("#sdCrumbs button", b => b.map(x => [x.textContent, x.disabled])), [["ספרד", false], ["שבת", true]]);
+    const shabbat = mockApi("siddur", { path: "sefard/shabbat" }).body;
+    assert.equal(await page.$$eval("#sdList .sdItem", i => i.length), shabbat.children.length);
+    const ks = page.locator(`#sdList .sdItem[data-path="${SEFARD_KS}"]`);
+    assert.ok((await ks.getAttribute("class")).includes("leaf"));
+    assert.equal(await ks.locator("small").innerText(), shabbat.children.find(c => c.path === SEFARD_KS).first_words);
+    assert.equal((await lsState(page)).siddur.path, "sefard/shabbat");
+    await shot(page, profile, "siddur-3-tree");
+    await page.click("#sdCrumbs button:not([disabled])");
+    await page.waitForFunction(() => document.querySelectorAll("#sdCrumbs button").length === 1);
+    assert.equal(await page.$$eval("#sdList .sdItem", i => i.length), sefard.children.length);
+  });
+
+  await step(`[${profile}] תפילה: חיפוש עם השהיה — בקשה אחת, תוצאות עם מיקום, ניקוי חוזר לעץ`, async () => {
+    const before = siddurCalls(cloud, p => "q" in p).length;
+    await page.locator("#sdSearch").pressSequentially("אשרי", { delay: 40 });
+    await page.waitForSelector(`#sdList .sdItem[data-path="${SEFARD_ASHREI}"]`);
+    const qs = siddurCalls(cloud, p => "q" in p).slice(before).map(c => c.params);
+    assert.deepEqual(qs, [{ q: "אשרי", nusach: "sefard" }], "השהיה: בקשת חיפוש אחת להקלדה");
+    const res = mockApi("siddur", { q: "אשרי", nusach: "sefard" }).body;
+    assert.equal(await page.$$eval("#sdList .sdItem", i => i.length), res.results.length);
+    const hit = res.results.find(r => r.path === SEFARD_ASHREI);
+    assert.equal(await page.locator(`#sdList .sdItem[data-path="${SEFARD_ASHREI}"] small`).innerText(), hit.breadcrumb.slice(1, -1).join(" › "));
+    assert.equal(await visible(page, "sdCrumbs"), false);
+    const nApi = cloud.api.length;
+    await page.fill("#sdSearch", "");
+    await page.waitForFunction(() => !document.getElementById("sdCrumbs").hidden);
+    assert.equal(await page.$$eval("#sdList .sdItem", i => i.length), sefard.children.length);
+    assert.equal(cloud.api.length, nApi, "חזרה לעץ בלי בקשה נוספת");
+  });
+
+  await step(`[${profile}] תפילה: קטע לא זמין מוצג באפור ולא לחיץ (אשכנז)`, async () => {
+    await page.selectOption("#sdNusach", "ashkenaz");
+    await page.waitForFunction(() => document.querySelectorAll("#sdPopular .sdPop").length > 0 &&
+      document.querySelector("#sdCrumbs button") && document.querySelector("#sdCrumbs button").textContent === "אשכנז");
+    const parent = UNAVAILABLE.split("/").slice(0, -1).join("/");
+    await page.evaluate(p => browseTo(p), parent);
+    await page.waitForSelector(`#sdList .sdItem[data-path="${UNAVAILABLE}"]`);
+    const na = page.locator(`#sdList .sdItem[data-path="${UNAVAILABLE}"]`);
+    assert.ok((await na.getAttribute("class")).includes("na"));
+    assert.equal(await na.isDisabled(), true);
+    assert.equal(await na.locator("small").innerText(), "לא זמין ב-Sefaria במהדורה שנבחרה");
+    assert.ok(parseFloat(await na.evaluate(e => getComputedStyle(e).opacity)) < 0.6);
+    await page.selectOption("#sdNusach", "sefard");
+    await page.waitForFunction(n => document.querySelectorAll("#sdPopular .sdPop").length === n, pop.items.length);
+  });
+
+  await step(`[${profile}] תפילה: קיצור "לכה דודי" ⇐ פסקאות 17–38 מתוך 43 מסומנות`, async () => {
+    await page.click('#sdPopular .sdPop:text-is("לכה דודי")');
+    await page.waitForFunction(() => document.querySelectorAll("#sdParas .sdPara").length === 43);
+    assert.deepEqual(leafCalls(cloud, SEFARD_KS).map(c => c.params), [{ path: SEFARD_KS, from: "17", to: "38" }]);
+    assert.equal(await visible(page, "sdBrowse"), false);
+    assert.equal(await visible(page, "sdLeaf"), true);
+    assert.equal(await txt(page, "#sdLeafTitle"), "לכה דודי");
+    const meta = (await txt(page, "#sdLeafMeta")).replace(/[\u2068\u2069]/g, "");
+    assert.ok(meta.startsWith("מתוך «קבלת שבת» · ספרד › שבת") && meta.includes("מהדורה: Torat Emet 357"), meta);
+    assert.deepEqual(await checkedParas(page), range(17, 38));
+    assert.equal(await val(page, "sdFrom"), "17");
+    assert.equal(await val(page, "sdTo"), "38");
+    // פסקאות ההוראה באפור
+    const instr = LD.paragraphs.filter(p => p.kind === "instruction" || p.kind === "empty").map(p => p.n);
+    assert.ok(instr.length > 0);
+    assert.deepEqual(await page.$$eval("#sdParas .sdPara.instr input", c => c.map(x => +x.dataset.n)), instr);
+    assert.equal(await page.$eval("#sdParas .sdPara:nth-child(17) .pt", e => e.textContent), LD.paragraphs[16].first_words + "…");
+    const st = (await lsState(page)).siddur;
+    assert.deepEqual([st.leaf.path, st.leaf.label, st.leaf.from, st.leaf.to, st.leaf.total, st.leaf.paragraphs.length],
+      [SEFARD_KS, "לכה דודי", 17, 38, 43, 43]);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+  });
+
+  await step(`[${profile}] תפילה: בחירת טווח — סימון, ביטול בקצה ובאמצע, "מפסקה/עד"`, async () => {
+    const tap = n => page.click(`#sdParas input[data-n="${n}"]`);
+    await tap(38); assert.deepEqual(await checkedParas(page), range(17, 37), "ביטול בקצה מקצר");
+    await tap(40); assert.deepEqual(await checkedParas(page), range(17, 40), "סימון בחוץ מרחיב");
+    await tap(30); assert.deepEqual(await checkedParas(page), range(17, 29), "ביטול באמצע — נגמר לפניה");
+    await tap(17); assert.deepEqual(await checkedParas(page), range(18, 29));
+    await page.selectOption("#sdFrom", "20");
+    assert.deepEqual(await checkedParas(page), range(20, 29));
+    await page.selectOption("#sdTo", "5");   // "עד" לפני "מ" ⇐ "מ" עובר איתו
+    assert.deepEqual(await checkedParas(page), [5]);
+    await page.selectOption("#sdFrom", "17");  // "מ" אחרי "עד" ⇐ "עד" עובר איתו
+    assert.deepEqual(await checkedParas(page), [17]);
+    await page.selectOption("#sdTo", "37");
+    assert.deepEqual(await checkedParas(page), range(17, 37));
+    const st = (await lsState(page)).siddur.leaf;
+    assert.deepEqual([st.from, st.to], [17, 37]);
+    // טווח שונה מהקיצור ⇐ בקשה חדשה, והכותרת היא שם הקטע + הטווח
+    await page.click("#sdLoadBtn");
+    await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+    assert.deepEqual(leafCalls(cloud, SEFARD_KS).at(-1).params, { path: SEFARD_KS, from: "17", to: "37" });
+    assert.equal(await page.$$eval("#segPreview .segrow:not(.instr)", r => r.length), LD37.segments.length);
+    assert.ok((await txt(page, "#loadOk")).startsWith("נטען: קבלת שבת (פסקאות 17–37) · פסקאות 17–37 מתוך 43"));
+    assert.equal(await page.evaluate(() => srtName()), "קבלת_שבת_(פסקאות_17–37).srt");
+    // חזרה לטווח של הקיצור
+    await tap(38);
+    assert.deepEqual(await checkedParas(page), range(17, 38));
+  });
+
+  await step(`[${profile}] תפילה: "טען" ⇐ כמו טקסט חופשי — תוויות, הוראות באפור ולא נספרות`, async () => {
+    const n0 = leafCalls(cloud, SEFARD_KS).length;
+    await page.click("#sdLoadBtn");
+    await page.waitForFunction(n => document.querySelectorAll("#segPreview .segrow:not(.instr)").length === n, LD.segments.length);
+    assert.equal(leafCalls(cloud, SEFARD_KS).length, n0 + 1);
+    assert.equal(await txt(page, "#loadOk"), `נטען: לכה דודי · פסקאות 17–38 מתוך 43 · ${LD.segments.length} כתוביות · גרסה: Torat Emet 357`);
+    assert.equal(await page.$$eval("#segPreview .segrow.instr", r => r.length), instrCount(LD));
+    assert.ok(instrCount(LD) > 0);
+    // שורת הוראה: בלי מספר כתובית, הטקסט כמו ביחידה
+    const instrUnit = LD.units.find(u => u.kind === "instruction");
+    assert.ok(await page.$$eval("#segPreview .segrow.instr", (r, t) => r.some(x => x.querySelector(".idx").textContent === "" && x.querySelector(".txt").textContent === t), instrUnit.text));
+    const rows = await page.$$eval("#segPreview .segrow:not(.instr)", r => r.map(x => x.querySelector(".txt").textContent));
+    assert.deepEqual(rows, LD.segments.map(s => s.display));
+    assert.deepEqual(await page.$$eval("#segPreview .segrow:not(.instr) .idx", r => r.map(x => +x.textContent)), range(1, LD.segments.length));
+    assert.equal(await page.$eval("#segPreview .vchip", c => c.textContent), "קבלת שבת · 17");
+    assert.ok((await txt(page, "#segHint")).includes("הוראות"));
+    assert.equal(await isLocked(page, "step2"), false);
+    const js = await page.evaluate(() => ({
+      src: dataSource(), mode: alignMode(), units: isUnitsSource(), free: isFreeText(),
+      audible: isAudible("ברוך"),
+      again: segmentsFromSplits(flatWords(), S.baseSplits).map(s => s.display),
+    }));
+    assert.deepEqual([js.src, js.mode, js.units, js.free, js.audible], ["siddur", "tefila", true, false, true]);
+    assert.deepEqual(js.again, LD.segments.map(s => s.display));
+    const st = await lsState(page);
+    assert.equal(st.source, "siddur");
+    assert.equal(st.data.source, "siddur");
+    assert.equal(st.data.label, "לכה דודי");
+    assert.deepEqual(st.data.units, LD.units);
+    assert.deepEqual(st.baseSplits, LD.segments.map(s => toks(s.display).length));
+    assert.equal(st.splits, null);
+    assert.equal(await page.evaluate(() => srtName()), "לכה_דודי.srt");
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no horizontal scroll");
+    await page.locator("#segPreviewWrap").scrollIntoViewIfNeeded();
+    await shot(page, profile, "siddur-4-loaded");
+  });
+
+  let splits;
+  await step(`[${profile}] תפילה: עורך החלוקה (תוויות הסידור, פיצול)`, async () => {
+    await page.click("#editSplitBtn");
+    await page.waitForFunction(() => document.getElementById("editOverlay").classList.contains("open"));
+    const base0 = LD.segments.map(s => toks(s.display).length);
+    const groups = () => page.$$eval("#editList .egroup", g => g.map(x => x.querySelectorAll(".w").length));
+    assert.deepEqual(await groups(), base0);
+    assert.equal(await page.$eval("#editList .vch", v => v.textContent), "קבלת שבת · 17");
+    assert.equal(await txt(page, "#editReset"), "🔄 חזרה לחלוקה האוטומטית");
+    await page.click('#editList .w[data-i="1"]');
+    await page.click("#editSplit");
+    splits = [1, base0[0] - 1, ...base0.slice(1)];
+    assert.deepEqual(await groups(), splits);
+    await page.click("#editSave");
+    assert.equal(await txt(page, "#loadMsg"), "החלוקה עודכנה ✓");
+    assert.equal(await page.$$eval("#segPreview .segrow:not(.instr)", r => r.length), LD.segments.length + 1);
+    assert.equal(await page.$$eval("#segPreview .segrow.instr", r => r.length), instrCount(LD), "ההוראות נשארות אחרי עריכה");
+    assert.deepEqual((await lsState(page)).splits, splits);
+  });
+
+  await step(`[${profile}] תפילה: סנכרון בענן — source=siddur, units כמו ה-API, title, splits`, async () => {
+    await page.setInputFiles("#audioFile", { name: "lecha.wav", mimeType: "audio/wav", buffer: wavSilence(1) });
+    await page.waitForFunction(() => !document.getElementById("done2").hidden);
+    const segsNow = await page.evaluate(() => S.data.segments);
+    const times = segsNow.map((_, i) => i * 0.75);
+    cloud.statusQueue.push(null, { body: { srt: srtFor(segsNow, times, segsNow.length), report: "" } });
+    await page.click("#startCloud");
+    await until(() => cloud.submits.length === 1, "submit");
+    const { fields, files } = cloud.submits[0];
+    assert.deepEqual(Object.keys(fields).sort(), ["max_words", "source", "splits", "title", "token", "units"]);
+    assert.equal(fields.source, "siddur");
+    assert.equal(fields.units, JSON.stringify(LD.units), "בדיוק היחידות שה-API החזיר, כולל הוראות");
+    assert.ok(JSON.parse(fields.units).some(u => u.kind === "instruction"));
+    assert.equal(fields.title, "לכה דודי");
+    assert.equal(fields.max_words, "4");
+    assert.deepEqual(JSON.parse(fields.splits), splits);
+    assert.equal(files.file.filename, "lecha.wav");
+    await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+    assert.equal(await page.$$eval("#timeList .timerow", r => r.length), segsNow.length);
+    assert.deepEqual((await lsState(page)).times, times);
+    await page.waitForFunction(() => document.getElementById("cloudProgress").hidden);
+  });
+
+  await step(`[${profile}] תפילה: חזרה אחרי סגירה — הבחירה, הקטע והעבודה בענן משוחזרים`, async () => {
+    const now = await page.evaluate(() => Date.now());
+    await page.evaluate(job => {
+      const st = JSON.parse(localStorage.getItem("kriat-hatora-v1"));
+      Object.assign(st, { times: null, endTime: null, report: null, cloudJob: job });
+      localStorage.setItem("kriat-hatora-v1", JSON.stringify(st));
+    }, { id: "fc-siddur-2", t0: now - 20000, ts: now - 40000, est: 200, push: false });
+    const segsNow = await page.evaluate(() => S.data.segments);
+    cloud.statusQueue.length = 0;
+    cloud.statusQueue.push(null, { body: { srt: srtFor(segsNow, segsNow.map((_, i) => i), segsNow.length + 1), report: "" } });
+    const nApi = cloud.api.length;
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("cloudProgress").hidden);
+    assert.deepEqual(await tabState(page), { sel: ["siddur"], tanakh: false, text: false, siddur: true });
+    await page.waitForFunction(() => document.getElementById("sdNusach").value === "sefard");
+    assert.equal(await visible(page, "sdLeaf"), true);
+    assert.equal(await visible(page, "sdBrowse"), false);
+    assert.equal(await txt(page, "#sdLeafTitle"), "לכה דודי");
+    assert.equal(await page.$$eval("#sdParas .sdPara", r => r.length), 43);
+    assert.deepEqual(await checkedParas(page), range(17, 38));
+    assert.equal(await page.$$eval("#segPreview .segrow:not(.instr)", r => r.length), LD.segments.length + 1);
+    assert.equal(await page.$$eval("#segPreview .segrow.instr", r => r.length), instrCount(LD));
+    assert.equal(await page.evaluate(() => [alignMode(), srtName()].join()), "tefila,לכה_דודי.srt");
+    await page.waitForFunction(() => document.getElementById("timingMsg").textContent.includes("הסנכרון הושלם"), null, { timeout: 15000 });
+    assert.ok(cloud.statusCalls.includes("fc-siddur-2"));
+    const after = cloud.api.slice(nApi);
+    assert.ok(!after.some(c => c.kind === "siddur" && c.params.path === SEFARD_KS), "הקטע לא נטען מחדש");
+    assert.equal((await lsState(page)).cloudJob, null);
+  });
+
+  await step(`[${profile}] תפילה: "העתק לטקסט חופשי" — רק הטקסט הנאמר, לעריכה`, async () => {
+    const nApi = cloud.api.length;
+    await page.click("#sdCopyBtn");
+    await page.waitForFunction(() => !document.getElementById("srcText").hidden);
+    assert.deepEqual(await tabState(page), { sel: ["text"], tanakh: false, text: true });
+    const spoken = LD.units.filter(u => u.kind !== "instruction").map(u => u.text.trim()).join("\n");
+    assert.equal(await val(page, "freeText"), spoken);
+    assert.equal(await val(page, "textTitle"), "לכה דודי");
+    assert.ok((await txt(page, "#loadMsg")).startsWith("הקטע הועתק לטקסט חופשי ✓"));
+    assert.equal(cloud.api.length, nApi, "הקטע שנטען — בלי בקשה");
+    const st = await lsState(page);
+    assert.equal(st.source, "text");
+    assert.deepEqual(st.freeText, { text: spoken, title: "לכה דודי" });
+    // הטקסט שהועתק נטען כטקסט חופשי
+    await page.click("#textLoadBtn");
+    await page.waitForFunction(() => /^נטען: לכה דודי · \d+ שורות/.test(document.getElementById("loadOk").textContent));
+    assert.equal(await page.evaluate(() => dataSource()), "text");
+    assert.equal(await page.$$eval("#segPreview .segrow.instr", r => r.length), 0);
+    assert.equal(await page.evaluate(() => srtName()), "לכה_דודי.srt");
+  });
+
+  await step(`[${profile}] תפילה: שגיאות בעברית — 422 (העתקה), 502, 413 (טווח), 504`, async () => {
+    await page.click('.srcTabs [data-src="siddur"]');
+    assert.equal(await visible(page, "sdLeaf"), true);
+    // 422 — עלה בלי ניקוד: הודעה + העתקה לטקסט חופשי של כל הטקסט
+    await page.evaluate(p => selectLeaf({ path: p, title: "אשר יצר" }), DAAT_ASHER);
+    await until(async () => (await txt(page, "#loadMsg")).includes("אינו מנוקד"), "422");
+    const m422 = await txt(page, "#loadMsg");
+    assert.ok(m422.startsWith("טעינת הקטע נכשלה: ") && m422.includes('אפשר ללחוץ על "העתק לטקסט חופשי"'), m422);
+    const e422 = mockApi("siddur", { path: DAAT_ASHER }).body;
+    assert.equal(e422.unvocalized, true);
+    page.once("dialog", d => d.accept());   // בתיבת הטקסט החופשי כבר יש טקסט
+    const nApi = cloud.api.length;
+    await page.click("#sdCopyBtn");
+    await page.waitForFunction(() => !document.getElementById("srcText").hidden);
+    assert.equal(await val(page, "freeText"), e422.units.map(u => u.text.trim()).join("\n"));
+    assert.equal(await val(page, "textTitle"), "אשר יצר");
+    assert.equal(cloud.api.length, nApi, "גוף ה-422 שמור — בלי בקשה");
+    await page.click('.srcTabs [data-src="siddur"]');
+    // 502 — ‏versions ריק (תשובה אמיתית)
+    await page.evaluate(p => selectLeaf({ path: p, title: "אשרי" }), SEFARD_ASHREI);
+    await until(async () => (await txt(page, "#loadMsg")).includes("versions ריק"), "502");
+    assert.ok((await txt(page, "#loadMsg")).endsWith("נסו שוב בעוד רגע."));
+    // 413 — סינתטי, עם paragraphs כמו ב-API: מציעים טווח
+    cloud.override = (kind, p) => kind === "siddur" && p.path === SEFARD_KS && !p.from ? {
+      status: 413, body: { error: "הקטע ארוך מדי לסנכרון אחד (43 פסקאות) — עד 10. בחרו טווח פסקאות (from/to)", paragraphs: LD.paragraphs } } : null;
+    await page.evaluate(p => selectLeaf({ path: p, title: "קבלת שבת" }), SEFARD_KS);
+    await until(async () => (await txt(page, "#loadMsg")).includes("ארוך מדי"), "413");
+    const m413 = await txt(page, "#loadMsg");
+    assert.ok(!m413.includes("from/to") && m413.includes("סמנו טווח פסקאות קצר יותר"), m413);
+    assert.equal(await page.$$eval("#sdParas .sdPara", r => r.length), 43, "הפסקאות מוצגות לבחירת טווח");
+    assert.deepEqual(await checkedParas(page), range(1, 43));
+    // 504 — Sefaria לא ענתה; אחר-כך טווח קצר נטען כרגיל
+    cloud.override = (kind, p) => kind === "siddur" && p.path === SEFARD_KS && p.to === "38" && p.from === "20" ? {
+      status: 504, body: { error: "Sefaria לא ענתה בזמן (20 שניות) — נסו שוב בעוד רגע" } } : null;
+    await page.selectOption("#sdFrom", "20"); await page.selectOption("#sdTo", "38");
+    await page.click("#sdLoadBtn");
+    await until(async () => (await txt(page, "#loadMsg")).includes("לא ענתה בזמן"), "504");
+    cloud.override = null;
+    await page.click("#sdLoadBtn");
+    await page.waitForFunction(() => document.getElementById("loadOk").textContent.startsWith("נטען: קבלת שבת (פסקאות 20–38)"));
+    assert.equal(await txt(page, "#loadMsg"), "");
+    // השגיאות המכוונות מופיעות בקונסול כ-"Failed to load resource" — צפוי
+    const expected = errors.filter(e => /status of (413|422|502|504)/.test(e));
+    assert.equal(expected.length, 4, errors.join("\n"));
+    for (const e of expected) errors.splice(errors.indexOf(e), 1);
+  });
+
+  await step(`[${profile}] תפילה: מצב שמור ישן (טקסט חופשי, בלי siddur) משוחזר כמו קודם`, async () => {
+    const ts = mockApi("text_segments", { text: "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ", mode: "tefila" }).body;
+    await page.evaluate(([data]) => localStorage.setItem("kriat-hatora-v1", JSON.stringify({
+      query: { book: "בראשית", chapter: "1", verse_start: "1", verse_end: "1", chapter_end: "1" },
+      data: Object.assign(data, { source: "text" }), times: null, endTime: null, audioName: null, report: null,
+      cloudJob: null, splits: null, baseSplits: data.segments.map(s => s.display.split(" ").filter(Boolean).length),
+      source: "text", freeText: { text: "אַשְׁרֵי יוֹשְׁבֵי בֵיתֶךָ", title: "אשרי" },
+    })), [ts]);
+    const nApi = cloud.api.length;
+    await page.reload();
+    await page.waitForFunction(() => !document.getElementById("segPreviewWrap").hidden);
+    assert.deepEqual(await tabState(page), { sel: ["text"], tanakh: false, text: true });
+    assert.equal(await txt(page, "#loadOk"), `נטען: אשרי · 1 שורות · ${ts.segments.length} כתוביות`);
+    assert.equal(siddurCalls({ api: cloud.api.slice(nApi) }).length, 0, "הסידור לא נטען בלי פתיחת הלשונית");
+    assert.deepEqual((await lsState(page)).siddur, { nusach: "", path: "", leaf: null });
+    await page.click('.srcTabs [data-src="siddur"]');
+    await page.waitForFunction(() => document.getElementById("sdNusach").options.length === 4);
+    assert.equal(await val(page, "sdNusach"), "");
+    assert.equal(await visible(page, "sdBrowse"), false);
+    assert.equal(await visible(page, "sdLeaf"), false);
+    assert.equal(await page.evaluate(() => dataSource()), "text", "הטקסט שנטען לא נמחק במעבר לשונית");
+  });
+
+  await step(`[${profile}] (תפילה) אין שגיאות קונסול ואין יציאה לרשת`, async () => {
+    assertNoErrors(errors);
+    assert.ok(cloud.external.every(h => /^fonts\.(googleapis|gstatic)\.com$/.test(h)), cloud.external.join(","));
+  });
+  await context.close();
+}
+
 /* =================== הרצה =================== */
 const server = await startServer();
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -963,6 +1343,7 @@ try {
     await flowResume(browser, base, profile);
     await flowUnreadableVideo(browser, base, profile);
     await flowFreeText(browser, base, profile);
+    await flowSiddur(browser, base, profile);
     await flowOldState(browser, base, profile);
   }
   if (!only || only === "sw") {

@@ -1,5 +1,5 @@
 "use strict";
-/* שלב 1 — מקור "טקסט חופשי" ולשוניות המקור (PLAN_TEFILA.md 4.1.6) */
+/* שלב 1 — מקור "טקסט חופשי" ולשוניות המקור (PLAN_TEFILA.md 4.1.6, 4.2.4) */
 
 /* ---------- מקור הטקסט ----------
    שני מושגים נפרדים במכוון:
@@ -12,23 +12,35 @@ function dataSource() {
   return (S.data && S.data.source) || "tanakh";
 }
 function isFreeText() { return dataSource() === "text"; }
-/* מצב היישור של הטקסט שנטען — חייב להתאים ל-mode בשרת (text ⇒ tefila),
-   אחרת ספירת המילים הנשמעות בדפדפן ובענן תתפצל (ראה isAudible) */
+/* מקור שנשלח לענן כיחידות טקסט (טקסט חופשי וסידור) — לא ספר/פרק/פסוק */
+function isUnitsSource() { return dataSource() !== "tanakh"; }
+/* מצב היישור של הטקסט שנטען — חייב להתאים ל-mode בשרת (text/siddur ⇒
+   tefila), אחרת ספירת המילים הנשמעות בדפדפן ובענן תתפצל (ראה isAudible) */
 function alignMode() { return dataSource() === "tanakh" ? "tanakh" : "tefila"; }
 
-/* התווית של יחידה לפי verse (מ-1) — "שורה N" מה-API, לא "פסוק" */
+/* התווית של יחידה לפי verse (מ-1) — "שורה N" / "אשרי · 3" מה-API, לא "פסוק" */
 function unitLabel(verse) {
   const u = S.data && S.data.units && S.data.units[verse - 1];
   return (u && u.label) || `שורה ${verse}`;
 }
 
+/* הכותרת של הטקסט שנטען — לשם הקובץ ולהתראת הסיום (title ל-worker) */
+function sourceTitle() {
+  if (dataSource() === "siddur") return (S.data && S.data.label) || "";
+  return readFreeText().title;
+}
+
 /* ---------- לשוניות ---------- */
+const SOURCE_TABS = ["tanakh", "siddur", "text"];
 function setSourceTab(src) {
-  S.source = src === "text" ? "text" : "tanakh";
+  S.source = SOURCE_TABS.includes(src) ? src : "tanakh";
   document.querySelectorAll(".srcTabs [data-src]").forEach(b =>
     b.setAttribute("aria-selected", String(b.dataset.src === S.source)));
   $("srcTanakh").hidden = S.source !== "tanakh";
+  $("srcSiddur").hidden = S.source !== "siddur";
   $("srcText").hidden = S.source !== "text";
+  // הסידור נטען מה-API רק כשהלשונית שלו פתוחה (source-siddur.js)
+  if (S.source === "siddur") siddurActivate();
 }
 document.querySelectorAll(".srcTabs [data-src]").forEach(b =>
   b.addEventListener("click", () => {
@@ -91,14 +103,15 @@ $("freeText").addEventListener("input", saveSoon);
 $("textTitle").addEventListener("input", saveSoon);
 
 /* ---------- שם קובץ הכתוביות ---------- */
-/* מהכותרת (בלי ניקוד וטעמים, בלי תווים שאסורים בשם קובץ); בלי כותרת —
-   "טקסט_חופשי" */
-function freeTextSrtName() {
-  let name = readFreeText().title
+/* מכותרת (בלי ניקוד וטעמים, בלי תווים שאסורים בשם קובץ); בלי כותרת —
+   ברירת המחדל */
+function titleSrtName(title, fallback) {
+  let name = (title || "")
     .replace(/[֑-ׇ]/g, "")
     .replace(/[\\/:*?"<>|\u0000-\u001F]/g, "")
     .replace(/\s+/g, "_")
     .replace(/^[._]+|[._]+$/g, "")
     .slice(0, 60);
-  return (name || "טקסט_חופשי") + ".srt";
+  return (name || fallback) + ".srt";
 }
+function freeTextSrtName() { return titleSrtName(readFreeText().title, "טקסט_חופשי"); }
