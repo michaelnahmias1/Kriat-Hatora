@@ -32,8 +32,10 @@ const SD = {
   searchReq: 0,     // אותו דבר לבקשות החיפוש
   leafReq: 0,       // ולבקשות הקטע
   // "מה אומרים היום?" (נשמר): ‏day — סוג יום או "auto" (לפי הקטע); ‏season —
-  // ""|summer|winter|between; ‏on/off — תנאים שהודלקו/כובו ביד מעל סוג היום
+  // ""|summer|winter|between; ‏on/off — תנאים שהודלקו/כובו ביד מעל סוג היום;
+  // ‏date — היום (תאריך מקומי) שבו נבחרו; ביום אחר סוג היום והמתגים מתאפסים (8.29ב)
   days: { day: "auto", season: "", on: [], off: [] },
+  daysReset: false, // בשחזור: הבחירה אופסה כי עבר יום
   payloadKey: "",   // הבחירה שאיתה נטענה SD.payload
   autoDay: null,    // {path, label} — מה "לפי הקטע" אומר בקטע הנוכחי
   daysShown: null,  // {path, data} — המתגים שמוצגים עכשיו
@@ -72,7 +74,20 @@ function siddurRestore(saved) {
       season: typeof d.season === "string" ? d.season : "",
       on: list(d.on), off: list(d.off),
     };
+    // 8.29ב: סוג היום והמתגים — רק לאותו יום; ביום חדש חוזרים ל"לפי הקטע".
+    // העונה נשארת (8.29א — בחירה ידנית, נזכרת). הטקסט שכבר נטען (ועבודה בענן)
+    // לא משתנה — האיפוס חל רק על החלונית ועל הטעינה הבאה
+    const chosen = SD.days.day !== "auto" || SD.days.on.length || SD.days.off.length;
+    if (chosen && d.date !== sdToday()) {
+      SD.days = { day: "auto", season: SD.days.season, on: [], off: [] };
+      SD.daysReset = true;
+    } else if (typeof d.date === "string") SD.days.date = d.date;
   }
+}
+/* התאריך המקומי בטלפון (YYYY-MM-DD) — לאיפוס בחירת היום ביום חדש */
+function sdToday() {
+  const t = new Date(), pad = n => String(n).padStart(2, "0");
+  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
 }
 
 /* ---------- גישה ל-API ---------- */
@@ -123,7 +138,16 @@ async function siddurActivate() {
     renderLeaf();
     // בטעינת הדף הלשונית נפתחת לפני ש-S.data משוחזר (main.js) — המתגים של
     // "מה אומרים היום" מהטקסט שנטען מוצגים מיד אחרי השחזור
-    setTimeout(() => renderDays(daysData()), 0);
+    setTimeout(() => {
+      renderDays(daysData());
+      if (!SD.daysReset) return;
+      SD.daysReset = false;
+      // הבחירה אופסה (יום חדש) — המתגים לפי ברירת המחדל מהשרת; הטקסט שנטען נשאר
+      if (!daysData()) fetchLeafRange();
+      if (S.data && dataSource() === "siddur" && S.data.path === SD.leaf.path && S.data.daysKey !== daysKey())
+        siddurMsg('<p class="hint">בחירת היום אופסה ל"לפי הקטע" (יום חדש). הטקסט שכבר נטען נשאר לפי ' +
+          'הבחירה הקודמת — כדי לטעון לפי היום, לחצו "טען את הקטע".</p>');
+    }, 0);
   }
   if (SD.started) return;
   SD.started = true;
@@ -750,6 +774,7 @@ async function applyDays(prev) {
     renderDays(daysData());
     return;
   }
+  SD.days.date = sdToday();   // הבחירה תקפה להיום בלבד (8.29ב)
   save();
   siddurMsg("");
   const data = await fetchLeafRange();
