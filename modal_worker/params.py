@@ -184,7 +184,8 @@ def parse_performance(raw):
 
     כאן נבדקת רק הצורה (מספרים שלמים אי-שליליים, לא ריק, תקרת אורך). הטווח
     מול מספר הכתוביות נבדק ב-_parse_units_params כשה-splits ידוע מראש,
-    ואחרת — רק אחרי החיתוך, בצינור עצמו (run_hybrid_units, משימה 4.3).
+    ובכל מקרה שוב אחרי החיתוך, בצינור עצמו (‏hybrid.expand_performance —
+    שם הספירה מדויקת: כתובית שכולה כתיב מתמזגת לשכנה).
     """
     if raw is None or not str(raw).strip():
         return None
@@ -275,6 +276,9 @@ def _parse_units_params(form: dict, source: str) -> dict:
         if max(performance) >= len(splits):
             raise ValueError("סדר הביצוע מפנה לכתובית שאינה קיימת "
                              f"(יש {len(splits)} כתוביות)")
+        # החזרות מכפילות מילים — אותה תקרה כמו לחלוקה עצמה
+        if sum(splits[i] for i in performance) > MAX_SPLIT_WORDS:
+            raise ValueError("סדר הביצוע ארוך מדי (יותר מדי מילים עם החזרות)")
     return {
         "source": source,
         "units": parse_units(form.get("units")),

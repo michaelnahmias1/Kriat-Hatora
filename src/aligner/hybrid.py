@@ -13,6 +13,7 @@
 מנוקד ומוטעם; כל ההחלפות (קרי, רומניזציה) חיות רק בעותקי היישור.
 """
 
+from collections import Counter
 from pathlib import Path
 
 from . import anchors as anchors_mod
@@ -29,6 +30,19 @@ from .pipeline import (WAV16K_NAME, MmsAligner, build_ref, build_srt,
 _SAMPLE_RATE = 16000
 _FRAME_STRIDE = 320    # MMS: פריים כל 20ms ב-16kHz
 _MAX_WORD_SEC = 12.0   # מילה "מיושרת" ארוכה מזה = החלון חשוד ככושל
+
+# סדר ביצוע (PLAN_TEFILA.md 3.2, ‏4.3.2) — תקרות כמו ב-modal_worker/params.py:
+# אורך הרשימה כמו MAX_PERFORMANCE; מילות היישור ברצף הפרוס — ה-worker בודק
+# מראש עד 20000 מילים פרוזודיות (MAX_SPLIT_WORDS), ושרשראות מקף נפתחות כאן
+# לכמה מילות יישור, ולכן התקרה כאן מעט גבוהה יותר.
+MAX_PERFORMANCE = 20000
+MAX_PERFORMED_WORDS = 30000
+
+# ‏4.3.4 (הצעה בלבד, תפילה בלבד): יחידה (הופעה של שורה/בית) שיש בה לפחות כך
+# מילים ואף אחת מהן לא זוהתה בתמלול בדמיון ≥ ‏_SKIP_MATCH_SIM ⇐ "כנראה דולגה"
+# בדוח. בלי שום שינוי אוטומטי — המשתמש מחליט (ומסיר אותה מסדר הביצוע).
+_SKIP_MIN_WORDS = 6
+_SKIP_MATCH_SIM = 0.7
 
 
 # --- עזרי-מקטעים טהורים (נבדקים offline) --------------------------------------
@@ -49,11 +63,18 @@ def _unit_of(seg: dict):
 
 
 def _unit_start_flags(segments: list) -> list:
-    """האם המקטע פותח יחידה חדשה — פסוק/שורה/בית (שם הקורא כמעט תמיד נושם)."""
-    flags, prev = [], None
+    """האם המקטע פותח יחידה חדשה — פסוק/שורה/בית (שם הקורא כמעט תמיד נושם).
+
+    ברצף פרוס לפי סדר ביצוע (‏seg_index, ראה expand_performance) גם כל קפיצה
+    — חזרה אחורה או דילוג — פותחת "הופעה" חדשה, גם בתוך אותה יחידה: פזמון
+    של שורה אחת שחוזר פעמיים ברצף הוא שתי הופעות, ושתיהן תחילת שורה.
+    """
+    flags, prev, prev_idx = [], None, None
     for seg in segments:
-        flags.append(_unit_of(seg) != prev)
-        prev = _unit_of(seg)
+        idx = seg.get("seg_index")
+        jump = idx is not None and prev_idx is not None and idx != prev_idx + 1
+        flags.append(_unit_of(seg) != prev or jump)
+        prev, prev_idx = _unit_of(seg), idx
     return flags
 
 
@@ -92,6 +113,90 @@ def _segment_ctc_scores(word_ranges: list, spans: list) -> list:
 def _segment_interpolated(word_ranges: list, flags: list) -> list:
     """האם זמן של מילה כלשהי במקטע נולד מאינטרפולציה."""
     return [any(flags[lo:hi + 1]) for lo, hi in word_ranges]
+
+
+def _occurrence_label(label: str, occurrence: int) -> str:
+    """"שורה 3" + הופעה 2 ⇐ "שורה 3 · חזרה 2" (תווית הדוח)."""
+    tag = f"חזרה {occurrence}"
+    return f"{label} · {tag}" if label else tag
+
+
+def expand_performance(segments: list, performance) -> list:
+    """המקטעים לפי סדר הביצוע (PLAN_TEFILA.md 3.2): רשימת אינדקסי כתוביות.
+
+    חזרה = אינדקס שמופיע שוב; דילוג = אינדקס שלא מופיע. כל הופעה היא עותק
+    של המקטע עם seg_index (האינדקס המקורי) ו-occurrence (מ-1); מהופעה שנייה
+    התווית מקבלת "· חזרה N". רשימות המילים משותפות (קריאה בלבד).
+    None ⇐ המקטעים כמו שהם. קלט לא תקין ⇐ ValueError בעברית (ה-worker
+    מחזיר אותו כשגיאת עיבוד ברורה).
+    """
+    if performance is None:
+        return segments
+    bad = "סדר הביצוע (performance) אינו תקין"
+    if not isinstance(performance, (list, tuple)) or not performance:
+        raise ValueError(bad + " — צריך רשימה לא ריקה של מספרי כתוביות")
+    if len(performance) > MAX_PERFORMANCE:
+        raise ValueError(f"סדר הביצוע ארוך מדי (עד {MAX_PERFORMANCE} הופעות)")
+    n = len(segments)
+    seen, out = Counter(), []
+    for i in performance:
+        if isinstance(i, bool) or not isinstance(i, int):
+            raise ValueError(bad + f" — {i!r} אינו מספר כתובית")
+        if not 0 <= i < n:
+            raise ValueError(f"סדר הביצוע מפנה לכתובית {i} (הספירה מ-0), "
+                             f"אבל בטקסט יש {n} כתוביות (0–{n - 1}) — טענו "
+                             "את הקטע מחדש ובנו את סדר הביצוע שוב")
+        seen[i] += 1
+        seg = dict(segments[i], seg_index=i, occurrence=seen[i])
+        if seen[i] > 1:
+            seg["label"] = _occurrence_label(seg.get("label", ""), seen[i])
+        out.append(seg)
+    n_words = sum(len(s["align_vocalized"]) for s in out)
+    if n_words > MAX_PERFORMED_WORDS:
+        raise ValueError(f"סדר הביצוע ארוך מדי ({n_words} מילים עם החזרות; "
+                         f"עד {MAX_PERFORMED_WORDS})")
+    return out
+
+
+def _probably_skipped(segments: list, flags: list, matches: list,
+                      min_words: int = _SKIP_MIN_WORDS,
+                      min_sim: float = _SKIP_MATCH_SIM) -> list:
+    """‏4.3.4: הופעות יחידה (רצף מקטעים מדגל תחילת-יחידה עד הבא) עם
+    ≥min_words מילים ואפס מילים שזוהו בתמלול. ⇐ [{"seg", "label", "words",
+    "display"}] — seg = אינדקס המקטע הראשון ברצף (הפרוס)."""
+    hit = {m["ref"] for m in matches if m["sim"] >= min_sim}
+    groups, wi = [], 0
+    for i, (seg, flag) in enumerate(zip(segments, flags)):
+        n = len(seg["align_vocalized"])
+        if flag or not groups:
+            groups.append({"seg": i, "lo": wi, "hi": wi + n, "segs": [seg]})
+        else:
+            groups[-1]["hi"] = wi + n
+            groups[-1]["segs"].append(seg)
+        wi += n
+    out = []
+    for g in groups:
+        n = g["hi"] - g["lo"]
+        if n >= min_words and not any(r in hit for r in range(g["lo"], g["hi"])):
+            first = g["segs"][0]
+            out.append({"seg": g["seg"], "label": first.get("label", ""),
+                        "words": n,
+                        "display": " ".join(s["display"] for s in g["segs"])})
+    return out
+
+
+def _skipped_lines(skipped: list) -> list:
+    if not skipped:
+        return []
+    lines = [f"כנראה דולג — יחידות של {_SKIP_MIN_WORDS}+ מילים שאף מילה מהן "
+             "לא זוהתה בתמלול (הצעה בלבד; אם באמת דולגו — הסירו אותן מסדר "
+             "הביצוע ונסו שוב):"]
+    for k in skipped:
+        words = k["display"].split()
+        text = " ".join(words[:8]) + (" …" if len(words) > 8 else "")
+        lines.append(f"  כתובית {k['seg'] + 1} · {k['label'] or '—'} | "
+                     f"{k['words']} מילים | {text}")
+    return lines
 
 
 def _debug_put(debug, **values):
@@ -133,7 +238,10 @@ def run_hybrid_units(units, audio_path, out_srt_path, *, max_words=4,
 
     ‏units — רשימת {text, label, kind, chunk}; יחידות instruction לא
     נכנסות לכתוביות וליישור. מחזיר את נתיב ה-SRT ומשאיר לצדו דוח איכות.
-    ‏performance (סדר ביצוע — חזרות/דילוגים) — משימה 4.3, עוד לא נתמך.
+    ‏performance — סדר הביצוע (PLAN_TEFILA.md 3.2, ‏4.3.2): אינדקסי הכתוביות
+    (אחרי החיתוך/‏splits, מ-0) לפי הסדר שבו נאמרו — חזרה = אינדקס שחוזר,
+    דילוג = אינדקס חסר. המקטעים נפרסים לפיו לפני השטחת מילות היישור, וה-SRT
+    מכיל כתובית לכל הופעה. רק ב-mode="tefila"; None = ביצוע לינארי מלא.
     ‏profile — "reading" (ברירת המחדל, ההתנהגות הקיימת) או "singing"
     (חזנות/שירה; ערכיו ב-profiles.py). שירה נתמכת רק ב-mode="tefila" —
     לתנ״ך אין פרופיל שירה.
@@ -141,9 +249,10 @@ def run_hybrid_units(units, audio_path, out_srt_path, *, max_words=4,
     הצינור ממלא בו את תוצאות הביניים — תמלול, עוגנים, חלונות וסטטוס כל
     ניסיון יישור, זמני מילים, VAD וביטחון (ראה tools/run_local.py).
     """
-    if performance is not None:
+    if performance is not None and mode != "tefila":
         raise NotImplementedError(
-            "תסריט ביצוע (performance) עוד לא נתמך — משימה 4.3")
+            "סדר ביצוע (performance) נתמך רק בתפילה ובטקסט חופשי "
+            "(mode=\"tefila\")")
     prof = profiles_mod.get_profile(profile)
     if prof.name != "reading" and mode != "tefila":
         raise NotImplementedError(
@@ -151,7 +260,8 @@ def run_hybrid_units(units, audio_path, out_srt_path, *, max_words=4,
     print("2/8 חותך את הטקסט למקטעים…")
     return _run_units(units, audio_path, out_srt_path, max_words=max_words,
                       splits=splits, mode=mode, work_dir=work_dir,
-                      asr_model=asr_model, debug=debug, prof=prof)
+                      asr_model=asr_model, debug=debug, prof=prof,
+                      performance=performance)
 
 
 def _fmt_clock(sec: float) -> str:
@@ -178,7 +288,7 @@ def _unit_start_words(segments: list) -> list:
 
 
 def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
-               work_dir, asr_model, debug=None, prof=None):
+               work_dir, asr_model, debug=None, prof=None, performance=None):
     """גוף הצינור מהחיתוך והלאה — משותף לתנ״ך וליחידות.
 
     כותרת שלב 2 מודפסת אצל הקורא, כדי שיומן התנ״ך יישאר כפי שהיה.
@@ -190,6 +300,13 @@ def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
     segments = units_to_segments(units, max_words, splits, mode)
     if splits:
         print("    חלוקת הכתוביות נלקחה מהעריכה הידנית בממשק")
+    if performance is not None:
+        n_base = len(segments)
+        segments = expand_performance(segments, performance)
+        n_rep = sum(1 for s in segments if s["occurrence"] > 1)
+        n_skip = n_base - len({s["seg_index"] for s in segments})
+        print(f"    סדר ביצוע: {len(segments)} הופעות של {n_base} כתוביות "
+              f"(חזרות: {n_rep}, דילוגים: {n_skip})")
     flat_vocalized = [w for s in segments for w in s["align_vocalized"]]
     flat_plain = [w for s in segments for w in s["align_plain"]]
     n_units = sum(1 for u in units if u.get("kind") != "instruction")
@@ -369,6 +486,13 @@ def _run_units(units, audio_path, out_srt_path, *, max_words, splits, mode,
         srt = build_srt(segments, word_spans, starts_override=starts)
     Path(out_srt_path).write_text(srt, encoding="utf-8-sig")
     report = conf_mod.format_report(segments, confs, infos, starts)
+    if mode == "tefila":  # ‏4.3.4 — הצעה בלבד, בלי שינוי אוטומטי
+        skipped = _probably_skipped(segments, unit_flags, found["matches"])
+        _debug_put(debug, probably_skipped=skipped)
+        for line in _skipped_lines(skipped):
+            print("    " + line.strip())
+        if skipped:
+            report += "\n\n" + "\n".join(_skipped_lines(skipped))
     report_path = str(Path(out_srt_path).with_suffix(".report.txt"))
     header = (f"מודל תמלול: {asr_name} | כיסוי: {coverage:.0%} | "
               f"עוגנים: {len(anchor_list)} | חלונות: {len(window_list)}")

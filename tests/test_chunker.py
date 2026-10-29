@@ -21,6 +21,7 @@ from chunker import (  # noqa: E402
     is_ketiv,
     is_tefila_divine_name,
     letters_only,
+    qere_ketiv_flags,
     regroup_words,
     rank_table_for,
     segments_for_pipeline,
@@ -476,6 +477,57 @@ class TestTefilaDivineNameForms(unittest.TestCase):
         self.assertEqual(to_alignment_words(nfc("יֱהֹוִה"), False), ["אדני"])
         self.assertEqual(to_alignment_words("לַה'", False), ["לה"])
         self.assertEqual(to_alignment_words("לה'", False), [])  # כתיב
+
+
+class TestQereKetivTefila(unittest.TestCase):
+    """8.22: במצב תפילה — כתיב לא מנוקד שמיד אחריו הקרי המנוקד בסוגריים
+    (‏`הביט [הַבִּ֖יטָה]`) נשאר בתצוגה ולא נכנס ליישור; הקרי נכנס."""
+
+    # דוגמאות אמיתיות מהסקר (‏cache הסידור, 29.10.2026)
+    PSALM = nfc("כִּֽי־הִשְׁקִ֖יף מִמְּר֣וֹם קׇדְשׁ֑וֹ הביט [הַבִּ֖יטָה]")
+
+    def test_flags(self):
+        words = ["הביט", "[הַבִּ֖יטָה]", "וְעוֹד", "[אָמֵן]", "עוד", "[אמן]",
+                 "עַל" + MAQAF + "במותי", "[בָּמֳתֵי]"]
+        self.assertEqual(qere_ketiv_flags(words, "tefila"),
+                         [True, False, False, False, False, False, True, False])
+        self.assertEqual(qere_ketiv_flags(words), [False] * len(words))  # תנ״ך
+
+    def test_not_across_units(self):
+        self.assertEqual(qere_ketiv_flags(["הביט", "[הַבִּיטָה]"], "tefila",
+                                          unit_of=[0, 1]), [False, False])
+
+    def test_taamim_unit(self):
+        segs = segments_for_pipeline(self.PSALM, 4, mode="tefila")
+        plain = [w for s in segs for w in s["align_plain"]]
+        self.assertEqual(plain, ["כי", "השקיף", "ממרום", "קדשו", "הביטה"])
+        self.assertIn("הביט [", " ".join(s["display"] for s in segs))
+        voc = [w for s in segs for w in s["align_vocalized"]]
+        self.assertEqual(voc[-1], nfc("הַבִּיטָה"))  # בלי סוגריים וטעמים
+
+    def test_punct_unit_and_maqaf_chain(self):
+        from chunker import prose_segments
+        text = nfc("מגדל [מַגְדִּיל] יְשׁוּעוֹת מַלְכּוֹ, עַל־במותי [בָּמֳתֵי]")
+        segs = prose_segments(text, 8, mode="tefila")
+        plain = [w for s in segs for w in s["align_plain"]]
+        self.assertEqual(plain, ["מגדיל", "ישועות", "מלכו", "על", "במתי"])
+
+    def test_unvocalized_without_bracket_still_read(self):
+        segs = segments_for_pipeline(nfc("הביט עוד [אמן] וְעוֹד [אָמֵן]"), 8,
+                                     mode="tefila")
+        self.assertEqual([w for s in segs for w in s["align_plain"]],
+                         ["הביט", "עוד", "אמן", "ועוד", "אמן"])
+
+    def test_ketiv_only_cue_merged_with_splits(self):
+        words = tokenize(self.PSALM)
+        segs = regroup_words(words, [3, 1, 1], [0] * 5, mode="tefila")
+        self.assertEqual([s["display"] for s in segs],
+                         [" ".join(words[:4]), words[4]])
+
+    def test_tanakh_mode_unchanged(self):
+        self.assertEqual(to_alignment_words("הביט", False, ketiv_tail=True), [])
+        self.assertEqual(to_alignment_words("הַבִּיטָה", False, ketiv_tail=True),
+                         ["הביטה"])  # ketiv_tail חל רק בתפילה
 
 
 if __name__ == "__main__":

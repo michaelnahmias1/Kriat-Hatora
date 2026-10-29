@@ -302,17 +302,72 @@ def strip_taamim(word: str) -> str:
     return word.replace(taamim.SOF_PASUQ, "").strip()
 
 
+# --- כתיב/קרי בסוגריים במצב תפילה (PLAN_TEFILA.md 8.22) ----------------------
+#
+# במצב tefila מילה לא מנוקדת נקראת — חוץ מתבנית אחת: פסוק מצוטט שבו הכתיב
+# מודפס בלי ניקוד ומיד אחריו הקרי המנוקד בסוגריים מרובעים: ‏`הביט [הַבִּ֖יטָה]`,
+# ‏`וגדלותיך [וּגְדֻלָּתְךָ֥]`, ‏`עַל־במותי [בָּמֳתֵי]`. הכתיב נשאר בתצוגה ולא נכנס
+# ליישור; הקרי (בלי הסוגריים) נכנס כרגיל. כשהכתיב הוא החלק האחרון בשרשרת
+# מקף — רק החלק הזה יוצא.
+# הכלל לא תלוי במצב החיתוך (taamim/punct): בסקר ה-cache של הסידור (685 עלים,
+# ‏29.10.2026) נמצאו 72 מופעים — 66 ביחידות taamim (Bakhshi 48, תיקון הכללי 8,
+# סדר ט׳ באב 7, Shaliehsaboo 3) ו-6 ביחידות punct (Vilna 1860: ‏`מגדל [מַגְדִּיל]`)
+# — כולם כתיב/קרי אמיתי, ואפס מופעים של מילה לא מנוקדת לפני סוגריים מנוקדים
+# שאינה כתיב. בלי תלות ב-chunk גם הדפדפן (js/segments.js, ‏isAudible) מממש
+# את אותו הכלל בלי לדעת את מצב החיתוך. ‏`[אָמֵן]` אחרי מילה מנוקדת — לא נוגע.
+# הכלל חל רק בתוך יחידה אחת (לא בין סוף יחידה לתחילת הבאה).
+_QERE_OPEN, _QERE_CLOSE = "[", "]"
+
+
+def _is_qere_bracket(token: str) -> bool:
+    """טוקן שנפתח בסוגר מרובע ותוכנו (עד הסוגר הסוגר) מנוקד."""
+    if not token.startswith(_QERE_OPEN):
+        return False
+    content = token[1:].split(_QERE_CLOSE, 1)[0]
+    return bool(_NIQQUD_RE.search(content))
+
+
+def _lettered_pieces(prosodic_word: str) -> list:
+    return [p for p in prosodic_word.split(taamim.MAQAF) if letters_only(p)]
+
+
+def qere_ketiv_flags(words: list, mode: str = "tanakh",
+                     unit_of: list = None) -> list:
+    """לכל מילה פרוזודית: האם החלק האחרון שלה הוא כתיב שהקרי שלו בא מיד
+    אחריו בסוגריים (8.22). ב-tanakh תמיד False — שם כל מילה לא מנוקדת
+    ממילא כתיב. ‏unit_of — יחידת כל מילה (כשהרשימה חוצה יחידות)."""
+    flags = [False] * len(words)
+    if mode != "tefila":
+        return flags
+    for i in range(len(words) - 1):
+        if unit_of is not None and unit_of[i] != unit_of[i + 1]:
+            continue
+        if not _is_qere_bracket(words[i + 1]):
+            continue
+        pieces = _lettered_pieces(words[i])
+        if pieces and not _NIQQUD_RE.search(pieces[-1]):
+            flags[i] = True
+    return flags
+
+
 def to_alignment_words(prosodic_word: str, keep_niqqud: bool,
-                       mode: str = "tanakh") -> list:
+                       mode: str = "tanakh", ketiv_tail: bool = False) -> list:
     """מילה פרוזודית → רשימת מילים כפי שהקורא הוגה אותן.
 
     שרשרת מקף נפתחת למילים נפרדות (הקורא הוגה כל אחת), וקרי-קבוע מוחלף.
     keep_niqqud=True למסלול MMS+uroman (מנוקד), False למודל עברי (אותיות).
     ‏mode="tefila" — בלי זריקת כתיב, ומפת שם ה׳ של הסידור (ראה למעלה).
+    ‏ketiv_tail — (tefila) החלק האחרון הוא כתיב שהקרי שלו בסוגריים אחריו
+    (‏qere_ketiv_flags) ולכן לא נכנס ליישור.
     """
     _check_mode(mode)
     out = []
-    for piece in prosodic_word.split(taamim.MAQAF):
+    pieces = prosodic_word.split(taamim.MAQAF)
+    if ketiv_tail and mode == "tefila":
+        last = max((i for i, p in enumerate(pieces) if letters_only(p)),
+                   default=0)
+        pieces = pieces[:last]
+    for piece in pieces:
         plain = letters_only(piece)
         if not plain:
             continue
@@ -348,27 +403,41 @@ def _tefila_alignment_word(piece: str, plain: str, keep_niqqud: bool) -> str:
     return plain
 
 
-def build_segment(words: list, mode: str = "tanakh") -> dict:
+def build_segment(words: list, mode: str = "tanakh", ketiv: list = None) -> dict:
     """רשימת מילים פרוזודיות → מקטע: טקסט תצוגה ושתי גרסאות יישור.
 
     זהו האינווריאנט הקריטי של ה-pipeline: שלוש הגרסאות נגזרות מאותם
     טוקנים, ולכן מיושרות מקטע-למקטע מבנייתן.
+    ‏ketiv — דגלי qere_ketiv_flags למילים האלה (None = אין).
     """
+    ketiv = ketiv or [False] * len(words)
     return {
         "display": " ".join(words),
-        "align_vocalized": [w for pw in words for w in
-                            to_alignment_words(pw, True, mode)],
-        "align_plain": [w for pw in words for w in
-                        to_alignment_words(pw, False, mode)],
+        "align_vocalized": [w for pw, k in zip(words, ketiv) for w in
+                            to_alignment_words(pw, True, mode, k)],
+        "align_plain": [w for pw, k in zip(words, ketiv) for w in
+                        to_alignment_words(pw, False, mode, k)],
     }
+
+
+def build_segments(groups: list, mode: str = "tanakh",
+                   ketiv: list = None) -> list:
+    """קבוצות מילים רצופות (פלט החיתוך) → מקטעים; ‏ketiv — דגלי
+    qere_ketiv_flags לרצף המילים כולו (שרשור הקבוצות)."""
+    out, i = [], 0
+    for group in groups:
+        flags = ketiv[i:i + len(group)] if ketiv is not None else None
+        out.append(build_segment(group, mode, flags))
+        i += len(group)
+    return out
 
 
 def segments_for_pipeline(verse_text: str, max_words: int = 4,
                           mode: str = "tanakh") -> list:
     """הפלט המלא לשלבי ההמשך — חיתוך פסוק יחיד לפי הטעמים."""
     words = tokenize(clean_sefaria_text(verse_text))
-    result = [build_segment(seg, mode)
-              for seg in (split_unit(words, max_words) if words else [])]
+    groups = split_unit(words, max_words) if words else []
+    result = build_segments(groups, mode, qere_ketiv_flags(words, mode))
     return _merge_unalignable(result)
 
 
@@ -385,11 +454,12 @@ def regroup_words(words: list, sizes: list, verse_of: list = None,
         raise ValueError(
             f"החלוקה המותאמת אישית מכסה {total} מילים אבל בטקסט {len(words)} — "
             "טען את הקטע מחדש ונסה שוב")
+    ketiv = qere_ketiv_flags(words, mode, verse_of)
     result, i = [], 0
     for n in sizes:
         if n < 1:
             raise ValueError("כל כתובית חייבת לכלול לפחות מילה אחת")
-        seg = build_segment(words[i:i + n], mode)
+        seg = build_segment(words[i:i + n], mode, ketiv[i:i + n])
         if verse_of is not None:
             seg["verse"] = verse_of[i]
         result.append(seg)
