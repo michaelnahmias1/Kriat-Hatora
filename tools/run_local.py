@@ -24,6 +24,9 @@ silero-vad/uroman — כמו ה-image ב-modal_worker/app.py):
         --ground-truth samples/nishmat/ground_truth.json \\
         --compare-srt samples/nishmat/received_v1.srt --out-dir /tmp/run1
 
+זמן ריצה ב-CPU ‏(4 ליבות) על הקלטה של 2 דקות: ~2 דקות (תמלול ~25 ש׳); עם
+‏--asr-json ‏~1 דקה. תמלולים שמורים של נשמת: samples/nishmat/asr/.
+
 ניסויים (מקומיים בלבד — לא משנים את הקוד בענן):
     --asr-json PATH        תמלול שמור במקום להריץ Whisper שוב (חוסך דקות)
     --rate-range LO HI     ‏rate_range של select_anchors (ברירת מחדל 0.12 4.0)
