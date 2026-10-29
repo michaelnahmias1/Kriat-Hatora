@@ -77,6 +77,7 @@ function refreshTimingSteps() {
   setLocked("step4", !timed);
   setLocked("step5", !timed);
   $("noAudioHint").hidden = !timed || audioReady;
+  renderSingToggle();   // "שירה / חזנות" — רק כשנטען טקסט של תפילה/טקסט חופשי
   if (timed) { $("done3").hidden = false; renderReport(); renderTimeList(); }
 }
 

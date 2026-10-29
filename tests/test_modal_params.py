@@ -305,8 +305,23 @@ class TestParseParamsUnits(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertEqual(int(m.group(1)), params.MAX_PERFORMANCE)
         cfg = (_ROOT / "js" / "config.js").read_text(encoding="utf-8")
-        self.assertIn("const PERFORMANCE_ENABLED = false;", cfg,
-                      "עד שמשימה 4.3.2 נפרסת ב-worker הדגל כבוי")
+        # 4.3.2 מוזג — הממשק שולח performance (ופועל מרגע שה-worker נפרס מחדש)
+        self.assertIn("const PERFORMANCE_ENABLED = true;", cfg,
+                      "4.3.2 מוזג — הסנכרון של חזרות פעיל בממשק")
+        # ‏MAX_PERFORMANCE בדפדפן נאכף גם בצינור (hybrid.expand_performance)
+        self.assertEqual(params.MAX_PERFORMANCE, 20000)
+
+    def test_singing_profile_in_sync_with_ui(self):
+        """מתג "שירה / חזנות" (js/cloud.js) שולח ערך שה-worker מכיר — ורק בתפילה."""
+        import re
+        js = (_ROOT / "js" / "cloud.js").read_text(encoding="utf-8")
+        sent = re.findall(r'fd\.append\("profile", "(\w+)"\)', js)
+        self.assertEqual(sent, ["singing"])
+        self.assertIn("singing", params.PROFILES)
+        form = _units_form(profile=sent[0])
+        self.assertEqual(params.parse_params(form)["profile"], "singing")
+        # בלי השדה — ברירת המחדל של ה-worker היא קריאה
+        self.assertEqual(params.parse_params(_units_form())["profile"], "reading")
 
     def test_bad_max_words_and_splits_in_units_mode(self):
         with self.assertRaisesRegex(ValueError, "מקסימום מילים"):
