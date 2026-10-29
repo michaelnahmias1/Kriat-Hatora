@@ -232,8 +232,12 @@ def _enforce_rate(anchors: list, rate_range: tuple) -> list:
 def select_anchors(pairs, asr_times, ref_words,
                    min_sim=0.85, min_len=3, context_sim=0.6,
                    repeat_radius=10, rate_range=(0.12, 4.0),
-                   gap_words=50, gap_seconds=90.0, relaxed_sim=0.7):
+                   gap_words=50, gap_seconds=90.0, relaxed_sim=0.7,
+                   recruit_context=False):
     """מסנן את זוגות ההתאמה לעוגנים אמינים.
+
+    ‏recruit_context=True (פרופיל שירה) — גם עוגני הגיוס השני דורשים הקשר:
+    בלעדיו מילת דיבור שאינו בטקסט ("אני" משם הניגון) נכנסה כעוגן ל"אֵין".
 
     pairs — פלט align_sequences; asr_times — [(start, end)] לפי אינדקס ASR;
     ref_words — רשימת מילות הטקסט המנורמלות.
@@ -281,7 +285,7 @@ def select_anchors(pairs, asr_times, ref_words,
         wide = (b["ref"] - a["ref"] > gap_words
                 or (b.get("start", 0) - a.get("end", 0)) > gap_seconds)
         if wide:
-            recruits += candidates(relaxed_sim, need_context=False,
+            recruits += candidates(relaxed_sim, need_context=recruit_context,
                                    within=(a["ref"], b["ref"]))
     if recruits:
         merged = {a["ref"]: a for a in recruits}
@@ -295,18 +299,23 @@ def select_anchors(pairs, asr_times, ref_words,
 
 # --- הממשק הנוח: מילות ASR גולמיות → עוגנים -----------------------------------
 
-def find_anchors(asr_words: list, ref_plain_words: list, band: int = 250, **kw):
+def find_anchors(asr_words: list, ref_plain_words: list, band: int = 250,
+                 nontext=None, **kw):
     """asr_words — [{"word","start","end",...}] מהתמלול;
     ref_plain_words — align_plain השטוח מה-chunker.
 
     מחזיר dict: anchors, coverage, matches (להצלבת אי-הסכמה בהמשך).
+    ‏nontext — פרמטרי nontext_runs (פרופיל שירה); כשנמסר, ה-dict כולל גם
+    nontext_runs — ריצות דיבור שאינו בטקסט (העוגנים עצמם לא משתנים כאן;
+    ראה apply_nontext_runs).
     """
-    norm, times = [], []
+    norm, times, raw = [], [], []
     for w in asr_words:
         nw = normalize_word(w["word"])
         if nw:
             norm.append(nw)
             times.append((float(w["start"]), float(w["end"])))
+            raw.append(w["word"])
     ref_norm = [normalize_word(w) for w in ref_plain_words]
 
     pairs = align_sequences(norm, ref_norm, band=band)
@@ -316,4 +325,95 @@ def find_anchors(asr_words: list, ref_plain_words: list, band: int = 250, **kw):
                 "asr_end": times[ai][1], "sim": sim}
                for ai, rj, sim in pairs
                if ai is not None and rj is not None and sim >= 0.5]
-    return {"anchors": anchors, "coverage": coverage, "matches": matches}
+    out = {"anchors": anchors, "coverage": coverage, "matches": matches}
+    if nontext is not None:
+        out["nontext_runs"] = nontext_runs(pairs, times, raw, **nontext)
+    return out
+
+
+# --- דיבור שאינו בטקסט (PLAN_TEFILA 8.26; פרופיל שירה) -------------------------
+#
+# חזן מדבר לפני/בין הקטעים: הקדמה, הכרזה, שם הניגון. התמלול שומע את הדיבור
+# הזה היטב — רצף מילים קצרות (0.1–0.5 ש׳ למילה) שאין להן אח בטקסט — בעוד
+# שמילים מושרות ארוכות (0.7–2 ש׳). זה הסימן: ריצה של מילים קצרות שאינן
+# טקסט = דיבור שאינו בטקסט. ממנה נגזרים שני תיקונים (apply_nontext_runs):
+# עוגנים בתוכה נזרקים, ותחילת השורה שאחריה חסומה מלמטה בסוף הדיבור.
+
+def nontext_runs(pairs: list, times: list, words: list, *, text_sim=0.6,
+                 max_word_sec=0.6, min_words=3, min_total_sec=0.8,
+                 split_gap_sec=1.0, merge_gap_sec=3.0) -> list:
+    """זוגות align_sequences + זמני/מילות התמלול (המסוננים) → ריצות דיבור.
+
+    מחזיר [{"start","end","text","asr_lo","asr_hi"}] לפי הזמן.
+    """
+    textlike = [False] * len(times)
+    for ai, rj, sim in pairs:
+        if ai is not None and rj is not None and sim >= text_sim:
+            textlike[ai] = True
+    runs, cur = [], []
+    for i, (s, e) in enumerate(times):
+        speechy = not textlike[i] and e - s <= max_word_sec
+        if cur and (not speechy or s - times[cur[-1]][1] > split_gap_sec):
+            runs.append(cur)
+            cur = []
+        if speechy:
+            cur.append(i)
+    if cur:
+        runs.append(cur)
+    runs = [(r[0], r[-1]) for r in runs
+            if len(r) >= min_words
+            and times[r[-1]][1] - times[r[0]][0] >= min_total_sec]
+    merged = []
+    for lo, hi in runs:
+        if (merged and not any(textlike[merged[-1][1] + 1:lo])
+                and times[lo][0] - times[merged[-1][1]][1] <= merge_gap_sec):
+            merged[-1] = (merged[-1][0], hi)
+        else:
+            merged.append((lo, hi))
+    return [{"start": times[lo][0], "end": times[hi][1],
+             "text": " ".join(words[lo:hi + 1]), "asr_lo": lo, "asr_hi": hi}
+            for lo, hi in merged]
+
+
+def apply_nontext_runs(anchors: list, runs: list, unit_starts, n_ref: int,
+                       audio_dur: float, *, drop_before_sec=1.0,
+                       min_sec_per_word=0.15) -> list:
+    """עוגנים + ריצות דיבור → עוגנים מתוקנים (ממוינים לפי ref).
+
+    לכל ריצה: (1) עוגן שמתחיל ב-[start − drop_before_sec, end] נזרק — מילת
+    טקסט "שנשמעה" בתוך דיבור שאינו בטקסט היא כמעט תמיד התאמה מקרית;
+    (2) תחילת היחידה (שורה) הראשונה שבין העוגנים התוחמים את הריצה מקבלת
+    עוגן-דמה עם חסם תחתון: {"lower_bound": True, "start": סוף הריצה,
+    "run_start": תחילתה} — המילה לא תתחיל לפני סוף הדיבור, והמילים שלפניה
+    יסתיימו לפני תחילתו (ראה windows.build_windows). החסם נוסף רק אם יש
+    מקום סביר (min_sec_per_word) למילים שמשני צדיו — כך דיבור בסוף ההקלטה
+    ("תודה רבה") לא מושך שורה שלמה אחריו.
+    ‏unit_starts — אינדקסי המילים (השטוחים) שפותחות יחידה. כל ריצה שעברה
+    מקבלת "pseudo_ref" (או None) לדיווח.
+    """
+    starts = sorted(set(unit_starts))
+    anchors = sorted(anchors, key=lambda a: a["start"])
+    for run in sorted(runs, key=lambda r: r["start"]):
+        t0, t1 = run["start"], run["end"]
+        anchors = [a for a in anchors
+                   if not (t0 - drop_before_sec <= a["start"] <= t1)]
+        left = [a for a in anchors if a["start"] < t0]
+        right = [a for a in anchors if a["start"] > t1]
+        lo = left[-1]["ref"] if left else -1
+        lo_t = left[-1]["end"] if left else 0.0
+        hi = right[0]["ref"] if right else n_ref
+        hi_t = right[0]["start"] if right else audio_dur
+        run["pseudo_ref"] = None
+        cands = [u for u in starts if lo < u < hi]
+        if not cands:
+            continue
+        u = cands[0]
+        if t0 - lo_t < (u - lo - 1) * min_sec_per_word:
+            continue
+        if hi_t - t1 < (hi - u) * min_sec_per_word:
+            continue
+        anchors.append({"ref": u, "asr": None, "start": t1, "end": t1,
+                        "sim": None, "lower_bound": True, "run_start": t0})
+        anchors.sort(key=lambda a: a["start"])
+        run["pseudo_ref"] = u
+    return sorted(anchors, key=lambda a: a["ref"])

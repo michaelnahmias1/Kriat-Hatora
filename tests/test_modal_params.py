@@ -361,6 +361,19 @@ class TestRouting(unittest.TestCase):
                               "work_dir": "/t"})
         self.assertEqual(params.notify_label(p), "אשרי")
 
+    def test_singing_routes_to_run_hybrid_units(self):
+        """פרופיל שירה (4.3.5) עובר כמו שהוא לצינור היחידות, תמיד ב-tefila."""
+        p = params.parse_params(_units_form(profile="singing"))
+        name, kw = params.pipeline_call(p, "/t/a.wav", "/t/o.srt", "/t")
+        self.assertEqual(name, "run_hybrid_units")
+        self.assertEqual((kw["profile"], kw["mode"]), ("singing", "tefila"))
+
+    def test_profiles_in_sync_with_pipeline(self):
+        """‏params.PROFILES (העתק — ה-web לא טוען את הצינור) = profiles.py."""
+        sys.path.insert(0, str(_ROOT / "src"))
+        from aligner import profiles
+        self.assertEqual(set(params.PROFILES), set(profiles.PROFILES))
+
     def test_routing_kwargs_match_pipeline_signatures(self):
         """שמות הארגומנטים תואמים לחתימות בפועל ב-src/aligner/hybrid.py."""
         sys.path.insert(0, str(_ROOT / "src"))

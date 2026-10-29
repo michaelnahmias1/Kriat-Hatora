@@ -313,11 +313,28 @@ class MmsAligner:
         self.aligner = bundle.get_aligner()
 
     def align(self, waveform, romanized_words: list,
-              offset_sec: float = 0.0) -> list:
+              offset_sec: float = 0.0, stars: list = None) -> list:
+        """‏stars — (פרופיל שירה; דורש with_star=True) רשימת בוליאנים באורך
+        מספר המילים + 1: stars[k] = טוקן "*" לפני מילה k, והאחרון = "*" בסוף.
+        הכוכב בולע אודיו שאינו בטקסט; ה-span שלו נזרק, כך שהפלט תמיד באורך
+        המילים. ‏MMS_FA: ‏get_model(with_star=True) הוא אותו קובץ משקולות
+        בדיוק, עם עמודת log-prob 0 נוספת; ה-tokenizer ממפה "*" לאינדקס 28.
+        """
+        words, keep = romanized_words, None
+        if stars:
+            words, keep = [], []
+            for k, r in enumerate(romanized_words):
+                if stars[k]:
+                    words.append("*")
+                    keep.append(False)
+                words.append(r)
+                keep.append(True)
+            if stars[len(romanized_words)]:
+                words.append("*")
+                keep.append(False)
         with self._torch.inference_mode():
             emission, _ = self.model(waveform.to(self.device))
-            token_spans = self.aligner(emission[0],
-                                       self.tokenizer(romanized_words))
+            token_spans = self.aligner(emission[0], self.tokenizer(words))
         num_frames = emission.size(1)
         sec_per_frame = waveform.size(1) / num_frames / self.sample_rate
         spans = []
@@ -326,6 +343,8 @@ class MmsAligner:
             end = offset_sec + word_spans[-1].end * sec_per_frame
             scores = [getattr(t, "score", 1.0) for t in word_spans]
             spans.append((start, end, sum(scores) / len(scores)))
+        if keep is not None:
+            spans = [sp for sp, k in zip(spans, keep) if k]
         return spans
 
 
@@ -368,7 +387,7 @@ def segment_bounds(segments: list, word_spans: list):
 
 
 def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25,
-              starts_override: list = None) -> str:
+              starts_override: list = None, gaps: list = None) -> str:
     """גבולות מקטעים בלבד (שאר חותמות המילים נזרקות) → תוכן קובץ SRT.
 
     לכל מקטע: התחלה = תחילת מילתו הראשונה; סוף = תחילת המקטע הבא
@@ -376,6 +395,9 @@ def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25,
     starts_override מאפשר להזריק תחילות מתוקנות (הצמדת VAD בפייפליין
     ההיברידי) בלי לשנות את חוזה הפונקציה. הטקסט המוצג הוא display בלבד —
     טקסט Sefaria המדויק, מנוקד ומוטעם, ללא שום עיבוד.
+    ‏gaps — קטעי זמן (start, end) של דיבור שאינו בטקסט (פרופיל שירה): קטע
+    שנופל בין כתובית לבאה אחריה קוטע אותה בתחילתו, כדי שהכתובית לא תוצג
+    בזמן שהחזן מדבר משהו אחר.
     """
     starts, ends = segment_bounds(segments, word_spans)
     if starts_override is not None:
@@ -389,6 +411,9 @@ def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25,
     for i, seg in enumerate(segments):
         start = starts[i]
         end = starts[i + 1] if i + 1 < len(segments) else ends[i] + tail_pad
+        for g0, g1 in gaps or ():
+            if start < g0 < end and g1 <= end + 1e-6:
+                end = g0
         end = max(end, start + 0.3)  # כתובית לעולם לא קצרה מ-0.3 שניות
         lines += [str(i + 1), f"{_fmt_ts(start)} --> {_fmt_ts(end)}",
                   seg["display"], ""]

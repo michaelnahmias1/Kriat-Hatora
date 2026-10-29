@@ -16,6 +16,7 @@
 | `results.md` | האבחון, טבלת הניסויים וההמלצה לתיקון |
 | `asr/` | תמלולים שמורים (כמו בענן / בלי vad_filter) — ל-`--asr-json` |
 | `local_best_e19.srt` | הפלט הטוב ביותר מהניסויים (לא של הקוד במאגר) |
+| `local_singing_v1.srt` | הפלט של הקוד במאגר בפרופיל שירה (`--profile singing`) |
 
 ## נקודות האמת (ground_truth.json)
 
@@ -31,7 +32,7 @@
 python tools/run_local.py --audio samples/nishmat/nishmat.m4a \
     --text-file samples/nishmat/text.txt \
     --ground-truth samples/nishmat/ground_truth.json \
-    --compare-srt samples/nishmat/received_v1.srt
+    --compare-srt samples/nishmat/received_v1.srt --profile singing
 ```
 
 דורש סביבה עם torch/torchaudio, faster-whisper, silero-vad ו-uroman, ואת

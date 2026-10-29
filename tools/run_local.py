@@ -22,7 +22,8 @@ silero-vad/uroman — כמו ה-image ב-modal_worker/app.py):
         --audio samples/nishmat/nishmat.m4a \\
         --text-file samples/nishmat/text.txt \\
         --ground-truth samples/nishmat/ground_truth.json \\
-        --compare-srt samples/nishmat/received_v1.srt --out-dir /tmp/run1
+        --compare-srt samples/nishmat/received_v1.srt --out-dir /tmp/run1 \\
+        --profile singing        # שירה/חזנות (ברירת מחדל: reading, כמו היום)
 
 זמן ריצה ב-CPU ‏(4 ליבות) על הקלטה של 2 דקות: ~2 דקות (תמלול ~25 ש׳); עם
 ‏--asr-json ‏~1 דקה. תמלולים שמורים של נשמת: samples/nishmat/asr/.
@@ -30,7 +31,7 @@ silero-vad/uroman — כמו ה-image ב-modal_worker/app.py):
 ניסויים (מקומיים בלבד — לא משנים את הקוד בענן):
     --asr-json PATH        תמלול שמור במקום להריץ Whisper שוב (חוסך דקות)
     --rate-range LO HI     ‏rate_range של select_anchors (ברירת מחדל 0.12 4.0)
-    --max-word-sec X       ‏_MAX_WORD_SEC של hybrid (ברירת מחדל 12)
+    --max-word-sec X       אורך מילה מרבי (קריאה: ‏_MAX_WORD_SEC=12; שירה: 20)
     --src DIR              תיקיית src חלופית — למשל הגרסה שרצה בענן:
                            git archive <commit> src | tar -x -C /tmp/old
                            ואז --src /tmp/old/src (בלי וו הדיבאג: רק SRT/דוח/יומן)
@@ -40,6 +41,7 @@ silero-vad/uroman — כמו ה-image ב-modal_worker/app.py):
 
 import argparse
 import contextlib
+import dataclasses
 import functools
 import inspect
 import json
@@ -170,6 +172,13 @@ def build_dump(debug: dict, units: list, anchors_mod) -> dict:
     for a in debug.get("anchors") or []:
         anchor_refs.add(a["ref"])
         ai = a.get("asr")
+        if a.get("lower_bound"):  # עוגן-דמה: סוף דיבור שאינו בטקסט
+            anchors.append({
+                "ref": a["ref"], "text_word": plain[a["ref"]],
+                "segment": where[a["ref"]][0], "unit": where[a["ref"]][1],
+                "lower_bound": True, "start": _r(a["start"]),
+                "run_start": _r(a.get("run_start"))})
+            continue
         anchors.append({
             "ref": a["ref"], "text_word": plain[a["ref"]],
             "segment": where[a["ref"]][0], "unit": where[a["ref"]][1],
@@ -219,6 +228,8 @@ def build_dump(debug: dict, units: list, anchors_mod) -> dict:
     attempts = []
     for a in debug.get("window_attempts") or []:
         row = win(a["window"])
+        if a["window"].get("hard_left"):
+            row["hard_left"] = True
         row["status"] = a["status"]
         if a.get("spans"):
             row["spans"] = [[_r(s), _r(e), _r(sc)] for s, e, sc in a["spans"]]
@@ -261,6 +272,13 @@ def build_dump(debug: dict, units: list, anchors_mod) -> dict:
         "coverage": _r(debug.get("coverage")),
         "n_text_words": len(plain),
         "units": units,
+        "profile": debug.get("profile"),
+        "nontext_runs": [
+            {"start": _r(r["start"]), "end": _r(r["end"]), "text": r["text"],
+             "pseudo_ref": r.get("pseudo_ref"),
+             "pseudo_word": (plain[r["pseudo_ref"]]
+                             if r.get("pseudo_ref") is not None else None)}
+            for r in debug.get("nontext_runs") or []],
         "transcription": transcription,
         "alignment_pairs": pair_rows,
         "anchors": anchors,
@@ -327,6 +345,8 @@ def _parse_args(argv):
     ap.add_argument("--max-words", default=None,
                     help="כמו בדפדפן; ריק ⇒ ברירת המחדל של build_payload (4)")
     ap.add_argument("--mode", default="tefila")
+    ap.add_argument("--profile", default="reading",
+                    help="reading (ברירת מחדל) או singing — ראה src/aligner/profiles.py")
     ap.add_argument("--out-dir", default=None)
     ap.add_argument("--asr-model", default=None)
     ap.add_argument("--asr-json", default=None)
@@ -388,6 +408,14 @@ def _run(args, audio, out_dir, out_srt) -> dict:
     if args.max_word_sec is not None:
         overrides["max_word_sec"] = args.max_word_sec
         patches.append((H, "_MAX_WORD_SEC", args.max_word_sec))
+        profiles = getattr(H, "profiles_mod", None)
+        if profiles and args.profile in profiles.PROFILES:
+            prof = profiles.PROFILES[args.profile]
+            if prof.max_word_sec is not None:
+                patched = dict(profiles.PROFILES)
+                patched[args.profile] = dataclasses.replace(
+                    prof, max_word_sec=args.max_word_sec)
+                patches.append((profiles, "PROFILES", patched))
     if overrides:
         print(f"run_local: ⚠️ ניסוי — פרמטרים שונים מהענן: {overrides}")
 
@@ -395,6 +423,8 @@ def _run(args, audio, out_dir, out_srt) -> dict:
     debug = {} if has_debug else None
     kwargs = dict(max_words=payload["max_words"], mode=payload["mode"],
                   work_dir=str(out_dir), asr_model=args.asr_model)
+    if args.profile != "reading":
+        kwargs["profile"] = args.profile
     if has_debug:
         kwargs["debug"] = debug
     else:
@@ -424,6 +454,7 @@ def _run(args, audio, out_dir, out_srt) -> dict:
              "display": s["display"]} for i, s in enumerate(segs)]}
     dump["meta"] = {"audio": str(audio), "text_file": str(args.text_file),
                     "max_words": payload["max_words"], "mode": payload["mode"],
+                    "profile": args.profile,
                     "src": str(Path(H.__file__).parent.parent),
                     "overrides": overrides, "asr_sec": captured.get("sec"),
                     "total_sec": round(time.time() - t0, 1)}
