@@ -30,6 +30,25 @@ class TestNormalize(unittest.TestCase):
     def test_adoshem_substitution(self):
         self.assertEqual(normalize_word("אדושם"), "אדני")
 
+    def test_prefixed_name_substitution(self):
+        """‏PLAN_TEFILA 8.21: בטקסט לַיהֹוָה / לה' ⇒ "לאדני" (chunker במצב
+        תפילה); התמלול כותב "לאדוני" / "ואדושם" — אותה מחרוזת אחרי נרמול."""
+        for asr, text in [("לאדוני", "לַאדֹנָי"), ("ואדוני", "וַאדֹנָי"),
+                          ("באדוני", "בַּאדֹנָי"), ("שאדוני", "שֶׁאֲדֹנָי"),
+                          ("ולאדוני", "וְלַאדֹנָי"), ("שבאדוני", "שֶׁבַּאדֹנָי"),
+                          ("ואדושם", "וַאדֹנָי"), ("לאדושם", "לאדני")]:
+            self.assertEqual(normalize_word(asr), normalize_word(text), asr)
+
+    def test_prefixed_substitution_is_symmetric_for_tanakh(self):
+        """בתנ״ך "לַאדֹנִי" (לְאדוני שלי) — הנרמול רץ על שני הצדדים, כך
+        שכתיב מלא וחסר מתאחדים, ושום מילה אחרת לא משתנה."""
+        self.assertEqual(normalize_word("לַאדֹנִי"), "לאדני")
+        self.assertEqual(normalize_word("לאדוני"), normalize_word("לַאדֹנִי"))
+        for word, plain in [("הַשֵּׁם", "השמ"), ("בְּשֵׁם", "בשמ"),
+                            ("לְשֵׁם", "לשמ"), ("אֱלֹהִים", "אלהימ"),
+                            ("אֲדוֹנִים", "אדונימ"), ("וּבְאַדְנֵי", "ובאדני")]:
+            self.assertEqual(normalize_word(word), plain, word)
+
     def test_non_hebrew_dropped(self):
         self.assertEqual(normalize_word("hello 123 ..."), "")
 
@@ -154,6 +173,17 @@ class TestFindAnchors(unittest.TestCase):
         self.assertGreaterEqual(found["coverage"], 0.9)
         a0 = next(a for a in found["anchors"] if a["ref"] == 0)
         self.assertEqual(a0["start"], 0.0)
+
+    def test_prefixed_name_anchors(self):
+        """הודו לה' כי טוב — הטקסט "לאדני" (מצב תפילה), התמלול "לאדוני"."""
+        ref_plain = ["הודו", "לאדני", "כי", "טוב", "כי", "לעולם", "חסדו"]
+        asr_words = [{"word": w, "start": i * 1.0, "end": i * 1.0 + 0.6}
+                     for i, w in enumerate(["הודו", "לאדוני", "כי", "טוב",
+                                            "כי", "לעולם", "חסדו"])]
+        found = find_anchors(asr_words, ref_plain)
+        pair = [m for m in found["matches"] if m["ref"] == 1]
+        self.assertEqual(len(pair), 1)
+        self.assertEqual(pair[0]["sim"], 1.0)
 
     def test_empty_asr(self):
         found = find_anchors([], ["בראשית", "ברא"])

@@ -13,8 +13,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from aligner.pipeline import units_to_segments  # noqa: E402
+from aligner.pipeline import (  # noqa: E402
+    _taamim_evidence,
+    _unit_chunk,
+    units_to_segments,
+)
 from chunker import (  # noqa: E402
+    clean_sefaria_text,
+    letters_only,
     prose_lines,
     prose_segments,
     prose_tokens,
@@ -214,6 +220,76 @@ class TestRoutingInPipeline(unittest.TestCase):
         self.assertEqual(" ".join(displays(regrouped)),
                          " ".join(displays(auto)))
         self.assertEqual(regrouped[0]["display"], "אָבָא" + NBSP + "–")
+
+
+class TestMetsudahPronunciationMarks(unittest.TestCase):
+    """‏PLAN_TEFILA 8.24: סידור מצודה משתמש ב-U+0592 (סגולתא) אחרי שווא כסימן
+    לשווא נע, וב-U+05AF (עיגול מסורה) כמפריד מילים בקריאת שמע. אלה אינם
+    טעמי מקרא — היחידה נחתכת לפי פיסוק. המחרוזות כאן מהטקסט האמיתי
+    (Siddur Ashkenaz / Sefard, ‏The Metsudah siddur, 1981)."""
+
+    SEGOLTA, MASORA_CIRCLE = "\u0592", "\u05AF"
+    # ברכו — שווא נע מסומן בסגולתא (בָּרְ֒כוּ, הַמְ֒בֹרָךְ)
+    BARCHU = "בָּרְ֒כוּ אֶת יְהֹוָה הַמְ֒בֹרָךְ:"
+    # קריאת שמע — גם עיגול מסורה (בְּכָל֯־לְ֯בָבְ֒ךָ)
+    SHEMA = ("וְאָהַבְתָּ אֵת יְהֹוָה אֱלֹהֶֽיךָ בְּכָל֯־לְ֯בָבְ֒ךָ "
+             "וּבְכָל־נַפְשְׁ֒ךָ וּבְכָל־מְאֹדֶֽךָ: וְהָיוּ הַדְּ֒בָרִים הָאֵֽלֶּה "
+             "אֲשֶׁר֯ אָ֯נֹכִי מְצַוְּ֒ךָ הַיּוֹם עַל֯־לְ֯בָבֶֽךָ:")
+    # פסוק מוטעם באמת שמצוטט במצודה ספרד (דברים י:יב)
+    DEUT = ("וְעַתָּה֙ יִשְׂרָאֵ֔ל מָ֚ה יְהוָ֣ה אֱלֹהֶ֔יךָ שֹׁאֵ֖ל מֵעִמָּ֑ךְ "
+            "כִּ֣י אִם־לְ֠יִרְאָה אֶת־יְהוָ֨ה אֱלֹהֶ֜יךָ לָלֶ֤כֶת בְּכָל־דְּרָכָיו֙")
+
+    def chunk(self, text):
+        return _unit_chunk({"text": text, "kind": "paragraph"})
+
+    def test_shva_na_marker_is_not_taamim(self):
+        self.assertEqual(self.chunk(self.BARCHU), "punct")
+        self.assertEqual(_taamim_evidence(clean_sefaria_text("בָּרְ֒כוּ")),
+                         set())
+
+    def test_shema_separator_is_not_taamim(self):
+        self.assertEqual(self.chunk(self.SHEMA), "punct")
+        self.assertEqual(_taamim_evidence("אָ֯נֹכִי"), set())
+
+    def test_genuine_cantillated_verse_still_detected(self):
+        self.assertEqual(self.chunk(self.DEUT), "taamim")
+        self.assertEqual(
+            self.chunk(TestRoutingInPipeline.VERSE), "taamim")
+
+    def test_genuine_verse_with_shva_na_marks_still_detected(self):
+        """פסקת מצודה עם פסוק מוטעם וגם סימני שווא נע — עדיין טעמים."""
+        self.assertEqual(self.chunk(self.BARCHU + " " + self.DEUT), "taamim")
+
+    def test_real_segolta_counts(self):
+        """סגולתא שאינה על אות עם שווא היא טעם (וַיִּקְרָא֒ — Shaliehsaboo)."""
+        self.assertEqual(_taamim_evidence(clean_sefaria_text("וַיִּקְרָא֒")),
+                         {self.SEGOLTA})
+
+    def test_single_stray_accent_is_not_enough(self):
+        """סגולתא בודדת שלא אחרי שווא (5 כאלה במצודה ספרד) — לא מספיק:
+        פסוק מוטעם אמיתי נושא לפחות שני טעמים שונים."""
+        self.assertEqual(self.chunk("יְהִי כְבוֹדֶֽ֒ךָ לְעוֹלָם וָעֶד:"),
+                         "punct")
+        self.assertEqual(self.chunk("יְהוָ֣ה מֶ֑לֶךְ"), "taamim")
+
+    def test_marks_kept_in_display_and_dropped_from_alignment(self):
+        segs = units_to_segments([{"text": self.SHEMA, "kind": "paragraph"}],
+                                 mode="tefila")
+        self.assertEqual(displays(segs),
+                         displays(prose_segments(self.SHEMA, mode="tefila")))
+        display = " ".join(displays(segs))
+        self.assertIn(self.SEGOLTA, display)
+        self.assertIn(self.MASORA_CIRCLE, display)
+        for seg in segs:
+            for w in seg["align_vocalized"] + seg["align_plain"]:
+                self.assertNotIn(self.SEGOLTA, w)
+                self.assertNotIn(self.MASORA_CIRCLE, w)
+        # מילת יישור אחת לכל חלק-מקף — אותה ספירה כמו isAudible בדפדפן
+        pieces = [p for seg in segs for tok in seg["display"].split(" ")
+                  for p in tok.split(MAQAF) if letters_only(p)]
+        self.assertEqual(sum(len(s["align_plain"]) for s in segs),
+                         len(pieces))
+        self.assertIn("בכל", segs[0]["align_plain"] + segs[1]["align_plain"])
 
 
 if __name__ == "__main__":

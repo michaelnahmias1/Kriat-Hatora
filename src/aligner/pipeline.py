@@ -120,14 +120,47 @@ def verse_units(verses: list) -> list:
 # לא-מוטעם, ולכן לבדם אינם מעידים על טעמי מקרא.
 _NOT_TAAMIM_EVIDENCE = frozenset({taamim.SOF_PASUQ, taamim.PASEQ})
 
+# ‏PLAN_TEFILA 8.24 — סידור מצודה (אשכנז וספרד) משתמש בתווי טעמים כסימני
+# הגייה: ‏U+0592 (סגולתא) על אות עם שווא מסמן שווא נע (קִדְּ֒שָֽׁנוּ), ו-U+05AF
+# (עיגול מסורה) מפריד בין מילים בקריאת שמע (בְּכָל֯־לְ֯בָבְךָ). לכן:
+# 1. ‏U+05AF לעולם אינו עדות לטעמים, וסגולתא על אות שיש בה שווא — אינה עדות;
+# 2. נדרשים לפחות שני טעמים שונים ביחידה (פסוק מוטעם אמיתי — משרת ומפסיק).
+# נבדק על הטקסט המלא מ-Sefaria (29.10.2026): מצודה אשכנז 490⇒0 מתוך 1518
+# פסקאות, מצודה ספרד 502⇒8 (בדיוק הפסקאות עם טעמים אמיתיים, כמו דברים י:יב;
+# כלל 1 לבדו השאיר עוד אחת, בגלל סגולתא בודדת שלא אחרי שווא), תורת אמת ספרד
+# 45⇒0, ו-Shaliehsaboo נשאר 996/996 (כולן מוטעמות באמת). פסוקי התנ״ך אינם
+# עוברים כאן כלל — יחידות התנ״ך נושאות chunk="taamim" במפורש (verse_units).
+# התווים עצמם נשארים בתצוגה; מעותקי היישור הם יורדים ב-strip_taamim.
+_SHVA_NA_MARK = taamim.SEGOLTA       # U+0592 על אות עם שווא
+_MASORA_CIRCLE = "\u05AF"           # מפריד מילים בקריאת שמע של מצודה
+_SHVA = "\u05B0"
+_MIN_DISTINCT_TAAMIM = 2
+
+
+def _taamim_evidence(word: str) -> set:
+    """הטעמים שעל המילה שמעידים על טעמי מקרא אמיתיים (ראה 8.24 למעלה)."""
+    evidence = set()
+    cluster = ""  # אות אחת וכל הסימנים שאחריה
+    for ch in word + "\u05D0":  # אל״ף שומרת-מקום סוגרת את האשכול האחרון
+        if "\u05D0" <= ch <= "\u05EA":
+            marks = word_accents(cluster) - _NOT_TAAMIM_EVIDENCE
+            marks.discard(_MASORA_CIRCLE)
+            if _SHVA in cluster:
+                marks.discard(_SHVA_NA_MARK)
+            evidence |= marks
+            cluster = ""
+        cluster += ch
+    return evidence
+
 
 def _unit_chunk(unit: dict) -> str:
     """מצב החיתוך של יחידה: כפוי בשדה chunk, אחרת לפי נוכחות טעמים."""
     chunk = unit.get("chunk")
     if chunk is None:
         words = tokenize(clean_sefaria_text(unit["text"]))
-        accented = any(word_accents(w) - _NOT_TAAMIM_EVIDENCE for w in words)
-        chunk = "taamim" if accented else "punct"
+        evidence = set().union(*(_taamim_evidence(w) for w in words))
+        chunk = ("taamim" if len(evidence) >= _MIN_DISTINCT_TAAMIM
+                 else "punct")
     if chunk not in CHUNK_MODES:
         raise ValueError(f"מצב חיתוך לא מוכר: {chunk!r}")
     return chunk
