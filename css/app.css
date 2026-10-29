@@ -272,12 +272,12 @@ details summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
 }
 
 /* ---------- עורך חלוקת המילים ---------- */
-#editOverlay {
+#editOverlay, #perfOverlay {
   position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.5);
   display: none; align-items: stretch; justify-content: center;
 }
-#editOverlay.open { display: flex; }
-#editSheet {
+#editOverlay.open, #perfOverlay.open { display: flex; }
+#editSheet, #perfSheet {
   background: var(--bg); width: 100%; max-width: 640px;
   display: flex; flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
@@ -293,6 +293,7 @@ details summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
   background: rgba(255,255,255,.16); color: #fff;
 }
 .sheetHead button.primary { background: var(--gold); color: #16233a; }
+.sheetHead button:disabled { opacity: .45; }
 #editHint { margin: 10px 12px 0; font-size: .78rem; color: var(--muted); line-height: 1.45; }
 .editList { flex: 1; overflow-y: auto; padding: 10px 12px 12px; -webkit-overflow-scrolling: touch; }
 .egroup {
@@ -397,3 +398,94 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
   color: var(--muted); font-size: .85rem;
   font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Hebrew", Arial, sans-serif;
 }
+
+/* ---------- מבנה הביצוע: חזרות, פזמון, דילוגים (js/performance.js) ---------- */
+.perfRow #perfStatus { white-space: pre-line; }
+.perfRow #perfStatus.on { color: var(--accent); font-weight: 600; }
+.perfBody { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 12px; }
+.sheetHint { margin: 10px 12px 0; font-size: .8rem; color: var(--muted); line-height: 1.45; }
+.sheetSoon {
+  margin: 8px 12px 0; padding: 8px 10px; border-radius: 10px; font-size: .82rem; font-weight: 600;
+  color: var(--ink); background: color-mix(in srgb, var(--gold) 18%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent); line-height: 1.4;
+}
+.perfTabs {
+  display: flex; gap: 4px; padding: 4px; margin: 10px 12px 0; flex: none;
+  background: var(--verse-chip); border-radius: 12px;
+}
+.perfTabs button {
+  flex: 1; padding: 8px; font-size: .88rem; border-radius: 9px;
+  background: transparent; color: var(--muted);
+}
+.perfTabs button[aria-selected="true"] { background: var(--card); color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.perfAfter {
+  display: flex; align-items: center; gap: 9px; margin: 8px 12px 0; padding: 9px 11px;
+  border: 1px solid var(--gold); border-radius: 11px; color: var(--ink); font-size: .92rem; font-weight: 600;
+  background: color-mix(in srgb, var(--gold) 10%, var(--card)); cursor: pointer;
+}
+.perfAfter input { width: 22px; height: 22px; flex: none; margin: 0; padding: 0; accent-color: var(--accent); }
+.perfList { padding: 10px 12px 0; }
+.pblock {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 8px 9px; margin-bottom: 8px;
+}
+.pblock.refrain { border-color: var(--gold); box-shadow: inset 4px 0 0 var(--gold); }
+.pblock.skip { opacity: .55; }
+.pblock.skip .pline .txt { text-decoration: line-through; }
+.phead { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.pname { font-weight: 700; font-size: .9rem; color: var(--accent); }
+.pblock.refrain .pname { color: var(--gold); }
+.plabel { font-size: .7rem; color: var(--muted); background: var(--verse-chip); border-radius: 6px; padding: 1px 6px; }
+.pmrg {
+  width: auto; margin-inline-start: auto; padding: 3px 8px; font-size: .72rem; border-radius: 7px;
+  background: var(--verse-chip); color: var(--muted); border: 1px solid var(--line); font-weight: 600;
+}
+.pline {
+  display: flex; align-items: baseline; gap: 7px; padding: 6px 7px; border-radius: 9px;
+  cursor: pointer; border: 1px solid transparent; user-select: none; -webkit-user-select: none;
+}
+.pline.sel { background: color-mix(in srgb, var(--accent) 12%, var(--card)); border-color: var(--accent); }
+.pline.skip .txt { text-decoration: line-through; color: var(--muted); }
+.pline .gi, .prow .pi { font-size: .72rem; color: var(--muted); flex: none; min-width: 1.6em; font-variant-numeric: tabular-nums; }
+.pline .txt, .prow .txt { flex: 1; min-width: 0; font-size: 1.06rem; }
+.ptag {
+  flex: none; font-size: .7rem; font-weight: 700; border-radius: 6px; padding: 1px 6px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--accent);
+}
+.ptag.gold { background: color-mix(in srgb, var(--gold) 20%, var(--card)); color: var(--ink); }
+.lact, .bctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lact {
+  margin: 4px 0 6px; padding: 7px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--card)); border: 1px dashed var(--accent);
+}
+.bctl { margin-top: 6px; padding-top: 7px; border-top: 1px solid var(--line); }
+.tog, .stepper button {
+  width: auto; padding: 7px 10px; font-size: .8rem; border-radius: 9px;
+  background: var(--verse-chip); color: var(--ink); border: 1px solid var(--line);
+}
+.tog.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pblock.refrain .tog[data-act="refrain"].on { background: var(--gold); color: #16233a; border-color: var(--gold); }
+.stepper {
+  display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--verse-chip); overflow: hidden;
+}
+.stepper button { border: none; border-radius: 0; padding: 7px 12px; font-size: .95rem; line-height: 1; }
+.stepper b { font-size: .8rem; padding: 0 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pnote { margin: 0 0 8px; }
+.prow {
+  display: flex; align-items: baseline; gap: 7px; padding: 6px 8px; border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+.prow:first-of-type { border-radius: 10px 10px 0 0; }
+.prow:last-child { border-bottom: none; border-radius: 0 0 10px 10px; }
+.prow.ins, .prow.rep { background: color-mix(in srgb, var(--gold) 9%, var(--card)); }
+.prow .pb { flex: none; font-size: .68rem; color: var(--muted); white-space: nowrap; }
+#perfCount {
+  flex: none; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline;
+  font-size: .8rem; color: var(--muted); padding: 7px 12px 8px; border-top: 1px solid var(--line);
+}
+#perfCount b { color: var(--accent); }
+#perfCount .lin { color: var(--ok); }
+#perfCount .error { margin: 0; font-size: .8rem; }
+/* שלב 5: כתובית שחוזרת בסדר הביצוע — מספרה בטקסט ו"חזרה 2" */
+.timerow .cueTag { display: block; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-size: .68rem; color: var(--muted); }

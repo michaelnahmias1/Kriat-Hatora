@@ -25,6 +25,7 @@ async function loadText() {
     if (!res.ok) throw new Error(data.error || ("שגיאה " + res.status));
     S.data = data;
     S.times = null; S.endTime = null; S.report = null;
+    S.perf = null; S.timesOrder = null;   // מבנה הביצוע שייך לטקסט הקודם
     S.splits = null;
     S.baseSplits = data.segments.map(s => tokensOf(s.display).length);
     renderTextLoaded();
@@ -99,6 +100,7 @@ function renderTextLoaded() {
     list.appendChild(row);
   });
   if (units) instrRows(nextUnit, Infinity);
+  renderPerfStatus();   // "מבנה הביצוע" — רק בתפילה ובטקסט חופשי
   $("segPreviewWrap").hidden = false;
   $("done1").hidden = false;
   setLocked("step2", false);

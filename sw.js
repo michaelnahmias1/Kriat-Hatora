@@ -4,7 +4,7 @@
    סגורה (באייפון: רק כשהיא מותקנת למסך הבית, iOS 16.4+). */
 "use strict";
 
-const CACHE = "kriat-hatora-v5";
+const CACHE = "kriat-hatora-v6";
 const SHELL = [
   "/",
   "/css/app.css",
@@ -15,6 +15,7 @@ const SHELL = [
   "/js/source-siddur.js",
   "/js/segments.js",
   "/js/split-editor.js",
+  "/js/performance.js",
   "/js/audio.js",
   "/js/cloud.js",
   "/js/review.js",

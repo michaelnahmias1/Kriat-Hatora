@@ -24,6 +24,7 @@
     S.report = st.report || null;
     S.splits = st.splits || null;
     S.baseSplits = st.baseSplits || null;
+    perfRestore(st.perf, st.timesOrder);   // לפני התצוגה — היא סופרת את הכתוביות בתוצאה
     renderTextLoaded();
     if (st.audioName) showFileChip(st.audioName, "בחר את הקובץ שוב");
   }
