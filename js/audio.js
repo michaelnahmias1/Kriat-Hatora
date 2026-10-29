@@ -27,7 +27,11 @@ $("pickAudio").addEventListener("click", () => $("audioFile").click());
    התהליך לא באמת צריך את המשך — הוא משמש רק להערכת זמן ולהאזנה. */
 $("audioFile").addEventListener("change", () => {
   const f = $("audioFile").files[0];
-  if (!f) return;
+  if (f) adoptAudioFile(f);
+});
+/* קובץ ההקלטה שנבחר — משלב 2, או מ"זהה לי את הקטע" בלשונית התפילה
+   (identify.js), כך שאחרי הזיהוי לא צריך לבחור אותו שוב */
+function adoptAudioFile(f) {
   audioFileObj = f;
   S.audioName = f.name;
   audioReady = true;
@@ -37,7 +41,7 @@ $("audioFile").addEventListener("change", () => {
   refreshTimingSteps();
   save();
   probeDuration(f);
-});
+}
 /* קריאת המשך והנגן — best-effort לגמרי, עם טיימאאוט ועם טיפול בשגיאה */
 function probeDuration(f) {
   if (lastObjectUrl) { URL.revokeObjectURL(lastObjectUrl); lastObjectUrl = null; }
