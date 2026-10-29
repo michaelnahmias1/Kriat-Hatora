@@ -183,7 +183,7 @@ async function pollCloudJob(signal) {
       if (res.status === 404)
         throw new Error("התוצאה כבר לא שמורה בענן (נשמרת כשבוע מסיום העיבוד) — העלה את ההקלטה שוב");
       if (!res.ok) throw new Error(data.error || "שגיאה " + res.status);
-      applySrtTimes(data.srt, isFreeText() ? "ודא שהטקסט תואם את ההקלטה"
+      applySrtTimes(data.srt, isUnitsSource() ? "ודא שהטקסט תואם את ההקלטה"
                                            : "ודא שטווח הפסוקים תואם את ההקלטה");
       S.report = (data.report || "").trim() || null;
       stopCloudTimer(true);
@@ -244,7 +244,7 @@ async function runCloudTiming() {
     $("timingMsg").innerHTML = '<p class="error">יש לבחור את קובץ ההקלטה מחדש (הדפדפן לא שומר קבצים בין ביקורים).</p>';
     return;
   }
-  const unitsJson = isFreeText() ? JSON.stringify(S.data.units) : null;
+  const unitsJson = isUnitsSource() ? JSON.stringify(S.data.units) : null;
   if (unitsJson && new TextEncoder().encode(unitsJson).length > MAX_UNITS_BYTES) {
     $("timingMsg").innerHTML =
       `<p class="error">הטקסט ארוך מדי לסנכרון (עד ${MAX_UNITS_BYTES / 1024}KB) — פצלו את הטקסט לכמה חלקים.</p>`;
@@ -287,13 +287,14 @@ async function runCloudTiming() {
     fd.append("file", upload, upload.name);
     fd.append("token", AI_TOKEN);
     if (pushSub) fd.append("push_sub", pushSub);
-    if (isFreeText()) {
-      // טקסט חופשי: היחידות עצמן, בדיוק כפי שחזרו מה-API והוצגו (PLAN_TEFILA.md 3.3).
-      // ה-mode נגזר בשרת מ-source (text ⇒ tefila)
-      fd.append("source", "text");
+    if (isUnitsSource()) {
+      // טקסט חופשי / סידור: היחידות עצמן, בדיוק כפי שחזרו מה-API והוצגו —
+      // כולל יחידות ההוראה, שה-worker מדלג עליהן כמו ה-API (PLAN_TEFILA.md 3.3).
+      // ה-mode נגזר בשרת מ-source (text/siddur ⇒ tefila)
+      fd.append("source", dataSource());
       fd.append("units", unitsJson);
       if (S.data.max_words) fd.append("max_words", String(S.data.max_words));
-      const title = readFreeText().title;
+      const title = sourceTitle().slice(0, 120);  // MAX_TITLE ב-params.py
       if (title) fd.append("title", title);
     } else {
       for (const [k, v] of Object.entries(readQuery())) if (v) fd.append(k, v);

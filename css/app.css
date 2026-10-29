@@ -333,3 +333,67 @@ details summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
 .editBar button { padding: 10px 8px; font-size: .82rem; border-radius: 10px; }
 .editBar button.ghost { background: var(--verse-chip); color: var(--ink); }
 #editCount { font-size: .78rem; color: var(--muted); padding: 0 12px 8px; flex: none; }
+
+/* ---------- ספריית התפילות (שלב 1, לשונית "תפילה") ---------- */
+input[type="search"] { -webkit-appearance: none; appearance: none; }
+.sdBlock {
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px;
+  background: color-mix(in srgb, var(--verse-chip) 40%, transparent);
+}
+/* קיצורים — כפתורים גדולים, שניים בשורה */
+.sdPopular { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.sdPop {
+  padding: 13px 8px; font-size: 1rem; line-height: 1.3; border-radius: 11px;
+  background: var(--card); color: var(--accent); border: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+/* מיקום בעץ: "ספרד ‹ שבת ‹ …" — כל חלק לחיץ חוץ מהאחרון */
+.sdCrumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; font-size: .85rem; }
+.sdCrumbs button {
+  width: auto; padding: 6px 8px; font-size: .85rem; font-weight: 600; border-radius: 8px;
+  background: transparent; color: var(--accent);
+}
+.sdCrumbs button:disabled { opacity: 1; color: var(--ink); cursor: default; }
+.sdCrumbs .sep { color: var(--muted); }
+.sdList { border: 1px solid var(--line); border-radius: 10px; margin-top: 6px; overflow: hidden; }
+.sdList:empty { display: none; }
+.sdPad { margin: 0; padding: 10px 12px; }
+.sdItem {
+  display: flex; align-items: center; gap: 10px; text-align: start;
+  min-height: 50px; padding: 10px 12px; border-radius: 0;
+  background: var(--card); color: var(--ink); font-weight: 500;
+  border-bottom: 1px solid var(--line);
+}
+.sdItem:last-child { border-bottom: none; }
+.sdItem .ic { flex: none; font-size: 1.05rem; }
+.sdItem .tt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sdItem .tt small {
+  display: block; color: var(--muted); font-size: .8rem; font-weight: 400;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sdItem .go { flex: none; color: var(--muted); font-size: 1.2rem; }
+.sdItem.na, .sdItem:disabled { opacity: .45; }
+/* הקטע שנבחר + בחירת טווח פסקאות */
+.sdLeafHead { display: flex; align-items: center; gap: 10px; }
+.sdLeafHead button { flex: none; }
+.sdLeafHead h3 { margin: 0; font-size: 1.1rem; min-width: 0; overflow-wrap: anywhere; }
+#sdLeafMeta { overflow-wrap: anywhere; }
+.sdParas {
+  max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px;
+  margin-top: 8px; -webkit-overflow-scrolling: touch;
+}
+.sdPara {
+  display: flex; align-items: center; gap: 9px; margin: 0; padding: 8px 10px;
+  border-bottom: 1px solid var(--line); color: var(--ink); font-size: 1rem; cursor: pointer;
+}
+.sdPara:last-child { border-bottom: none; }
+.sdPara input { width: 20px; height: 20px; flex: none; margin: 0; padding: 0; accent-color: var(--accent); }
+.sdPara .pn { flex: none; min-width: 1.8em; color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; }
+.sdPara .pt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.05rem; }
+.sdPara.on { background: color-mix(in srgb, var(--accent) 9%, var(--card)); }
+.sdPara.instr .pt { color: var(--muted); font-family: inherit; font-size: .88rem; }
+/* הוראות מהסידור בתצוגת הטקסט שנטען — באפור, בלי מספר כתובית */
+.segrow.instr .txt {
+  color: var(--muted); font-size: .85rem;
+  font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans Hebrew", Arial, sans-serif;
+}

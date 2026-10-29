@@ -9,6 +9,7 @@
   const ft = (st && st.freeText) || {};
   $("freeText").value = ft.text || "";
   $("textTitle").value = ft.title || "";
+  siddurRestore(st && st.siddur);   // הבחירה בסידור — לפני הלשונית (שעשויה לפתוח אותה)
   setSourceTab((st && st.source) || "tanakh");
   const q = (st && st.query) || {};
   if (q.book) $("book").value = q.book;

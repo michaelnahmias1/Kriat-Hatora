@@ -18,16 +18,18 @@ function editGroupOf(wordIdx) {
 function editRender() {
   const list = $("editList");
   list.innerHTML = "";
-  let wi = 0, lastVerse = null;
+  let wi = 0, lastVerse = null, lastLabel = null;
   E.sizes.forEach((n, g) => {
     const row = document.createElement("div");
     row.className = "egroup";
     row.dataset.g = g;
     const verse = E.words[wi] ? E.words[wi].verse : "";
     let html = `<span class="gi">${g + 1}</span>`;
-    if (verse !== lastVerse)
-      html += isFreeText() ? `<span class="vch">${escapeHtml(unitLabel(verse))}</span>`
-                           : `<span class="vch">פסוק ${heNumeral(verse)}</span>`;
+    if (verse !== lastVerse) {
+      if (!isUnitsSource()) html += `<span class="vch">פסוק ${heNumeral(verse)}</span>`;
+      else if (unitLabel(verse) !== lastLabel)  // פסקה מעורבת = כמה יחידות באותה תווית
+        html += `<span class="vch">${escapeHtml(lastLabel = unitLabel(verse))}</span>`;
+    }
     lastVerse = verse;
     if (g > 0) html += `<button class="mrg" data-mrg="${g}" title="איחוד עם הכתובית שמעל">🔗 איחוד</button>`;
     for (let k = 0; k < n; k++, wi++)
@@ -82,8 +84,8 @@ function openSplitEditor() {
   E.words = flatWords();
   E.sizes = currentSplits();
   E.sel = null;
-  // בטקסט חופשי אין טעמים — האיפוס חוזר לחלוקה האוטומטית לפי הפיסוק
-  $("editReset").textContent = isFreeText() ? "🔄 חזרה לחלוקה האוטומטית" : EDIT_RESET_LABEL;
+  // בטקסט חופשי ובסידור — האיפוס חוזר לחלוקה האוטומטית (פיסוק, או טעמים בפסוקים)
+  $("editReset").textContent = isUnitsSource() ? "🔄 חזרה לחלוקה האוטומטית" : EDIT_RESET_LABEL;
   editRender();
   $("editOverlay").classList.add("open");
 }
