@@ -22,8 +22,8 @@
    מחזירה 200 עם versions ריק). הגרסה שנבחרת = הראשונה במדיניות שיש לה טקסט.
    עלה בלי אף גרסה מהמדיניות ⇐ unavailable (וגרסאות אחרות שנמצאו נרשמות ב-note).
 4. "מילים ראשונות" לכל עלה — מהטקסט של הגרסה שנבחרה (5 המילים הנאמרות
-   הראשונות; הוראות לא מנוקדות ב-<small>/בסוגריים מדולגות). זה זול: הטקסט
-   כבר נמשך בשלב 3.
+   הראשונות; הוראות מדולגות לפי src/siddur/markup.py — אותו מימוש שמסווג
+   הוראות ב-api/siddur.py). זה זול: הטקסט כבר נמשך בשלב 3.
 5. ‏cache בדיסק לכל תשובה, השהיה בין בקשות וניסיונות חוזרים — הלקוח של
    tools/survey_siddur.py (מימוש יחיד). שגיאת רשת ⇐ לא נכתב פלט.
 
@@ -45,6 +45,9 @@ OVERRIDES_PATH = ROOT / "data" / "siddur" / "overrides.json"
 CATALOG_OUT = ROOT / "data" / "siddur" / "catalog.json"
 FIRST_WORDS = 5
 SCHEMA_VERSION = 1
+
+sys.path.insert(0, str(ROOT / "src"))
+from siddur import markup  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location(
     "survey_siddur", Path(__file__).resolve().parent / "survey_siddur.py")
@@ -117,47 +120,14 @@ def has_text(text) -> bool:
     return any(s.strip() for s in sv.flatten_strings(text))
 
 
-_TAG_RE = re.compile(r"<[^>]+>")
-_SMALL_RE = re.compile(r"<small[^>]*>(.*?)</small>", re.S | re.I)
-_PAREN_RE = re.compile(r"\(([^()]*)\)")
-_BRACKET_RE = re.compile(r"\[([^\[\]]*)\]")
-_NIQQUD_RE = re.compile(r"[ְ-ׇּׁׂ]")
-_TAAMIM_RE = re.compile(r"[֑-֯]")
-_HEB_RE = re.compile(r"[א-ת]")
-# שם ה׳ לא מנוקד (גם עם תחילית) — בדעת אשכנז נאמר בפועל (8.4, ‏8.21)
-_SPOKEN_UNVOCALIZED_RE = re.compile(r"^[ובכלמשה]{0,2}(ה'|יי)$")
-_EDGE_PUNCT = ".,:;?!()[]{}\"“”״-–—\u05C3\u05C0"
-
-
-def _keep_if_vocalized(m) -> str:
-    inner = m.group(1)
-    return " " + inner + " " if _NIQQUD_RE.search(_TAG_RE.sub("", inner)) else " "
-
-
 def first_words(text, n: int = FIRST_WORDS) -> str:
     """המילים הנאמרות הראשונות בטקסט של עלה (לחיפוש "לפי מילים ראשונות").
 
-    מדלג על הוראות לפי הכלל מהסקר (8.4): תוכן <small>/סוגריים לא מנוקד ⇐
-    הוראה; מילה נספרת רק אם יש בה ניקוד (או שהיא ‏ה'/יי — שם ה׳ שנאמר).
+    המימוש היחיד חי ב-src/siddur/markup.py (משותף ל-api/siddur.py): הוראות
+    מדולגות לפי הכלל מהסקר (8.4), ונספרות רק מילים מנוקדות או שם ה׳.
     הטעמים מוסרים (הניקוד נשמר) — זו תצוגה, לא טקסט יישור.
     """
-    words = []
-    for s in sv.flatten_strings(text):
-        s = unicodedata.normalize("NFC", s)
-        s = _SMALL_RE.sub(_keep_if_vocalized, s)
-        s = _TAG_RE.sub(" ", s).replace("&nbsp;", " ")
-        s = _PAREN_RE.sub(_keep_if_vocalized, s)
-        s = _BRACKET_RE.sub(_keep_if_vocalized, s)
-        for tok in s.split():
-            tok = _TAAMIM_RE.sub("", tok).strip(_EDGE_PUNCT).lstrip("'׳")
-            if not _HEB_RE.search(tok):
-                continue
-            bare = sv.strip_marks(tok).replace("׳", "'")
-            if _NIQQUD_RE.search(tok) or _SPOKEN_UNVOCALIZED_RE.match(bare):
-                words.append(tok)
-                if len(words) >= n:
-                    return " ".join(words)
-    return " ".join(words)
+    return markup.first_words(text, n)
 
 
 def choose_version(policy: dict, day: str, with_text: list):
