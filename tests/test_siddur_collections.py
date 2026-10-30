@@ -171,6 +171,38 @@ class RealCatalogCollectionsTest(unittest.TestCase):
                 self.assertRegex(lf["ref"], r" \d+$")
                 self.assertTrue(lf["heTitle"] and not re.search("[֑-ׇ]", lf["heTitle"]))
 
+    def test_default_day_for_every_collection_leaf(self):
+        """ברירת המחדל של "מה אומרים היום?" לכל עלה של כל אוסף בכל נוסח
+        (באתר החי עד 30.10.2026: "יום חול רגיל" לכל עלי הימים הנוראים)."""
+        from siddur import days
+        want = {"rosh-hashanah": "rosh-hashana", "yom-kippur": "yom-kippur",
+                "selichot": "weekday", "tisha-bav": "tisha-bav",
+                "haggadah": "pesach"}
+        # ערב החג / מוצאי החג — היום שבו אומרים אותם בפועל
+        erev = {"rosh-hashanah": "weekday", "yom-kippur": "aseret-yemei-teshuva"}
+        motzei = {"rosh-hashanah": "aseret-yemei-teshuva", "yom-kippur": "weekday"}
+        seen = set()
+        for nus, coll, path in self.coll:
+            for p, _ in self.cat.leaves(path):
+                with self.subTest(path=p):
+                    got = days.leaf_day(self.cat, p.split("/"))
+                    crumbs = " ".join(str(c) for c in self.cat.breadcrumb(p)) + " " + p
+                    if re.search(r"motzei|מוצאי", crumbs) and coll in motzei:
+                        self.assertEqual(got, motzei[coll])
+                    elif re.search(r"erev|ערב(?![א-ת])", crumbs) and coll in erev:
+                        self.assertEqual(got, erev[coll])
+                    else:
+                        self.assertEqual(got, want[coll])
+                    seen.add((nus, coll))
+        self.assertTrue({c for _, c in seen} >= set(want), seen)
+
+    def test_kol_nidre_default_day_through_api(self):
+        path = _find(self.cat, lambda lf: (lf.get("ws") or {}).get("heading") == "כל נדרי")
+        payload, status, _ = api.respond(urllib.parse.urlencode({"path": path}))
+        self.assertEqual(status, 200, payload.get("error"))
+        self.assertEqual(payload["day"], {"key": "yom-kippur", "label": "יום כיפור",
+                                          "auto": True})
+
     def test_sefard_haggadah_tagged(self):
         node = self.cat.node("sefard/festivals/pesach-haggadah")
         self.assertEqual(node["collection"], "haggadah")
@@ -400,6 +432,28 @@ class ApiCollectionsTest(unittest.TestCase):
         self.assertTrue({"paragraph", "instruction"} <= kinds, kinds)
         self.assertTrue(payload["segments"])
         self.assertFalse(any("יאהדונהי" in u["text"] for u in payload["units"]))
+
+    def test_kol_nidre_mixed_paragraph_split(self):
+        """כל נדרי (עדות המזרח): הארמית בלי טעמים והפסוק "וְנִסְלַ֗ח…" המוטעם
+        באותה פסקה ⇐ שתי יחידות באותה תווית — הארמית לפי פיסוק, הפסוק לפי
+        טעמים (עד 30.10.2026 הפסקה כולה נחתכה לפי טעמים: "נַחֲרִים. וְדִי")."""
+        path = _find(self.cat, lambda lf: (lf.get("ws") or {}).get("heading") == "כל נדרי")
+        payload, status, _ = self.run_api(FakeSources(), path=path)
+        n = next(p["n"] for p in payload["paragraphs"]
+                 if p["first_words"].startswith("כָּל נִדְרֵי"))
+        payload, status, _ = self.run_api(FakeSources(), path=path, **{"from": n, "to": n})
+        self.assertEqual(status, 200, payload.get("error"))
+        said = [u for u in payload["units"] if u["kind"] == "paragraph"]
+        self.assertEqual([(u["chunk"], u.get("cont", False)) for u in said],
+                         [("punct", False), ("taamim", True)])
+        self.assertEqual({u["label"] for u in said}, {f"כל נדרי · {n}"})
+        self.assertTrue(said[0]["text"].startswith("כָּל נִדְרֵי."))
+        self.assertTrue(said[1]["text"].startswith("וְנִסְלַ֗ח"))
+        displays = [s["display"] for s in payload["segments"]]
+        self.assertNotIn("נַחֲרִים. וְדִי", displays)
+        self.assertNotIn("וְדִי נִנְדַּר. וְדִי", displays)
+        self.assertEqual(displays[-1], "כִּ֥י לְכׇל־הָעָ֖ם בִּשְׁגָגָֽה׃")
+        self.assertEqual(payload["n_units"], len(payload["units"]))
 
     def test_every_wikisource_leaf_served_from_snapshot(self):
         fake = FakeSources(ws_exc=AssertionError("אסור לפנות לרשת"))

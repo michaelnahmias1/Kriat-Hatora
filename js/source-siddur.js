@@ -736,7 +736,8 @@ function renderDays(data) {
     b.addEventListener("click", () => toggleCondition(c, conds));
     chips.appendChild(b);
   }
-  const units = (data.units || []).filter(u => u.condition);
+  // ‏cont — המשך של אותה תוספת (פסקה מעורבת שפוצלה, ‏split_mixed_unit) — לא נספר שוב
+  const units = (data.units || []).filter(u => u.condition && !u.cont);
   const on = units.filter(u => u.kind === "paragraph").length;
   $("sdDaysSum").textContent = `${on} תוספות נאמרות היום ומסונכרנות · ${units.length - on} באפור ` +
     "(מוצגות עם שם היום, לא נכנסות לכתוביות).";
@@ -796,8 +797,15 @@ async function applyDays(prev) {
 function copyUnitsToFreeText(units, title) {
   // רק מה שנאמר היום — בלי הוראות ובלי תוספות כבויות
   const spoken = units.filter(u => u.kind !== "instruction" && u.kind !== "conditional");
-  const text = (spoken.length ? spoken : units).map(u => String(u.text).trim())
-    .filter(Boolean).join("\n");
+  // פסקה מעורבת שפוצלה (‏cont — המשך שלה) חוזרת לשורה אחת, כמו במקור
+  const lines = [];
+  for (const u of spoken.length ? spoken : units) {
+    const t = String(u.text).trim();
+    if (!t) continue;
+    if (u.cont && lines.length) lines[lines.length - 1] += " " + t;
+    else lines.push(t);
+  }
+  const text = lines.join("\n");
   const cur = $("freeText").value;
   if (cur.trim() && cur !== text &&
       !confirm("בתיבת הטקסט החופשי כבר יש טקסט. להחליף אותו בקטע מהסידור?")) return false;

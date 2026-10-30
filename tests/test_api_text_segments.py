@@ -34,6 +34,23 @@ class TestUnits(unittest.TestCase):
         self.assertEqual([u["chunk"] for u in units],
                          ["punct", "punct", "taamim"])
 
+    def test_mixed_line_split_with_same_label(self):
+        """שורה עם תפילה בלי טעמים ופסוק מוטעם אחריה (סוף כל נדרי) ⇐ שתי
+        יחידות באותה תווית, כל אחת בחיתוך שלה; ההמשך מסומן cont, ומספור
+        השורות לא זז."""
+        kn = ("יְהֵא רַעֲוָא דִי יְהוֹן שְׁבִיתִין וּשְׁבִיקִין לָא שְׁרִירִין "
+              "וְלָא קַיָּמִין. וְנִסְלַ֗ח לְכׇל־עֲדַת֙ בְּנֵ֣י יִשְׂרָאֵ֔ל "
+              "וְלַגֵּ֖ר הַגָּ֣ר בְּתוֹכָ֑ם כִּ֥י לְכׇל־הָעָ֖ם בִּשְׁגָגָֽה׃")
+        units = api.text_units(kn + "\n" + VERSE)
+        self.assertEqual([(u["label"], u["chunk"], u.get("cont")) for u in units],
+                         [("שורה 1", "punct", None), ("שורה 1", "taamim", True),
+                          ("שורה 2", "taamim", None)])
+        self.assertEqual(units[0]["text"] + " " + units[1]["text"], kn)
+        payload = api.build_payload({"text": kn})
+        self.assertEqual(payload["n_units"], 2)
+        self.assertEqual({s["label"] for s in payload["segments"]}, {"שורה 1"})
+        self.assertEqual([s["unit"] for s in payload["segments"]][-3:], [1, 1, 1])
+
 
 class TestBuildPayload(unittest.TestCase):
     def test_shape_matches_segments_api(self):

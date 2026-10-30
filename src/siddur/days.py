@@ -8,12 +8,15 @@ markup.classify_leaf; ההחלטה אם תוספת נאמרת — markup.is_enab
 
 ברירת המחדל (בלי בחירה): לפי סוג היום של הקטע בקטלוג (ימי חול ⇐ יום חול
 רגיל, שבת ⇐ שבת, ראש חודש ⇐ ראש חודש, חגים ⇐ יום טוב / החג שבשם הקטע,
-חנוכה ופורים ⇐ לפי השם, תעניות ⇐ תענית ציבור / תשעה באב). **עונה — אין
+הגדה ⇐ פסח, חנוכה ופורים ⇐ לפי השם, תעניות ⇐ תענית ציבור / תשעה באב,
+ימים נוראים ⇐ ראש השנה / יום כיפור / עשי"ת, סליחות ⇐ יום חול — leaf_day). **עונה — אין
 ברירת מחדל**: קיץ/חורף נבחרים במפורש; עד אז שני הנוסחים (מוריד הטל / משיב
 הרוח, ותן ברכה / ותן טל ומטר) מוצגים באפור ולא מסונכרנים, והתשובה מבקשת
 לבחור (‏needs_choice). כך גם יום בשבוע (שיר של יום) וחג (כשנבחר "יום טוב"
 או "חול המועד" בלי לומר איזה).
 """
+
+import re
 
 from .markup import CONDITION_GROUPS, CONDITION_LABELS, GROUP_OF
 
@@ -63,22 +66,51 @@ CHOICE_LABELS = {
 
 
 def _titles(cat, keys) -> str:
+    """הכותרות (עברית, אנגלית, מפתח) של הקטע ושל התיקיות שמעליו — **בלי** הנוסח
+    וסוג היום: "חנוכה ופורים" / ‏chanukah-purim הם שם התיקייה של שניהם, ועד
+    29.10.2026 הם גרמו לכל עלה של חנוכה להיות "פורים"."""
     out = []
-    for i in range(1, len(keys) + 1):
+    for i in range(3, len(keys) + 1):
         node = cat.node(keys[:i]) or {}
         out += [node.get("heTitle", ""), node.get("title", "").lower(),
                 keys[i - 1]]
     return " ".join(out)
 
 
+# ערב החג / מוצאי החג — מילה שלמה (‏"ערבית" אינה "ערב"; ‏"wherever" אינו erev)
+_EREV_RE = re.compile(r"(?<![א-ת])ל?ערב(?![א-ת])|\berev\b")
+_MOTZEI_RE = re.compile(r"(?<![א-ת])(?:ב|ל)?מוצאי(?![א-ת])|\bmotza[e]?i\b")
+
+
 def leaf_day(cat, keys) -> str:
-    """סוג היום שמתאים לקטע לפי מקומו בקטלוג — ברירת המחדל של "מה היום"."""
+    """סוג היום שמתאים לקטע לפי מקומו בקטלוג — ברירת המחדל של "מה היום".
+
+    ימים נוראים (אוספים, 4.4.1): ראש השנה ⇐ ראש השנה; יום כיפור ⇐ יום
+    כיפור; ערב יום כיפור ומוצאי ראש השנה ⇐ עשרת ימי תשובה; ערב ראש השנה
+    ומוצאי יום כיפור ⇐ יום חול; **סליחות ⇐ יום חול רגיל** — רוב ימי הסליחות הם ימי חול של אלול
+    (ספרדים מר"ח אלול, אשכנזים מהשבוע שלפני ר"ה); התוספות של עשי"ת בהן
+    מוצגות באפור עם מתג. הגדה ⇐ פסח (ליל הסדר הוא יום טוב). קינות ⇐ תשעה
+    באב (תיקיית התעניות)."""
     day_type = keys[1] if len(keys) > 1 else ""
+    coll = keys[2] if len(keys) > 2 else ""
     t = _titles(cat, keys)
 
     def has(*words):
         return any(w in t for w in words)
 
+    if day_type == "high-holidays":
+        if coll == "selichot" or (has("סליחות", "selichot") and not coll):
+            return "weekday"
+        yk = coll == "yom-kippur" or has("כיפור", "כפור", "kippur")
+        if _MOTZEI_RE.search(t):        # מוצאי יוה"כ — כבר אחרי עשי"ת
+            return "weekday" if yk else "aseret-yemei-teshuva"
+        if _EREV_RE.search(t):
+            return "aseret-yemei-teshuva" if yk else "weekday"
+        if yk:
+            return "yom-kippur"
+        if coll == "rosh-hashanah" or has("ראש השנה", "rosh hashan"):
+            return "rosh-hashana"
+        return "aseret-yemei-teshuva"
     if day_type == "shabbat":
         return "shabbat"
     if day_type == "rosh-chodesh":
@@ -88,6 +120,8 @@ def leaf_day(cat, keys) -> str:
     if day_type == "fasts":
         return "tisha-bav" if has("תשעה באב", "ט' באב", "tisha") else "taanit"
     if day_type == "festivals":
+        if coll in ("haggadah", "pesach-haggadah") or has("הגדה", "haggadah"):
+            return "pesach"
         if has("שמיני עצרת", "שמחת תורה", "shemini", "simchat", "גשם", "rain"):
             return "shemini-atzeret"
         if has("סוכות", "סכות", "sukkot", "לולב", "lulav", "הושענות"):

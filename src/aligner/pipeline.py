@@ -153,14 +153,133 @@ def _taamim_evidence(word: str) -> set:
     return evidence
 
 
+# ‏פסקה מעורבת — פסוק מוטעם שמצוטט בתוך תפילה בלי טעמים (כל נדרי מסתיים
+# ב"וְנִסְלַ֗ח לְכׇל־עֲדַת֙…", ‏"כַּדָּבָר שֶׁנֶּאֱמַר: וְהָיָ֥ה טֶֽרֶם־יִקְרָ֖אוּ…" בעננו).
+# עד כאן היחידה כולה סווגה "טעמים", וחותך הטעמים — שאין לו מה לחתוך עליו
+# בטקסט בלי טעמים — חילק את התפילה באמצע משפטים ("וְדִי נִנְדַּר. וְדִי").
+# הכלל (chunk_pieces): מילה "מוטעמת" = יש עליה עדות לטעמים (_taamim_evidence);
+# רצף מוטעם סובל עד _MAX_TAAMIM_GAP מילים בלי טעם באמצעו, וכולל את מילת
+# הסילוק שאחריו (מתג וסוף פסוק — אין עליה טעם אחר). אם יש ביחידה רצף של
+# לפחות _MIN_PROSE_RUN מילים בלי טעמים — היא מתפצלת: כל רצף מוטעם אמיתי (לפחות
+# _MIN_TAAMIM_RUN מילים ושני טעמים שונים) — חלק "taamim", וכל השאר — "punct";
+# רצף קצר בלי טעמים ("וְנֶאֱמַר:") נשאר עם הפסוק שלידו. אין רצף כזה — היחידה
+# כולה "taamim", כמו קודם. ‏api/siddur.py ו-api/text_segments.py מפצלים כך את
+# היחידות (split_mixed_unit), וה-worker מקבל אותן כבר מפוצלות מהדפדפן — עם
+# chunk מפורש לכל חלק, כך שגם worker ישן מחלק בדיוק כמו השרת.
+_MIN_PROSE_RUN = 5
+_MIN_TAAMIM_RUN = 3
+_MAX_TAAMIM_GAP = 2
+_VERSE_END = frozenset(":.׃,;")      # ציטוט נגמר לפעמים בפסיק
+_RAW_TOKEN_RE = re.compile(r"\S+")
+_OPENERS_ONLY_RE = re.compile(r"^[(\[{„«‹]+$")
+
+
+def _is_silluq_word(word: str) -> bool:
+    """המילה האחרונה של פסוק: סילוק (מתג) וסוף פסוק — בלי טעם אחר."""
+    return (taamim.SOF_PASUQ in word
+            or (taamim.METEG in word and word[-1:] in _VERSE_END))
+
+
+def _runs(flags: list) -> list:
+    """רשימת בוליאנים ⇐ [(ערך, התחלה, סוף)] של רצפים שווים (סוף לא כולל)."""
+    out, start = [], 0
+    for i in range(1, len(flags) + 1):
+        if i == len(flags) or flags[i] != flags[start]:
+            out.append((flags[start], start, i))
+            start = i
+    return out
+
+
+def _taamim_flags(words: list) -> tuple:
+    """מילים ⇐ (לכל מילה: האם היא ברצף מוטעם — לפני הסינון של chunk_pieces,
+    העדות לטעמים שעליה)."""
+    evidence = [_taamim_evidence(w) for w in words]
+    flags = [bool(e) for e in evidence]
+    # מילה או שתיים בלי טעם בתוך פסוק (למשל מילה שכל טעמה מתג)
+    for val, a, b in _runs(flags):
+        if not val and 0 < a and b < len(flags) and b - a <= _MAX_TAAMIM_GAP:
+            flags[a:b] = [True] * (b - a)
+    # מילת הסילוק שסוגרת את הפסוק
+    for val, a, b in _runs(flags):
+        if val and b < len(flags) and _is_silluq_word(words[b]):
+            flags[b] = True
+    return flags, evidence
+
+
+def chunk_pieces(text: str) -> list:
+    """טקסט של יחידה ⇐ [(chunk, טקסט)] — החלקים שלה לפי נוכחות טעמים.
+
+    חלק אחד ⇐ היחידה כולה במצב אחד (רוב היחידות). כמה חלקים ⇐ פסקה מעורבת
+    (ראה למעלה). הטקסט של החלקים הוא חתיכות רצופות של הטקסט המקורי, מופרדות
+    ברווח, כך שמילות היחידה (גם בדפדפן וגם בשרת) הן בדיוק מילות החלקים."""
+    words = tokenize(clean_sefaria_text(text))
+    evidence = set().union(*(_taamim_evidence(w) for w in words))
+    if len(evidence) < _MIN_DISTINCT_TAAMIM:
+        return [("punct", text)]
+    if "<" in text or "&" in text:
+        # ‏HTML — הטקסט הגולמי אינו מתפצל למילים לפי רווחים; לא מפצלים
+        return [("taamim", text)]
+    raw = [(m.start(), m.end(), tokenize(clean_sefaria_text(m.group())))
+           for m in _RAW_TOKEN_RE.finditer(text)]
+    heb = [i for i, (_, _, toks) in enumerate(raw) if toks]
+    hwords = [" ".join(raw[i][2]) for i in heb]
+    flags, ev = _taamim_flags(hwords)
+    if not any(not v and b - a >= _MIN_PROSE_RUN for v, a, b in _runs(flags)):
+        return [("taamim", text)]        # אין חלק משמעותי בלי טעמים
+    for val, a, b in _runs(flags):       # רצף מוטעם קצר מדי — לא פסוק
+        if val and (b - a < _MIN_TAAMIM_RUN
+                    or len(set().union(*ev[a:b])) < _MIN_DISTINCT_TAAMIM):
+            flags[a:b] = [False] * (b - a)
+    if not any(flags):
+        return [("punct", text)]
+    for val, a, b in _runs(flags):       # רצף קצר בלי טעמים — עם הפסוק
+        if not val and b - a < _MIN_PROSE_RUN:
+            flags[a:b] = [True] * (b - a)
+    runs = _runs(flags)
+    if len(runs) == 1:
+        return [("taamim" if runs[0][0] else "punct", text)]
+    pieces, cut = [], 0
+    for val, a, b in runs:
+        if b == len(flags):
+            end = len(text)
+        else:
+            # החיתוך — לפני המילה הראשונה של החלק הבא, וסימני פתיחה ("(")
+            # שצמודים אליה עוברים איתה
+            r = heb[b]
+            while r - 1 > heb[b - 1] and _OPENERS_ONLY_RE.match(
+                    text[raw[r - 1][0]:raw[r - 1][1]]):
+                r -= 1
+            end = raw[r][0]
+        pieces.append(("taamim" if val else "punct", text[cut:end].strip()))
+        cut = end
+    return pieces
+
+
+def split_mixed_unit(unit: dict) -> list:
+    """יחידה ⇐ רשימת יחידות, כל אחת עם chunk מפורש. יחידה עם chunk כפוי
+    (פסוק תנ״ך — verse_units) או שאינה מעורבת ⇐ היא עצמה. פסקה מעורבת ⇐
+    יחידה לכל חלק, עם אותה תווית ואותם שדות; לחלקים שאחרי הראשון ‏"cont":
+    true (המשך של אותה פסקה/שורה — לספירת שורות ולהעתקה לטקסט חופשי)."""
+    if unit.get("chunk") is not None:
+        _unit_chunk(unit)                # בדיקת ערך
+        return [unit]
+    pieces = chunk_pieces(unit["text"])
+    out = []
+    for i, (chunk, text) in enumerate(pieces):
+        part = dict(unit, text=text, chunk=chunk)
+        if i:
+            part["cont"] = True
+        out.append(part)
+    return out
+
+
 def _unit_chunk(unit: dict) -> str:
-    """מצב החיתוך של יחידה: כפוי בשדה chunk, אחרת לפי נוכחות טעמים."""
+    """מצב החיתוך של יחידה: כפוי בשדה chunk, אחרת לפי נוכחות טעמים.
+    יחידה מעורבת שלא פוצלה (split_mixed_unit) ⇐ "taamim", כמו לפני הפיצול."""
     chunk = unit.get("chunk")
     if chunk is None:
-        words = tokenize(clean_sefaria_text(unit["text"]))
-        evidence = set().union(*(_taamim_evidence(w) for w in words))
-        chunk = ("taamim" if len(evidence) >= _MIN_DISTINCT_TAAMIM
-                 else "punct")
+        kinds = {c for c, _ in chunk_pieces(unit["text"])}
+        chunk = "taamim" if "taamim" in kinds else "punct"
     if chunk not in CHUNK_MODES:
         raise ValueError(f"מצב חיתוך לא מוכר: {chunk!r}")
     return chunk

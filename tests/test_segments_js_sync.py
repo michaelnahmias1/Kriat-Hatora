@@ -21,7 +21,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-from aligner.pipeline import _unit_words, units_to_segments  # noqa: E402
+from aligner.pipeline import (_unit_words, split_mixed_unit,  # noqa: E402
+                              units_to_segments)
 
 
 def nfc(text):
@@ -102,6 +103,18 @@ class TestSegmentsJsSync(unittest.TestCase):
 
     def test_tanakh_ketiv(self):
         self._check(_cases(TANAKH_UNITS, "tanakh", 2))
+
+    def test_mixed_paragraph_split_units(self):
+        """פסקה מעורבת שפוצלה (‏split_mixed_unit — תפילה בלי טעמים + פסוק
+        מוטעם, סוף כל נדרי): שתי יחידות באותה תווית — אותה ספירה בשני הצדדים."""
+        kn = nfc("וְדִי אֲסָרְנָא עַל נַפְשָׁתָנָא וְדִי נֶאְסַר. יְהֵא רַעֲוָא דִי "
+                 "יְהוֹן שְׁבִיתִין וּשְׁבִיקִין לָא שְׁרִירִין וְלָא קַיָּמִין. "
+                 "וְנִסְלַ֗ח לְכׇל־עֲדַת֙ בְּנֵ֣י יִשְׂרָאֵ֔ל וְלַגֵּ֖ר הַגָּ֣ר "
+                 "בְּתוֹכָ֑ם כִּ֥י לְכׇל־הָעָ֖ם בִּשְׁגָגָֽה׃")
+        units = split_mixed_unit({"text": kn, "label": "כל נדרי · 6",
+                                  "kind": "paragraph"})
+        self.assertEqual([u["chunk"] for u in units], ["punct", "taamim"])
+        self._check(_cases(units, "tefila", 3))
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ const SEG_HINT_SIDDUR = "בדיקת עיניים: כל שורה ממוספרת �
 function loadedSummary(d) {
   const src = dataSource();
   if (src === "text")
-    return `נטען: ${readFreeText().title || "טקסט חופשי"} · ${d.n_units} שורות · ${d.segments.length} כתוביות`;
+    return `נטען: ${readFreeText().title || "טקסט חופשי"} · ${d.units ? d.units.filter(u => !u.cont).length : d.n_units} שורות · ${d.segments.length} כתוביות`;
   if (src === "siddur") {
     const r = d.range || {};
     const part = r.total > 1 ? ` · פסקאות ${r.from}–${r.to} מתוך ${r.total}` : "";

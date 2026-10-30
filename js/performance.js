@@ -55,7 +55,9 @@ function perfTextSig() {
 /* ---------- ההצעה הראשונה לבתים ---------- */
 /* טקסט חופשי עם שורות ריקות בין הבתים: מספר הבית של כל יחידה. רק כשהשורות
    בתיבה תואמות בדיוק את היחידות שנטענו (אחרת — null, ובית לכל שורה). שורה
-   בלי אות עברית (כמו "***") נחשבת מפריד, כמו שורה ריקה. */
+   בלי אות עברית (כמו "***") נחשבת מפריד, כמו שורה ריקה. שורה מעורבת (פסוק
+   מוטעם בתוך טקסט בלי טעמים) היא כמה יחידות — הראשונה ואחריה ההמשכים
+   (‏cont), שהטקסט המחובר שלהם הוא השורה. */
 function freeTextParagraphs() {
   if (!isFreeText() || !S.data.units) return null;
   const units = S.data.units;
@@ -64,9 +66,12 @@ function freeTextParagraphs() {
   for (const raw of readFreeText().text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || !HE_LETTER_RE.test(line)) { if (out.length) gap = true; continue; }
-    if (out.length >= units.length || units[out.length].text !== line) return null;
+    if (out.length >= units.length || units[out.length].cont) return null;
+    let k = out.length + 1, joined = units[out.length].text;
+    while (k < units.length && units[k].cont) joined += " " + units[k++].text;
+    if (joined.replace(/\s+/g, " ") !== line.replace(/\s+/g, " ")) return null;
     if (gap) { para++; gap = false; }
-    out.push(para);
+    while (out.length < k) out.push(para);
   }
   return out.length === units.length && para > 0 ? out : null;
 }

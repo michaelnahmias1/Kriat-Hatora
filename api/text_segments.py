@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from aligner.pipeline import (ALIGN_MODES, _unit_chunk,  # noqa: E402
+from aligner.pipeline import (ALIGN_MODES, split_mixed_unit,  # noqa: E402
                               units_to_segments)
 from chunker.chunker import _HEBREW_LETTER_RE  # noqa: E402
 
@@ -66,17 +66,18 @@ def text_units(text: str) -> list:
     """טקסט מודבק → יחידות: כל שורה שיש בה אות עברית היא יחידה.
 
     התווית "שורה N" ממוספרת לפי השורות שנשארו (שורות ריקות לא נספרות).
-    ‏chunk נקבע כאן במפורש, כדי שה-worker לא יצטרך לזהות שוב.
+    ‏chunk נקבע כאן במפורש, כדי שה-worker לא יצטרך לזהות שוב. שורה מעורבת
+    — פסוק מוטעם בתוך טקסט בלי טעמים — מתפצלת לכמה יחידות באותה תווית
+    (‏split_mixed_unit; ההמשך מסומן ‏"cont": true), כמו פסקה בסידור.
     """
-    units = []
+    units, n = [], 0
     for line in text.splitlines():
         line = line.strip()
         if not _HEBREW_LETTER_RE.search(line):
             continue
-        unit = {"text": line, "label": f"שורה {len(units) + 1}",
-                "kind": "line"}
-        unit["chunk"] = _unit_chunk(unit)
-        units.append(unit)
+        n += 1
+        units.extend(split_mixed_unit(
+            {"text": line, "label": f"שורה {n}", "kind": "line"}))
     return units
 
 

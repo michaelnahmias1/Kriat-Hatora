@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from aligner.anchors import normalize_word  # noqa: E402
-from aligner.pipeline import _unit_chunk, units_to_segments  # noqa: E402
+from aligner.pipeline import split_mixed_unit, units_to_segments  # noqa: E402
 from siddur import load_catalog  # noqa: E402
 from siddur import sources, wikisource  # noqa: E402  (אוספים, 4.4.1)
 from siddur.identify import FORMAT, INDEX_PATH  # noqa: E402
@@ -64,9 +64,8 @@ def paragraph_words(paragraph, parts=None) -> list:
     for kind, body, _ in parts:
         if kind not in _SAID:
             continue
-        unit = {"text": body, "kind": "paragraph"}
-        unit["chunk"] = _unit_chunk(unit)
-        units.append(unit)
+        # כמו api/siddur.py — גם פיצול פסקה מעורבת (המילים עצמן לא משתנות)
+        units.extend(split_mixed_unit({"text": body, "kind": "paragraph"}))
     if not units:
         return []
     out = []

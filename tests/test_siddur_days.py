@@ -278,6 +278,14 @@ class TestDays(unittest.TestCase):
         rc = next(p for p, _ in self.cat.leaves("sefard/rosh-chodesh"))
         self.assertEqual(days.leaf_day(self.cat, rc.split("/")), "rosh-chodesh")
 
+    def test_leaf_day_chanukah_is_not_purim(self):
+        """התיקייה "חנוכה ופורים" (‏chanukah-purim) אינה חלק מהשם — עד
+        30.10.2026 כל עלי חנוכה קיבלו "פורים"."""
+        for nus in ("ashkenaz", "sefard", "edot-hamizrach"):
+            for p, _ in self.cat.leaves(f"{nus}/chanukah-purim"):
+                want = "purim" if "/purim" in p else "chanukah"
+                self.assertEqual(days.leaf_day(self.cat, p.split("/")), want, p)
+
     def resolve(self, **q):
         return days.resolve(q, self.cat, EDOT_AMIDA.split("/"))
 

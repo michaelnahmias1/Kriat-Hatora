@@ -82,7 +82,7 @@ def _load_by_path(name: str, path: Path, package: bool = False):
 _load_by_path("siddur", _SRC / "siddur", package=True)
 _ts = _load_by_path("text_segments", _API_DIR / "text_segments.py")
 
-from aligner.pipeline import _unit_chunk  # noqa: E402
+from aligner.pipeline import split_mixed_unit  # noqa: E402
 from siddur import load_aliases, load_catalog, split_path  # noqa: E402
 from siddur.catalog import is_leaf  # noqa: E402
 from siddur import sources as _sources, wikisource as _ws  # noqa: E402 (4.4.1)
@@ -404,8 +404,11 @@ def leaf_payload(cat, keys: list, q: dict) -> dict:
                 unit = {"text": body, "label": label,
                         "kind": "paragraph" if kind == SPOKEN else "instruction"}
             if unit["kind"] == "paragraph":
-                unit["chunk"] = _unit_chunk(unit)  # טעמים/פיסוק — 8.24
-            units.append(unit)
+                # טעמים/פיסוק (8.24); פסקה עם פסוק מוטעם מצוטט בתוך תפילה בלי
+                # טעמים (כל נדרי) ⇐ כמה יחידות באותה תווית, כל אחת בחיתוך שלה
+                units.extend(split_mixed_unit(unit))
+            else:
+                units.append(unit)
     days = day_rules.summary(conds, sel)
     try:
         check_units_limits(units)

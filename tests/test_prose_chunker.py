@@ -292,5 +292,105 @@ class TestMetsudahPronunciationMarks(unittest.TestCase):
         self.assertIn("בכל", segs[0]["align_plain"] + segs[1]["align_plain"])
 
 
+class TestMixedParagraphs(unittest.TestCase):
+    """פסקה מעורבת — פסוק מוטעם מצוטט בתוך תפילה בלי טעמים (‏chunk_pieces,
+    ‏split_mixed_unit). הטקסטים — מהטקסט האמיתי של עדות המזרח (כל נדרי
+    מוויקיטקסט, עננו מ-Shaliehsaboo), מקוצרים."""
+
+    # סוף כל נדרי: ארמית בלי טעמים, ואחריה במדבר טו:כו מוטעם
+    KOL_NIDRE = ("וְדִי חֲרַמְנָא וְדִי נַחֲרִים. וְדִי אֲסָרְנָא עַל נַפְשָׁתָנָא "
+                 "וְדִי נֶאְסַר. כֻּלְּהוֹן אִתְחָרַטְנָא בְהוֹן. יְהֵא רַעֲוָא דִי "
+                 "יְהוֹן שְׁבִיתִין וּשְׁבִיקִין לָא שְׁרִירִין וְלָא קַיָּמִין. "
+                 "וְנִסְלַ֗ח לְכׇל־עֲדַת֙ בְּנֵ֣י יִשְׂרָאֵ֔ל וְלַגֵּ֖ר הַגָּ֣ר "
+                 "בְּתוֹכָ֑ם כִּ֥י לְכׇל־הָעָ֖ם בִּשְׁגָגָֽה׃")
+    # עננו: "כַּדָּבָר שֶׁנֶּאֱמַר:" + ישעיה סה:כד, ואחריו המשך התפילה. מילת
+    # הסילוק (אֶשְׁמָֽע:) — בלי טעם אחר — נשארת עם הפסוק
+    ANENU = ("טֶֽרֶם נִקְרָא אֵלֶֽיךָ אַתָּה תַֽעֲנֶה, נְדַבֵּר וְאַתָּה תִשְׁמַע, "
+             "כַּדָּבָר שֶׁנֶּאֱמַר: וְהָיָ֥ה טֶֽרֶם־יִקְרָ֖אוּ וַאֲנִ֣י אֶעֱנֶ֑ה "
+             "ע֛וֹד הֵ֥ם מְדַבְּרִ֖ים וַאֲנִ֥י אֶשְׁמָֽע: כִּי אַתָּה יְהֹוָה "
+             "פּוֹדֶה וּמַצִּיל וְעוֹנֶה וּמְרַחֵם בְּכָל־עֵת צָרָה וְצוּקָה.")
+
+    def pieces(self, text):
+        from aligner.pipeline import chunk_pieces
+        return chunk_pieces(text)
+
+    def assert_partition(self, text, pieces):
+        """החלקים — חתיכות רצופות של הטקסט: אותן מילים, בשני החותכים."""
+        from chunker import tokenize
+        self.assertEqual(" ".join(t for _, t in pieces).split(), text.split())
+        self.assertEqual([w for _, t in pieces
+                          for w in tokenize(clean_sefaria_text(t))],
+                         tokenize(clean_sefaria_text(text)))
+        self.assertEqual(sum(len(prose_tokens(t)) for _, t in pieces),
+                         len(prose_tokens(text)))
+
+    def test_kol_nidre_split_at_the_verse(self):
+        p = self.pieces(self.KOL_NIDRE)
+        self.assertEqual([c for c, _ in p], ["punct", "taamim"])
+        self.assertTrue(p[0][1].endswith("וְלָא קַיָּמִין."))
+        self.assertTrue(p[1][1].startswith("וְנִסְלַ֗ח"))
+        self.assert_partition(self.KOL_NIDRE, p)
+        self.assertEqual(_unit_chunk({"text": self.KOL_NIDRE}), "taamim",
+                         "יחידה שלא פוצלה — כמו קודם")
+
+    def test_kol_nidre_subtitles_follow_punctuation(self):
+        from aligner.pipeline import split_mixed_unit
+        units = split_mixed_unit({"text": self.KOL_NIDRE, "label": "כל נדרי · 6",
+                                  "kind": "paragraph"})
+        self.assertEqual([(u["label"], u["chunk"], u.get("cont")) for u in units],
+                         [("כל נדרי · 6", "punct", None),
+                          ("כל נדרי · 6", "taamim", True)])
+        segs = displays(units_to_segments(units, 4, None, "tefila"))
+        self.assertIn("וְדִי חֲרַמְנָא וְדִי נַחֲרִים.", segs)
+        self.assertNotIn("נַחֲרִים. וְדִי", segs)       # כך חתך חותך הטעמים
+        self.assertEqual(segs[-3:], ["וְנִסְלַ֗ח לְכׇל־עֲדַת֙ בְּנֵ֣י יִשְׂרָאֵ֔ל",
+                                     "וְלַגֵּ֖ר הַגָּ֣ר בְּתוֹכָ֑ם",
+                                     "כִּ֥י לְכׇל־הָעָ֖ם בִּשְׁגָגָֽה׃"])
+        whole = units_to_segments([{"text": self.KOL_NIDRE, "chunk": "taamim"}],
+                                  4, None, "tefila")
+        self.assertEqual(sum(len(s["align_plain"]) for s in whole),
+                         sum(len(s["align_plain"]) for s in
+                             units_to_segments(units, 4, None, "tefila")))
+
+    def test_verse_in_the_middle_with_silluq_word(self):
+        p = self.pieces(self.ANENU)
+        self.assertEqual([c for c, _ in p], ["punct", "taamim", "punct"])
+        self.assertTrue(p[0][1].endswith("שֶׁנֶּאֱמַר:"))
+        self.assertTrue(p[1][1].endswith("אֶשְׁמָֽע:"))
+        self.assert_partition(self.ANENU, p)
+
+    def test_pure_verse_and_short_intro_unchanged(self):
+        verse = TestRoutingInPipeline.VERSE
+        self.assertEqual(self.pieces(verse), [("taamim", verse)])
+        # מבוא קצר ("וְנֶאֱמַר:") — נשאר עם הפסוק, יחידה אחת כמו קודם
+        intro = "וְנֶאֱמַר: " + verse
+        self.assertEqual(self.pieces(intro), [("taamim", intro)])
+        # מצודה: שווא נע + פסוק אמיתי (8.24) — ללא שינוי
+        m = TestMetsudahPronunciationMarks
+        self.assertEqual(_unit_chunk({"text": m.BARCHU + " " + m.DEUT}), "taamim")
+        self.assertEqual(self.pieces(m.SHEMA), [("punct", m.SHEMA)])
+
+    def test_stray_accents_in_prose_are_not_a_verse(self):
+        """שני טעמים על שתי מילים בסוף פיוט (שבת זכור, עדות המזרח) — לא פסוק:
+        היחידה כולה לפי פיסוק."""
+        text = ("וַיְהִי בִּימֵי אֲחַשְׁוֵרוֹשׁ, מֶלֶךְ הוּקָם עָל כִּבְרוֹשׁ, נִשָּׂא "
+                "וָרָם עַל כָּל־קָצִין וָרֹאשׁ, וַיהֹוָ֛ה הֵנִיחַֽ־ל֥וֹ:")
+        self.assertEqual(self.pieces(text), [("punct", text)])
+        self.assertEqual(_unit_chunk({"text": text}), "punct")
+
+    def test_forced_chunk_is_never_split(self):
+        from aligner.pipeline import split_mixed_unit
+        unit = {"text": self.KOL_NIDRE, "kind": "verse", "chunk": "taamim"}
+        self.assertEqual(split_mixed_unit(unit), [unit])
+        with self.assertRaises(ValueError):
+            split_mixed_unit({"text": "אָמֵן", "chunk": "nope"})
+
+    def test_line_breaks_inside_a_unit(self):
+        text = self.ANENU.replace(" כַּדָּבָר", "\nכַּדָּבָר")
+        p = self.pieces(text)
+        self.assertEqual([c for c, _ in p], ["punct", "taamim", "punct"])
+        self.assert_partition(text, p)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

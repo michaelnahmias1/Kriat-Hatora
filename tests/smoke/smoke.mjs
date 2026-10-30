@@ -1591,7 +1591,10 @@ const LD_ORDER2 = [0, 1, 2, 2, 3, 4, 0, 1, 6, 7, 8, 9, 6, 7, 8, 9, 0, 1];
 const LD_ORDER_SPLIT = [0, 1, 2, 3, 4, 5, 0, 1, 7, 8, 9, 10, 7, 8, 9, 10, 0, 1];
 // ואחרי איפוס החלוקה — חזרה ל-15 כתוביות, בלי ×2 של שורה 3
 const LD_ORDER3 = [0, 1, 2, 3, 4, 0, 1, 6, 7, 8, 9, 6, 7, 8, 9, 0, 1];
-const PERF_SOON = "\n⏳ בקרוב: הסנכרון של חזרות. בינתיים הסנכרון ייעשה לפי סדר הטקסט.";
+// סוף כל נדרי (עדות המזרח, ויקיטקסט): ארמית בלי טעמים ואחריה פסוק מוטעם
+const KN_MIXED = "יְהֵא רַעֲוָא דִי יְהוֹן שְׁבִיתִין וּשְׁבִיקִין לָא שְׁרִירִין וְלָא קַיָּמִין. " +
+  "וְנִסְלַ֗ח לְכׇל־עֲדַת֙ בְּנֵ֣י יִשְׂרָאֵ֔ל וְלַגֵּ֖ר הַגָּ֣ר בְּתוֹכָ֑ם כִּ֥י לְכׇל־הָעָ֖ם בִּשְׁגָגָֽה׃";
+const PERF_SOON ="\n⏳ בקרוב: הסנכרון של חזרות. בינתיים הסנכרון ייעשה לפי סדר הטקסט.";
 const perfNames = page => page.$$eval("#perfList .pblock .pname", n => n.map(x => x.textContent));
 const editorOrder = page => page.evaluate(() => perfOrder(PE.p, PE.g).order);
 const perfIsOpen = page => page.evaluate(() => document.getElementById("perfOverlay").classList.contains("open"));
@@ -1808,6 +1811,28 @@ async function flowPerformance(browser, base, profile, enabled) {
       assert.deepEqual(await page.$$eval("#perfList .plabel", b => b.map(x => x.textContent)), ["שורה 1", "שורה 3", "שורה 4"]);
       await perfClick(page, '.pblock[data-b="0"] [data-act="refrain"]');
       assert.deepEqual(await editorOrder(page), [...LD_R, ...LD_S1, ...LD_R, ...LD_S2, ...LD_R]);
+      await page.click("#perfCancel");
+    });
+
+    await step(`${tag} שורה מעורבת (תפילה + פסוק מוטעם) ⇐ שתי יחידות באותה תווית; עדיין שורה אחת ובית אחד`, async () => {
+      const lines = LD_TEXT.split("\n");
+      const text = [lines[0], lines[1], "", KN_MIXED].join("\n");
+      const tsm = mockApi("text_segments", { text, mode: "tefila" }).body;
+      assert.deepEqual(tsm.units.map(u => [u.label, u.chunk, !!u.cont]),
+        [["שורה 1", "punct", false], ["שורה 2", "punct", false],
+         ["שורה 3", "punct", false], ["שורה 3", "taamim", true]]);
+      assert.equal(tsm.units[2].text + " " + tsm.units[3].text, KN_MIXED);
+      await page.fill("#freeText", text);
+      await page.click("#textLoadBtn");
+      const want = `נטען: לכה דודי · 3 שורות · ${tsm.segments.length} כתוביות`;
+      await page.waitForFunction(w => document.getElementById("loadOk").textContent === w, want);
+      // תווית אחת לשני החלקים בתצוגה
+      assert.deepEqual(await page.$$eval("#segPreview .vchip", c => c.map(x => x.textContent)), ["שורה 1", "שורה 2", "שורה 3"]);
+      assert.deepEqual(await page.evaluate(() => freeTextParagraphs()), [0, 0, 1, 1]);
+      await page.click("#perfBtn");
+      const perUnit = u => tsm.segments.filter(s => s.unit === u).length;
+      assert.deepEqual(await page.$$eval("#perfList .pblock", b => b.map(x => x.querySelectorAll(".pline").length)),
+        [perUnit(0) + perUnit(1), perUnit(2) + perUnit(3)]);
       await page.click("#perfCancel");
     });
   } else {
