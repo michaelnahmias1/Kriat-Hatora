@@ -1,0 +1,13 @@
+{
+ "_recorded": "תשובה אמיתית של sefaria.org (api/v3/texts), הוקלטה 2026-10-29. קוצרה: רק השדות שה-API קורא; בעלה הזה אין טקסט במהדורה הזו — Sefaria עונה 200 עם versions ריק.",
+ "ref": "Siddur Sefard, Weekday Shacharit, Ashrei",
+ "warnings": [
+  {
+   "hebrew|Torat Emet 357": {
+    "warning_code": 101,
+    "message": "We do not have version named Torat Emet 357 with language hebrew for Siddur Sefard, Weekday Shacharit, Ashrei"
+   }
+  }
+ ],
+ "versions": []
+}

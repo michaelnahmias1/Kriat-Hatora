@@ -9,6 +9,7 @@
   const ft = (st && st.freeText) || {};
   $("freeText").value = ft.text || "";
   $("textTitle").value = ft.title || "";
+  siddurRestore(st && st.siddur);   // הבחירה בסידור — לפני הלשונית (שעשויה לפתוח אותה)
   setSourceTab((st && st.source) || "tanakh");
   const q = (st && st.query) || {};
   if (q.book) $("book").value = q.book;
@@ -18,11 +19,13 @@
     chapter_end: q.chapter_end, verse_end: q.verse_end,
   });
   if (!st) return;
+  S.singing = st.singing === true;   // לפני התצוגה — refreshTimingSteps מציג את המתג
   if (st.data) {
     S.data = st.data; S.times = st.times; S.endTime = st.endTime; S.audioName = st.audioName;
     S.report = st.report || null;
     S.splits = st.splits || null;
     S.baseSplits = st.baseSplits || null;
+    perfRestore(st.perf, st.timesOrder);   // לפני התצוגה — היא סופרת את הכתוביות בתוצאה
     renderTextLoaded();
     if (st.audioName) showFileChip(st.audioName, "בחר את הקובץ שוב");
   }

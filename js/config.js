@@ -11,3 +11,10 @@ const AI_TOKEN = "hdkue38hf6Gfjl96XMre";      // אותו token שהוגדר ב-
    נוצר פעם אחת עם `npx web-push generate-vapid-keys`; המפתח הפרטי נשמר
    ב-secret‏ kriat-hatora ב-Modal‏ (VAPID_PRIVATE_KEY) — ראה README. */
 const VAPID_PUBLIC_KEY = "";
+
+/* סנכרון לפי מבנה הביצוע — חזרות, פזמון ודילוגים (PLAN_TEFILA.md 4.3.1–4.3.2).
+   העורך ("מבנה הביצוע") זמין תמיד בתפילה ובטקסט חופשי; כשהדגל דולק השדה
+   performance נשלח ל-worker (4.3.2 — ממוזג; פעיל מרגע שה-worker נפרס מחדש).
+   worker ישן בחלון הפריסה זורק NotImplementedError — cloud.js מציג אז "הענן
+   עדיין לא עודכן". כבוי ⇒ העורך מציג "בקרוב" והסנכרון לינארי. */
+const PERFORMANCE_ENABLED = true;

@@ -282,10 +282,46 @@ class TestParseParamsUnits(unittest.TestCase):
                                               performance="[1, 0, 1]"))
         self.assertEqual(got["performance"], [1, 0, 1])
 
+    def test_performance_word_cap_with_splits(self):
+        """החזרות מכפילות מילים — אותה תקרה כמו לחלוקה (MAX_SPLIT_WORDS)."""
+        n = params.MAX_SPLIT_WORDS // 10
+        form = _units_form(splits="[10]",
+                           performance=json.dumps([0] * (n + 1)))
+        with self.assertRaisesRegex(ValueError, "ארוך מדי"):
+            params.parse_params(form)
+        params.parse_params(_units_form(splits="[10]",
+                                        performance=json.dumps([0] * n)))
+
     def test_performance_without_splits_checks_shape_only(self):
         """בלי splits מספר הכתוביות ידוע רק אחרי החיתוך — בצינור עצמו."""
         got = params.parse_params(_units_form(performance="[0, 99]"))
         self.assertEqual(got["performance"], [0, 99])
+
+    def test_performance_limit_in_sync_with_ui(self):
+        """עורך מבנה הביצוע (js/performance.js) חוסם מעל אותה תקרה."""
+        import re
+        js = (_ROOT / "js" / "performance.js").read_text(encoding="utf-8")
+        m = re.search(r"const PERF_MAX_LEN = (\d+);", js)
+        self.assertIsNotNone(m)
+        self.assertEqual(int(m.group(1)), params.MAX_PERFORMANCE)
+        cfg = (_ROOT / "js" / "config.js").read_text(encoding="utf-8")
+        # 4.3.2 מוזג — הממשק שולח performance (ופועל מרגע שה-worker נפרס מחדש)
+        self.assertIn("const PERFORMANCE_ENABLED = true;", cfg,
+                      "4.3.2 מוזג — הסנכרון של חזרות פעיל בממשק")
+        # ‏MAX_PERFORMANCE בדפדפן נאכף גם בצינור (hybrid.expand_performance)
+        self.assertEqual(params.MAX_PERFORMANCE, 20000)
+
+    def test_singing_profile_in_sync_with_ui(self):
+        """מתג "שירה / חזנות" (js/cloud.js) שולח ערך שה-worker מכיר — ורק בתפילה."""
+        import re
+        js = (_ROOT / "js" / "cloud.js").read_text(encoding="utf-8")
+        sent = re.findall(r'fd\.append\("profile", "(\w+)"\)', js)
+        self.assertEqual(sent, ["singing"])
+        self.assertIn("singing", params.PROFILES)
+        form = _units_form(profile=sent[0])
+        self.assertEqual(params.parse_params(form)["profile"], "singing")
+        # בלי השדה — ברירת המחדל של ה-worker היא קריאה
+        self.assertEqual(params.parse_params(_units_form())["profile"], "reading")
 
     def test_bad_max_words_and_splits_in_units_mode(self):
         with self.assertRaisesRegex(ValueError, "מקסימום מילים"):
@@ -361,6 +397,19 @@ class TestRouting(unittest.TestCase):
                               "work_dir": "/t"})
         self.assertEqual(params.notify_label(p), "אשרי")
 
+    def test_singing_routes_to_run_hybrid_units(self):
+        """פרופיל שירה (4.3.5) עובר כמו שהוא לצינור היחידות, תמיד ב-tefila."""
+        p = params.parse_params(_units_form(profile="singing"))
+        name, kw = params.pipeline_call(p, "/t/a.wav", "/t/o.srt", "/t")
+        self.assertEqual(name, "run_hybrid_units")
+        self.assertEqual((kw["profile"], kw["mode"]), ("singing", "tefila"))
+
+    def test_profiles_in_sync_with_pipeline(self):
+        """‏params.PROFILES (העתק — ה-web לא טוען את הצינור) = profiles.py."""
+        sys.path.insert(0, str(_ROOT / "src"))
+        from aligner import profiles
+        self.assertEqual(set(params.PROFILES), set(profiles.PROFILES))
+
     def test_routing_kwargs_match_pipeline_signatures(self):
         """שמות הארגומנטים תואמים לחתימות בפועל ב-src/aligner/hybrid.py."""
         sys.path.insert(0, str(_ROOT / "src"))
@@ -379,9 +428,13 @@ class TestRouting(unittest.TestCase):
     def test_constants_in_sync_with_pipeline(self):
         """ההעתק של UNIT_KINDS / CHUNK_MODES ב-params.py חייב להישאר מסונכרן."""
         sys.path.insert(0, str(_ROOT / "src"))
-        from aligner import pipeline
+        from aligner import hybrid, pipeline
         self.assertEqual(params.UNIT_KINDS, pipeline.UNIT_KINDS)
         self.assertEqual(params.CHUNK_MODES, pipeline.CHUNK_MODES)
+        # תקרת סדר הביצוע זהה; תקרת המילים בצינור (מילות יישור) ≥ זו שכאן
+        self.assertEqual(params.MAX_PERFORMANCE, hybrid.MAX_PERFORMANCE)
+        self.assertGreaterEqual(hybrid.MAX_PERFORMED_WORDS,
+                                params.MAX_SPLIT_WORDS)
 
 
 if __name__ == "__main__":

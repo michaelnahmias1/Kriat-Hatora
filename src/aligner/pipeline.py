@@ -120,14 +120,47 @@ def verse_units(verses: list) -> list:
 # לא-מוטעם, ולכן לבדם אינם מעידים על טעמי מקרא.
 _NOT_TAAMIM_EVIDENCE = frozenset({taamim.SOF_PASUQ, taamim.PASEQ})
 
+# ‏PLAN_TEFILA 8.24 — סידור מצודה (אשכנז וספרד) משתמש בתווי טעמים כסימני
+# הגייה: ‏U+0592 (סגולתא) על אות עם שווא מסמן שווא נע (קִדְּ֒שָֽׁנוּ), ו-U+05AF
+# (עיגול מסורה) מפריד בין מילים בקריאת שמע (בְּכָל֯־לְ֯בָבְךָ). לכן:
+# 1. ‏U+05AF לעולם אינו עדות לטעמים, וסגולתא על אות שיש בה שווא — אינה עדות;
+# 2. נדרשים לפחות שני טעמים שונים ביחידה (פסוק מוטעם אמיתי — משרת ומפסיק).
+# נבדק על הטקסט המלא מ-Sefaria (29.10.2026): מצודה אשכנז 490⇒0 מתוך 1518
+# פסקאות, מצודה ספרד 502⇒8 (בדיוק הפסקאות עם טעמים אמיתיים, כמו דברים י:יב;
+# כלל 1 לבדו השאיר עוד אחת, בגלל סגולתא בודדת שלא אחרי שווא), תורת אמת ספרד
+# 45⇒0, ו-Shaliehsaboo נשאר 996/996 (כולן מוטעמות באמת). פסוקי התנ״ך אינם
+# עוברים כאן כלל — יחידות התנ״ך נושאות chunk="taamim" במפורש (verse_units).
+# התווים עצמם נשארים בתצוגה; מעותקי היישור הם יורדים ב-strip_taamim.
+_SHVA_NA_MARK = taamim.SEGOLTA       # U+0592 על אות עם שווא
+_MASORA_CIRCLE = "\u05AF"           # מפריד מילים בקריאת שמע של מצודה
+_SHVA = "\u05B0"
+_MIN_DISTINCT_TAAMIM = 2
+
+
+def _taamim_evidence(word: str) -> set:
+    """הטעמים שעל המילה שמעידים על טעמי מקרא אמיתיים (ראה 8.24 למעלה)."""
+    evidence = set()
+    cluster = ""  # אות אחת וכל הסימנים שאחריה
+    for ch in word + "\u05D0":  # אל״ף שומרת-מקום סוגרת את האשכול האחרון
+        if "\u05D0" <= ch <= "\u05EA":
+            marks = word_accents(cluster) - _NOT_TAAMIM_EVIDENCE
+            marks.discard(_MASORA_CIRCLE)
+            if _SHVA in cluster:
+                marks.discard(_SHVA_NA_MARK)
+            evidence |= marks
+            cluster = ""
+        cluster += ch
+    return evidence
+
 
 def _unit_chunk(unit: dict) -> str:
     """מצב החיתוך של יחידה: כפוי בשדה chunk, אחרת לפי נוכחות טעמים."""
     chunk = unit.get("chunk")
     if chunk is None:
         words = tokenize(clean_sefaria_text(unit["text"]))
-        accented = any(word_accents(w) - _NOT_TAAMIM_EVIDENCE for w in words)
-        chunk = "taamim" if accented else "punct"
+        evidence = set().union(*(_taamim_evidence(w) for w in words))
+        chunk = ("taamim" if len(evidence) >= _MIN_DISTINCT_TAAMIM
+                 else "punct")
     if chunk not in CHUNK_MODES:
         raise ValueError(f"מצב חיתוך לא מוכר: {chunk!r}")
     return chunk
@@ -280,11 +313,28 @@ class MmsAligner:
         self.aligner = bundle.get_aligner()
 
     def align(self, waveform, romanized_words: list,
-              offset_sec: float = 0.0) -> list:
+              offset_sec: float = 0.0, stars: list = None) -> list:
+        """‏stars — (פרופיל שירה; דורש with_star=True) רשימת בוליאנים באורך
+        מספר המילים + 1: stars[k] = טוקן "*" לפני מילה k, והאחרון = "*" בסוף.
+        הכוכב בולע אודיו שאינו בטקסט; ה-span שלו נזרק, כך שהפלט תמיד באורך
+        המילים. ‏MMS_FA: ‏get_model(with_star=True) הוא אותו קובץ משקולות
+        בדיוק, עם עמודת log-prob 0 נוספת; ה-tokenizer ממפה "*" לאינדקס 28.
+        """
+        words, keep = romanized_words, None
+        if stars:
+            words, keep = [], []
+            for k, r in enumerate(romanized_words):
+                if stars[k]:
+                    words.append("*")
+                    keep.append(False)
+                words.append(r)
+                keep.append(True)
+            if stars[len(romanized_words)]:
+                words.append("*")
+                keep.append(False)
         with self._torch.inference_mode():
             emission, _ = self.model(waveform.to(self.device))
-            token_spans = self.aligner(emission[0],
-                                       self.tokenizer(romanized_words))
+            token_spans = self.aligner(emission[0], self.tokenizer(words))
         num_frames = emission.size(1)
         sec_per_frame = waveform.size(1) / num_frames / self.sample_rate
         spans = []
@@ -293,6 +343,8 @@ class MmsAligner:
             end = offset_sec + word_spans[-1].end * sec_per_frame
             scores = [getattr(t, "score", 1.0) for t in word_spans]
             spans.append((start, end, sum(scores) / len(scores)))
+        if keep is not None:
+            spans = [sp for sp, k in zip(spans, keep) if k]
         return spans
 
 
@@ -335,7 +387,7 @@ def segment_bounds(segments: list, word_spans: list):
 
 
 def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25,
-              starts_override: list = None) -> str:
+              starts_override: list = None, gaps: list = None) -> str:
     """גבולות מקטעים בלבד (שאר חותמות המילים נזרקות) → תוכן קובץ SRT.
 
     לכל מקטע: התחלה = תחילת מילתו הראשונה; סוף = תחילת המקטע הבא
@@ -343,6 +395,9 @@ def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25,
     starts_override מאפשר להזריק תחילות מתוקנות (הצמדת VAD בפייפליין
     ההיברידי) בלי לשנות את חוזה הפונקציה. הטקסט המוצג הוא display בלבד —
     טקסט Sefaria המדויק, מנוקד ומוטעם, ללא שום עיבוד.
+    ‏gaps — קטעי זמן (start, end) של דיבור שאינו בטקסט (פרופיל שירה): קטע
+    שנופל בין כתובית לבאה אחריה קוטע אותה בתחילתו, כדי שהכתובית לא תוצג
+    בזמן שהחזן מדבר משהו אחר.
     """
     starts, ends = segment_bounds(segments, word_spans)
     if starts_override is not None:
@@ -356,6 +411,9 @@ def build_srt(segments: list, word_spans: list, tail_pad: float = 0.25,
     for i, seg in enumerate(segments):
         start = starts[i]
         end = starts[i + 1] if i + 1 < len(segments) else ends[i] + tail_pad
+        for g0, g1 in gaps or ():
+            if start < g0 < end and g1 <= end + 1e-6:
+                end = g0
         end = max(end, start + 0.3)  # כתובית לעולם לא קצרה מ-0.3 שניות
         lines += [str(i + 1), f"{_fmt_ts(start)} --> {_fmt_ts(end)}",
                   seg["display"], ""]

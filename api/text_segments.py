@@ -90,6 +90,27 @@ def _read_max_words(raw) -> int:
     return min(max(value, 2), 8)
 
 
+def segments_payload(units: list, max_words: int, mode: str) -> list:
+    """יחידות ⇐ רשימת המקטעים בתשובה (‏display/label/unit/verse/words/
+    letters/verse_end). משותף ל-/api/text_segments ול-/api/siddur — אותו
+    מבנה בדיוק, ואותו חיתוך (units_to_segments) שה-worker מריץ."""
+    segs = units_to_segments(units, max_words, mode=mode)
+    segments = []
+    for i, seg in enumerate(segs):
+        unit_end = i + 1 == len(segs) or segs[i + 1]["unit"] != seg["unit"]
+        segments.append({
+            "display": seg["display"],
+            "label": seg["label"],
+            "unit": seg["unit"],
+            # ‏verse = מספר היחידה מ-1 — תאימות לממשק שמקבץ לפי verse
+            "verse": seg["unit"] + 1,
+            "words": len(seg["align_plain"]),
+            "letters": sum(len(w) for w in seg["align_plain"]),
+            "verse_end": unit_end,
+        })
+    return segments
+
+
 def build_payload(body: dict) -> dict:
     """גוף הבקשה (dict) → מבנה ה-JSON המלא של התשובה."""
     if not isinstance(body, dict):
@@ -108,24 +129,11 @@ def build_payload(body: dict) -> dict:
 
     units = text_units(text)
     check_units_limits(units)
-    segs = units_to_segments(units, max_words, mode=mode)
-    if not segs:
+    segments = segments_payload(units, max_words, mode)
+    if not segments:
         raise ValueError("לא נמצאו בטקסט מילים לסנכרון"
                          + (" — טקסט לא מנוקד דורש מצב תפילה"
                             if mode == "tanakh" else ""))
-    segments = []
-    for i, seg in enumerate(segs):
-        unit_end = i + 1 == len(segs) or segs[i + 1]["unit"] != seg["unit"]
-        segments.append({
-            "display": seg["display"],
-            "label": seg["label"],
-            "unit": seg["unit"],
-            # ‏verse = מספר היחידה מ-1 — תאימות לממשק שמקבץ לפי verse
-            "verse": seg["unit"] + 1,
-            "words": len(seg["align_plain"]),
-            "letters": sum(len(w) for w in seg["align_plain"]),
-            "verse_end": unit_end,
-        })
     return {
         "mode": mode,
         "max_words": max_words,

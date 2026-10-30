@@ -20,7 +20,8 @@ import unicodedata
 
 from . import taamim
 from .chunker import (_BR_RE, _FOOTNOTE_RE, _HEBREW_LETTER_RE,
-                      _merge_unalignable, build_segment, clean_sefaria_text)
+                      _merge_unalignable, build_segments, clean_sefaria_text,
+                      qere_ketiv_flags)
 
 # --- טוקניזציה --------------------------------------------------------------
 
@@ -139,7 +140,8 @@ def prose_segments(text: str, max_words: int = 4,
     מילה נשמעת לשכנו. לטקסט תפילה/חופשי מעבירים mode="tefila" — אחרת
     מילה לא מנוקדת נחשבת כתיב ונזרקת מהיישור (ההתנהגות של התנ״ך).
     """
-    result = [build_segment(seg, mode)
-              for line in prose_lines(text)
-              for seg in split_prose(line, max_words)]
+    lines = prose_lines(text)
+    groups = [seg for line in lines for seg in split_prose(line, max_words)]
+    words = [w for line in lines for w in line]  # = prose_tokens(text)
+    result = build_segments(groups, mode, qere_ketiv_flags(words, mode))
     return _merge_unalignable(result)

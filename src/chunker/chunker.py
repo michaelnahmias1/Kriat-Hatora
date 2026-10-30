@@ -175,22 +175,45 @@ _NIQQUD_RE = re.compile("[\u05B0-\u05BD\u05BF\u05C1\u05C2\u05C7]")
 # ‏mode="tefila" — לסידור ולטקסט חופשי:
 # - מילה בלי ניקוד אינה כתיב: בסידור (ובטקסט שמודבק) היא פשוט טקסט לא
 #   מנוקד שנאמר בקול, ולכן נכנסת ליישור — באותיות בלבד.
-# - שם ה׳ כתוב בסידורים בכמה צורות, וכולן נקראות "אדני".
-# ⚠️ הצורות המדויקות ממתינות לסקר הסידור ב-Sefaria (שלב 0.1) ולתמלולים
-# אמיתיים (שלב 0.2) — הרשימה כאן היא ההנחה הסבירה, לא נתון מאומת.
+# - שם ה׳ כתוב בסידורים בכמה צורות (ספירות אמיתיות: docs/siddur_survey.md,
+#   "ממצאי המשך" סעיף ג; PLAN_TEFILA.md 8.5/8.21):
+#   ‏`יהוה` (כל ניקוד, כולל הצורות הקבליות `יִהִוִהִ`/`יֻהֻוֻהֻ`), ‏`יְיָ`/`יי`,
+#   ‏`ה'`/`ה׳`/`ה’` — כולן נקראות "אדני"; וגם עם תחילית של 1–3 אותיות
+#   מ-ו ב כ ל מ ש ה (`לַיהֹוָה`, ‏`וּבַה'`, ‏`לַייָ`) ⇒ אותה תחילית + "אדני".
+#   חריג: `יהוה` בניקוד "אלהים" (`יֱהֹוִה` — חיריק בו״ו וה״א אחרונה בלי
+#   תנועה) נקרא "אלהים". ‏`ד'` אינו ממופה (כמעט תמיד המספר 4 או קיצור).
+# כל זה בעותקי היישור בלבד — טקסט התצוגה לעולם לא משתנה.
 ALIGN_MODES = ("tanakh", "tefila")
 
-# יְהוָה / יְיָ / יי — לפי האותיות בלבד (אחרי letters_only)
-_TEFILA_NAME_PLAIN = {"יהוה": "אדני", "יי": "אדני"}
-# ה׳ בקיצור: "ה" + גרש (‏' ASCII, ‏׳ עברי, ‏’ טיפוגרפי) כמילה עומדת בפני
-# עצמה בלבד — מותרים סביבה רק סימני פיסוק/סוגריים. כך "ה'," ו-"(ה')" הם
-# השם, אבל לא "ג'", לא "ה'תשפ"ו" ולא "לַה'" (תחילית — שאלה פתוחה).
+_NIQQUD_CLASS = "\u05B0-\u05BD\u05BF\u05C1\u05C2\u05C7"
+# תחיליות שנצמדות לשם ה׳ — אות אחת עד שלוש (לַ, וּבַ, שֶׁבַּ, וּלְ...)
+_NAME_PREFIX_LETTERS = "ובכלמשה"
+_MAX_NAME_PREFIX = 3
+# ה׳ בקיצור: תחילית אופציונלית + "ה" + גרש (' ASCII, ‏׳ עברי, ‏’ טיפוגרפי)
+# כמילה שלמה — מותרים סביבה רק סימני פיסוק/סוגריים. כך "ה',", "(ה')",
+# "לה'" ו-"וַה'" הם השם, אבל לא "ג'", לא "ד'" (מספר), לא "ר'" ולא
+# "ה'תשפ"ו" (אותיות אחרי הגרש).
 _TEFILA_NAME_ABBR_RE = re.compile(
-    "^[^\u05D0-\u05EA]*\u05D4[\u05B0-\u05BD\u05BF\u05C1\u05C2\u05C7]*"
-    "['\u05F3\u2019][^\u05D0-\u05EA]*$")
+    f"^[^\u05D0-\u05EA]*(?:[{_NAME_PREFIX_LETTERS}][{_NIQQUD_CLASS}]*)"
+    f"{{0,{_MAX_NAME_PREFIX}}}"
+    f"\u05D4[{_NIQQUD_CLASS}]*['\u05F3\u2019][^\u05D0-\u05EA]*$")
 # כל מה שאינו אות או ניקוד — מוסר מהגרסה המנוקדת במצב תפילה
-_NON_VOCALIZED_CHARS_RE = re.compile(
-    "[^\u05D0-\u05EA\u05B0-\u05BD\u05BF\u05C1\u05C2\u05C7]")
+_NON_VOCALIZED_CHARS_RE = re.compile(f"[^\u05D0-\u05EA{_NIQQUD_CLASS}]")
+
+# תנועות (בלי דגש, מתג, רפה ונקודות שי״ן/שׂי״ן) — לזיהוי ניקוד השם והתחילית
+_VOWELS = frozenset("\u05B0\u05B1\u05B2\u05B3\u05B4\u05B5\u05B6\u05B7"
+                    "\u05B8\u05B9\u05BA\u05BB\u05C7")
+_SHVA, _HIRIQ, _TSERE, _PATAH = "\u05B0", "\u05B4", "\u05B5", "\u05B7"
+# יו״ד ראשונה של "יי" עם התנועות/הדגש האלה היא מילה אחרת ולא השם:
+# ‏בִּכְיִי, ‏לְוִיַּי, ‏שְׁבוּיֵי (התאמות שווא שנמצאו בסקר)
+_NOT_YY_FIRST = frozenset("\u05B4\u05B5\u05B7\u05BC")  # חיריק צירה פתח דגש
+
+# קריאת השם: (מנוקד, מנוקד כשהתחילית בולעת את האל״ף, אותיות). לפי הדקדוק:
+# לַ + אֲדֹנָי = לַאדֹנָי, ‏וְ + אֲדֹנָי = וַאדֹנָי; ‏לְ + אֱלֹהִים = לֵאלֹהִים.
+_ADONAI = ("אֲדֹנָי", "אדֹנָי", "אדני")
+_ELOHIM = ("אֱלֹהִים", "אלֹהִים", "אלהים")
+# התנועה שהתחילית מקבלת לפני כל קריאה: שווא בתחילית מתחלף בה, והאל״ף נבלעת
+_SWALLOWING_VOWEL = {_ADONAI: _PATAH, _ELOHIM: _TSERE}
 
 
 def _check_mode(mode: str):
@@ -198,10 +221,73 @@ def _check_mode(mode: str):
         raise ValueError(f"מצב יישור לא מוכר: {mode!r}")
 
 
+def _letter_clusters(vocalized: str) -> list:
+    """"לַיְהֹוָה" → ["לַ", "יְ", "הֹ", "וָ", "ה"]: כל אות עם הניקוד שאחריה."""
+    out = []
+    for ch in vocalized:
+        if "\u05D0" <= ch <= "\u05EA":
+            out.append(ch)
+        elif out:
+            out[-1] += ch
+    return out
+
+
+def _is_name_prefix(clusters: list) -> bool:
+    return (len(clusters) <= _MAX_NAME_PREFIX
+            and all(c[0] in _NAME_PREFIX_LETTERS for c in clusters))
+
+
+def _is_elohim_vowels(name: list) -> bool:
+    """‏יהוה בניקוד "אלהים" (יֱהֹוִה, יֱהוִֹה, יְהוִה): חיריק בו״ו, ה״א
+    אחרונה בלי תנועה ויו״ד בלי חיריק. הצורות הקבליות (יִהִוִהִ — חיריק תחת
+    כל אות) נאמרות "אדני", ונבדלות בתנועה שבה״א האחרונה וביו״ד."""
+    yod, _he, vav, last = name
+    return (_HIRIQ in vav and not _VOWELS.intersection(last)
+            and _HIRIQ not in yod)
+
+
+def _divine_name_parts(piece: str):
+    """(אשכולות התחילית, קריאה) אם החלק הוא שם ה׳ בכתיב הסידור, אחרת None.
+
+    ‏piece — מילה אחרי פירוק מקף. הקריאה היא _ADONAI או _ELOHIM.
+    """
+    bare = strip_taamim(piece)
+    clusters = _letter_clusters(_NON_VOCALIZED_CHARS_RE.sub("", bare))
+    letters = "".join(c[0] for c in clusters)
+    if _TEFILA_NAME_ABBR_RE.match(bare):
+        return clusters[:-1], _ADONAI
+    if letters.endswith("יהוה") and _is_name_prefix(clusters[:-4]):
+        return clusters[:-4], (_ELOHIM if _is_elohim_vowels(clusters[-4:])
+                               else _ADONAI)
+    if letters == "יי":
+        return [], _ADONAI  # ‏יְיָ / יי עומד בפני עצמו — בכל ניקוד, כמו קודם
+    if (letters.endswith("יי") and _is_name_prefix(clusters[:-2])
+            and not _NOT_YY_FIRST.intersection(clusters[-2])):
+        return clusters[:-2], _ADONAI
+    return None
+
+
+def _name_alignment_word(prefix: list, reading: tuple,
+                         keep_niqqud: bool) -> str:
+    """תחילית + קריאת השם, כפי שהקורא הוגה: לַאדֹנָי, וַאדֹנָי, בַּאדֹנָי,
+    שֶׁאֲדֹנָי, וְלֵאלֹהִים. תחילית לא מנוקדת נשארת לא מנוקדת (לה' ⇒
+    לאֲדֹנָי) — הרומניזציה מטפלת בה."""
+    if not keep_niqqud:
+        return "".join(c[0] for c in prefix) + reading[2]
+    if not prefix:
+        return reading[0]
+    *head, last = prefix
+    swallow = _SWALLOWING_VOWEL[reading]
+    last = last.replace(_SHVA, swallow)
+    if swallow in last:
+        return "".join(head) + last + reading[1]
+    return "".join(head) + last + reading[0]
+
+
 def is_tefila_divine_name(piece: str) -> bool:
-    """האם החלק (מילה אחרי פירוק מקף) הוא שם ה׳ בכתיב של הסידור."""
-    return (letters_only(piece) in _TEFILA_NAME_PLAIN
-            or bool(_TEFILA_NAME_ABBR_RE.match(piece)))
+    """האם החלק (מילה אחרי פירוק מקף) הוא שם ה׳ בכתיב של הסידור — כולל
+    תחילית (לַיהֹוָה, וה', לַייָ) וקריאת "אלהים" (יֱהֹוִה)."""
+    return _divine_name_parts(piece) is not None
 
 
 def is_ketiv(word: str) -> bool:
@@ -216,17 +302,72 @@ def strip_taamim(word: str) -> str:
     return word.replace(taamim.SOF_PASUQ, "").strip()
 
 
+# --- כתיב/קרי בסוגריים במצב תפילה (PLAN_TEFILA.md 8.22) ----------------------
+#
+# במצב tefila מילה לא מנוקדת נקראת — חוץ מתבנית אחת: פסוק מצוטט שבו הכתיב
+# מודפס בלי ניקוד ומיד אחריו הקרי המנוקד בסוגריים מרובעים: ‏`הביט [הַבִּ֖יטָה]`,
+# ‏`וגדלותיך [וּגְדֻלָּתְךָ֥]`, ‏`עַל־במותי [בָּמֳתֵי]`. הכתיב נשאר בתצוגה ולא נכנס
+# ליישור; הקרי (בלי הסוגריים) נכנס כרגיל. כשהכתיב הוא החלק האחרון בשרשרת
+# מקף — רק החלק הזה יוצא.
+# הכלל לא תלוי במצב החיתוך (taamim/punct): בסקר ה-cache של הסידור (685 עלים,
+# ‏29.10.2026) נמצאו 72 מופעים — 66 ביחידות taamim (Bakhshi 48, תיקון הכללי 8,
+# סדר ט׳ באב 7, Shaliehsaboo 3) ו-6 ביחידות punct (Vilna 1860: ‏`מגדל [מַגְדִּיל]`)
+# — כולם כתיב/קרי אמיתי, ואפס מופעים של מילה לא מנוקדת לפני סוגריים מנוקדים
+# שאינה כתיב. בלי תלות ב-chunk גם הדפדפן (js/segments.js, ‏isAudible) מממש
+# את אותו הכלל בלי לדעת את מצב החיתוך. ‏`[אָמֵן]` אחרי מילה מנוקדת — לא נוגע.
+# הכלל חל רק בתוך יחידה אחת (לא בין סוף יחידה לתחילת הבאה).
+_QERE_OPEN, _QERE_CLOSE = "[", "]"
+
+
+def _is_qere_bracket(token: str) -> bool:
+    """טוקן שנפתח בסוגר מרובע ותוכנו (עד הסוגר הסוגר) מנוקד."""
+    if not token.startswith(_QERE_OPEN):
+        return False
+    content = token[1:].split(_QERE_CLOSE, 1)[0]
+    return bool(_NIQQUD_RE.search(content))
+
+
+def _lettered_pieces(prosodic_word: str) -> list:
+    return [p for p in prosodic_word.split(taamim.MAQAF) if letters_only(p)]
+
+
+def qere_ketiv_flags(words: list, mode: str = "tanakh",
+                     unit_of: list = None) -> list:
+    """לכל מילה פרוזודית: האם החלק האחרון שלה הוא כתיב שהקרי שלו בא מיד
+    אחריו בסוגריים (8.22). ב-tanakh תמיד False — שם כל מילה לא מנוקדת
+    ממילא כתיב. ‏unit_of — יחידת כל מילה (כשהרשימה חוצה יחידות)."""
+    flags = [False] * len(words)
+    if mode != "tefila":
+        return flags
+    for i in range(len(words) - 1):
+        if unit_of is not None and unit_of[i] != unit_of[i + 1]:
+            continue
+        if not _is_qere_bracket(words[i + 1]):
+            continue
+        pieces = _lettered_pieces(words[i])
+        if pieces and not _NIQQUD_RE.search(pieces[-1]):
+            flags[i] = True
+    return flags
+
+
 def to_alignment_words(prosodic_word: str, keep_niqqud: bool,
-                       mode: str = "tanakh") -> list:
+                       mode: str = "tanakh", ketiv_tail: bool = False) -> list:
     """מילה פרוזודית → רשימת מילים כפי שהקורא הוגה אותן.
 
     שרשרת מקף נפתחת למילים נפרדות (הקורא הוגה כל אחת), וקרי-קבוע מוחלף.
     keep_niqqud=True למסלול MMS+uroman (מנוקד), False למודל עברי (אותיות).
     ‏mode="tefila" — בלי זריקת כתיב, ומפת שם ה׳ של הסידור (ראה למעלה).
+    ‏ketiv_tail — (tefila) החלק האחרון הוא כתיב שהקרי שלו בסוגריים אחריו
+    (‏qere_ketiv_flags) ולכן לא נכנס ליישור.
     """
     _check_mode(mode)
     out = []
-    for piece in prosodic_word.split(taamim.MAQAF):
+    pieces = prosodic_word.split(taamim.MAQAF)
+    if ketiv_tail and mode == "tefila":
+        last = max((i for i, p in enumerate(pieces) if letters_only(p)),
+                   default=0)
+        pieces = pieces[:last]
+    for piece in pieces:
         plain = letters_only(piece)
         if not plain:
             continue
@@ -246,40 +387,57 @@ def to_alignment_words(prosodic_word: str, keep_niqqud: bool,
 
 
 def _tefila_alignment_word(piece: str, plain: str, keep_niqqud: bool) -> str:
-    """חלק-מילה אחד במצב תפילה: שם ה׳ ⇒ אדני; אחרת המילה כפי שהיא.
+    """חלק-מילה אחד במצב תפילה: שם ה׳ ⇒ (תחילית +) אדני/אלהים; אחרת
+    המילה כפי שהיא.
 
     בגרסה המנוקדת נשארים רק אותיות וניקוד — בטקסט חופשי יש פיסוק רגיל
-    (פסיקים, גרשיים, סימן פיסוק מודבק) שאין לו מקום ברומניזציה.
+    (פסיקים, גרשיים, סימן פיסוק מודבק) שאין לו מקום ברומניזציה. גם תווי
+    הטעמים שמצודה משתמשת בהם כסימני הגייה (U+0592, ‏U+05AF — PLAN_TEFILA
+    8.24) נופלים כאן, ב-strip_taamim.
     """
-    if is_tefila_divine_name(piece):
-        return (_QERE_PERPETUUM_VOCALIZED["יהוה"] if keep_niqqud
-                else _QERE_PERPETUUM_PLAIN["יהוה"])
+    parts = _divine_name_parts(piece)
+    if parts is not None:
+        return _name_alignment_word(*parts, keep_niqqud)
     if keep_niqqud:
         return _NON_VOCALIZED_CHARS_RE.sub("", strip_taamim(piece))
     return plain
 
 
-def build_segment(words: list, mode: str = "tanakh") -> dict:
+def build_segment(words: list, mode: str = "tanakh", ketiv: list = None) -> dict:
     """רשימת מילים פרוזודיות → מקטע: טקסט תצוגה ושתי גרסאות יישור.
 
     זהו האינווריאנט הקריטי של ה-pipeline: שלוש הגרסאות נגזרות מאותם
     טוקנים, ולכן מיושרות מקטע-למקטע מבנייתן.
+    ‏ketiv — דגלי qere_ketiv_flags למילים האלה (None = אין).
     """
+    ketiv = ketiv or [False] * len(words)
     return {
         "display": " ".join(words),
-        "align_vocalized": [w for pw in words for w in
-                            to_alignment_words(pw, True, mode)],
-        "align_plain": [w for pw in words for w in
-                        to_alignment_words(pw, False, mode)],
+        "align_vocalized": [w for pw, k in zip(words, ketiv) for w in
+                            to_alignment_words(pw, True, mode, k)],
+        "align_plain": [w for pw, k in zip(words, ketiv) for w in
+                        to_alignment_words(pw, False, mode, k)],
     }
+
+
+def build_segments(groups: list, mode: str = "tanakh",
+                   ketiv: list = None) -> list:
+    """קבוצות מילים רצופות (פלט החיתוך) → מקטעים; ‏ketiv — דגלי
+    qere_ketiv_flags לרצף המילים כולו (שרשור הקבוצות)."""
+    out, i = [], 0
+    for group in groups:
+        flags = ketiv[i:i + len(group)] if ketiv is not None else None
+        out.append(build_segment(group, mode, flags))
+        i += len(group)
+    return out
 
 
 def segments_for_pipeline(verse_text: str, max_words: int = 4,
                           mode: str = "tanakh") -> list:
     """הפלט המלא לשלבי ההמשך — חיתוך פסוק יחיד לפי הטעמים."""
     words = tokenize(clean_sefaria_text(verse_text))
-    result = [build_segment(seg, mode)
-              for seg in (split_unit(words, max_words) if words else [])]
+    groups = split_unit(words, max_words) if words else []
+    result = build_segments(groups, mode, qere_ketiv_flags(words, mode))
     return _merge_unalignable(result)
 
 
@@ -296,11 +454,12 @@ def regroup_words(words: list, sizes: list, verse_of: list = None,
         raise ValueError(
             f"החלוקה המותאמת אישית מכסה {total} מילים אבל בטקסט {len(words)} — "
             "טען את הקטע מחדש ונסה שוב")
+    ketiv = qere_ketiv_flags(words, mode, verse_of)
     result, i = [], 0
     for n in sizes:
         if n < 1:
             raise ValueError("כל כתובית חייבת לכלול לפחות מילה אחת")
-        seg = build_segment(words[i:i + n], mode)
+        seg = build_segment(words[i:i + n], mode, ketiv[i:i + n])
         if verse_of is not None:
             seg["verse"] = verse_of[i]
         result.append(seg)

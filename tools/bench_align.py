@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
 """בדיקת ביצועים סינתטית ל-align_sequences (PLAN_TEFILA.md, שאלה 8.19).
 
-תפילה שלמה = אלפי מילים. align_sequences בונה DP ברצועה (band=250) על
-מילונים של Python — ~n×(2·band+1) תאים. הסקריפט מודד זמן וזיכרון שיא
-(tracemalloc) על רצפים סינתטיים של 1k/3k/5k/10k מילים עם רעש מציאותי:
+תפילה שלמה = אלפי מילים. align_sequences בונה DP ברצועה (band=250) —
+~n×(2·band+1) תאים. הסקריפט מודד זמן וזיכרון שיא (tracemalloc) על רצפים
+סינתטיים של 1k/3k/5k/10k מילים עם רעש מציאותי:
 החלפות (מילה משובשת/אחרת), הוספות (מילים שהתמלול "המציא") ומחיקות
 (מילים שהתמלול פספס).
 
 הנתונים סינתטיים לגמרי — מילים אקראיות מאותיות עבריות, לא טקסט אמיתי.
 ספריה סטנדרטית בלבד, בלי רשת.
 
+הזמן נמדד בריצה "נקייה", והזיכרון בריצה שנייה ונפרדת תחת tracemalloc.
+tracemalloc מאט — בסביבות מסוימות פי 9 ויותר, ובמידה שונה למימושים
+שונים — ולכן אינו מודד זמן (עד 8.19 שתי המדידות היו באותה ריצה).
+
 הרצה:
     python3 tools/bench_align.py                  # 1000 3000 5000 10000
     python3 tools/bench_align.py --sizes 1000 --noise 0.2 --seed 7
-    python3 tools/bench_align.py --no-tracemalloc  # זמן "נקי" (tracemalloc מאט)
+    python3 tools/bench_align.py --no-tracemalloc  # זמן בלבד, בלי ריצת הזיכרון
 """
 
 import argparse
@@ -78,13 +82,14 @@ def run_one(n_words: int, noise: float, seed: int, band: int,
             use_tracemalloc: bool = True) -> dict:
     asr, ref = make_pair(n_words, noise, seed)
     anchors._weighted_distance.cache_clear()  # מדידה הוגנת — בלי cache חם
-    if use_tracemalloc:
-        tracemalloc.start()
     t0 = time.perf_counter()
     pairs = align_sequences(asr, ref, band=band)
     elapsed = time.perf_counter() - t0
     peak = 0
-    if use_tracemalloc:
+    if use_tracemalloc:                       # ריצה שנייה — לזיכרון בלבד
+        anchors._weighted_distance.cache_clear()
+        tracemalloc.start()
+        align_sequences(asr, ref, band=band)
         _cur, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
     matched = sum(1 for a, r, s in pairs

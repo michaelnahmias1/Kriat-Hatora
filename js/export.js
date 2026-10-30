@@ -3,17 +3,19 @@
 
 /* ---------- שלב 5: ייצוא SRT ---------- */
 function buildSrt() {
-  const segs = S.data.segments, n = segs.length, lines = [];
+  // רשומה לכל הופעה בסדר הביצוע (כתובית שחוזרת — שוב); בלעדיו — לכל כתובית
+  const segs = S.data.segments, order = cueOrder(), n = order.length, lines = [];
   for (let i = 0; i < n; i++) {
     const start = S.times[i];
     let end = i + 1 < n ? S.times[i + 1] : S.endTime + 0.25;
     end = Math.max(end, start + 0.3);
-    lines.push(String(i + 1), `${fmtSrt(start)} --> ${fmtSrt(end)}`, segs[i].display, "");
+    lines.push(String(i + 1), `${fmtSrt(start)} --> ${fmtSrt(end)}`, segs[order[i]].display, "");
   }
   return "\uFEFF" + lines.join("\n");  // BOM — כמו utf-8-sig בצינור ה-Colab
 }
 function srtName() {
   if (isFreeText()) return freeTextSrtName();
+  if (dataSource() === "siddur") return titleSrtName(sourceTitle(), "תפילה");
   const q = readQuery();
   let name = `${q.book}_${q.chapter}`;
   if (q.verse_start) name += `_${q.verse_start}`;

@@ -18,6 +18,9 @@ on:
     paths:
       - "src/**"
       - "modal_worker/**"
+      # אינדקס הזיהוי נאפה ל-image של ה-worker (add_local_file ב-app.py) —
+      # זה הקובץ היחיד מ-data/ שנכנס ל-image, ולכן רק הוא מפעיל פריסה.
+      - "data/siddur/identify_index.json.gz"
       - ".github/workflows/deploy-modal.yml"
   workflow_dispatch: {}
 

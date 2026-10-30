@@ -12,7 +12,10 @@ const S = {
   cloudJob: null,    // עבודת ענן פעילה {id, t0, est, push} — שורדת סגירת האפליקציה
   splits: null,      // חלוקה מותאמת אישית: גודל כל כתובית במילים (null = לפי הטעמים)
   baseSplits: null,  // החלוקה המקורית לפי הטעמים — לכפתור האיפוס
-  source: "tanakh",  // הלשונית הפעילה: tanakh | text (מקור הטקסט שנטען — dataSource())
+  source: "tanakh",  // הלשונית הפעילה: tanakh | siddur | text (מקור הטקסט שנטען — dataSource())
+  perf: null,        // מבנה הביצוע — חזרות, פזמון, דילוגים (performance.js); null = סדר הטקסט
+  timesOrder: null,  // סדר הכתוביות ש-times שייכים אליו (מה שנשלח לענן); null = סדר הטקסט
+  singing: false,    // מתג "שירה / חזנות" (cloud.js) — כבוי = קריאה, ברירת המחדל של ה-worker
 };
 
 /* ---------- עזרי תצוגה ---------- */
@@ -58,6 +61,12 @@ function save() {
       cloudJob: S.cloudJob, splits: S.splits, baseSplits: S.baseSplits,
       // ‏source חדש — מצב שמור בלי source משוחזר כתנ״ך (main.js)
       source: S.source, freeText: readFreeText(),
+      // הבחירה בסידור (נוסח, מיקום בעץ, קטע וטווח) — source-siddur.js
+      siddur: siddurSaved(),
+      // מבנה הביצוע וסדר הזמנים — חדשים; מצב שמור בלעדיהם = סדר הטקסט
+      perf: S.perf, timesOrder: S.timesOrder,
+      // מתג "שירה / חזנות" — חדש; מצב שמור בלעדיו = כבוי
+      singing: S.singing,
     }));
   } catch (e) {}
 }

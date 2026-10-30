@@ -20,10 +20,13 @@
 <script defer src="/js/state.js"></script>
 <script defer src="/js/source-tanakh.js"></script>
 <script defer src="/js/source-text.js"></script>
+<script defer src="/js/source-siddur.js"></script>
 <script defer src="/js/segments.js"></script>
 <script defer src="/js/split-editor.js"></script>
+<script defer src="/js/performance.js"></script>
 <script defer src="/js/audio.js"></script>
 <script defer src="/js/cloud.js"></script>
+<script defer src="/js/identify.js"></script>
 <script defer src="/js/review.js"></script>
 <script defer src="/js/export.js"></script>
 <script defer src="/js/pwa.js"></script>
@@ -60,10 +63,10 @@
     <h2><span class="n">1</span> בחירת הקטע <span class="done" id="done1" hidden>✓</span>
       <button class="cornerBtn" id="editSplitBtn" hidden title="עריכת חלוקת המילים">✏️ עריכת החלוקה</button>
     </h2>
-    <!-- מקור הטקסט: תנ״ך או טקסט חופשי ("תפילה" — בשלב הבא, מוסתר) -->
+    <!-- מקור הטקסט: תנ״ך, תפילה (ספריית הסידור) או טקסט חופשי -->
     <div class="srcTabs" role="tablist" aria-label="מקור הטקסט">
       <button type="button" role="tab" data-src="tanakh" aria-selected="true">תנ״ך</button>
-      <button type="button" role="tab" data-src="siddur" aria-selected="false" hidden>תפילה</button>
+      <button type="button" role="tab" data-src="siddur" aria-selected="false">תפילה</button>
       <button type="button" role="tab" data-src="text" aria-selected="false">טקסט חופשי</button>
     </div>
     <div id="srcTanakh">
@@ -130,11 +133,94 @@
       <p class="hint">כל שורה נחתכת לכתוביות בנפרד, וכתובית לא חוצה שורה. הכותרת משמשת לשם קובץ הכתוביות ולהתראת הסיום.</p>
       <button class="mt" id="textLoadBtn">טען את הטקסט</button>
     </div>
+    <!-- ספריית התפילות (PLAN_TEFILA.md 4.2.4): חיפוש (למעלה) / נוסח ← קיצורים / עץ ← קטע ← טווח פסקאות -->
+    <div id="srcSiddur" hidden>
+      <div class="sdSearchBox" role="search">
+        <span class="sdSearchIc" aria-hidden="true">🔍</span>
+        <input type="search" id="sdSearch" maxlength="100" autocomplete="off" enterkeyhint="search"
+          aria-label="חיפוש בסידור" placeholder="חיפוש: אשרי, קדיש, נשמת…">
+        <button type="button" id="sdSearchClear" aria-label="ניקוי החיפוש" hidden>✕</button>
+      </div>
+      <label class="sdAll" id="sdAllWrap" hidden><input type="checkbox" id="sdAll"> חיפוש בכל הנוסחים</label>
+      <div id="sdResults" class="sdResults" hidden aria-live="polite"></div>
+      <div id="sdMain">
+        <!-- זיהוי הקטע מההקלטה (js/identify.js, PLAN_TEFILA.md 4.5.2) — ההקלטה קודם, הטקסט אחר-כך -->
+        <div id="idWrap" class="idWrap" hidden>
+          <input type="file" id="idFile" accept="audio/*,video/*" hidden>
+          <button type="button" id="idBtn" class="secondary idBtn">🔎 זהה לי את הקטע מההקלטה</button>
+          <p class="hint" id="idHint">לא בטוחים איזה קטע בהקלטה? בחרו אותה — המערכת תאזין ותציע את הקטע מהסידור (נוסח, תפילה וטווח).</p>
+          <p class="hint" id="idFileNote" hidden>ההקלטה: <b id="idFileName"></b> · <button type="button" id="idOther" class="linkBtn">קובץ אחר…</button></p>
+          <div id="idProgress" class="procrow" hidden>
+            <span class="spin"></span>
+            <span class="plabel" id="idLabel"></span>
+            <span class="ptime" id="idTime">0:00</span>
+            <button type="button" class="cancel" id="idCancel" title="ביטול הזיהוי" aria-label="ביטול הזיהוי">✕</button>
+          </div>
+          <div id="idMsg" aria-live="polite"></div>
+          <div id="idResults" class="idResults"></div>
+        </div>
+        <label for="sdNusach" class="mt">נוסח</label>
+        <select id="sdNusach"><option value="">בחרו נוסח…</option></select>
+        <div id="sdBrowse" hidden>
+          <div id="sdPopularWrap" class="sdBlock mt" hidden>
+            <div class="range-title">קטעים נפוצים</div>
+            <div id="sdPopular" class="sdPopular"></div>
+            <p class="hint" id="sdPopularNote" hidden></p>
+          </div>
+          <nav id="sdCrumbs" class="sdCrumbs mt" aria-label="מיקום בסידור"></nav>
+          <div id="sdList" class="sdList"></div>
+        </div>
+        <div id="sdLeaf" hidden>
+          <div class="sdLeafHead">
+            <button type="button" id="sdBack" class="small secondary">→ חזרה לרשימה</button>
+            <h3 id="sdLeafTitle"></h3>
+          </div>
+          <p class="hint" id="sdLeafMeta"></p>
+          <p class="hint" id="sdLeafSource" hidden></p>
+          <!-- "מה אומרים היום?" — תוספות תלויות-יום (PLAN_TEFILA.md 4.4.2) -->
+          <div id="sdDays" class="sdBlock sdDays mt" hidden>
+            <div class="range-title">מה אומרים היום?</div>
+            <label for="sdDay">איזה יום?</label>
+            <select id="sdDay"></select>
+            <p class="hint" id="sdDayNote">בחירת היום מתאפסת כל יום ל"לפי הקטע"; העונה נשמרת.</p>
+            <div id="sdSeasonWrap" hidden>
+              <div class="sdSubTitle">עונה</div>
+              <div id="sdSeason" class="sdSeg" role="group" aria-label="עונה"></div>
+            </div>
+            <div id="sdNeed" class="sdNeed" role="status" hidden></div>
+            <div class="sdSubTitle" id="sdCondsTitle">תוספות בקטע (הקשה מדליקה / מכבה)</div>
+            <div id="sdConds" class="sdChips"></div>
+            <p class="hint" id="sdDaysSum"></p>
+          </div>
+          <div id="sdRange" hidden>
+            <div class="row mt">
+              <div>
+                <label for="sdFrom">מפסקה</label>
+                <select id="sdFrom"></select>
+              </div>
+              <div>
+                <label for="sdTo">עד פסקה</label>
+                <select id="sdTo"></select>
+              </div>
+            </div>
+            <p class="hint">סמנו את הפסקאות שנאמרות בהקלטה. פסקאות באפור הן הוראות — הן מוצגות אבל לא נכנסות לכתוביות.</p>
+            <div id="sdParas" class="sdParas"></div>
+          </div>
+          <button class="mt" id="sdLoadBtn">טען את הקטע</button>
+          <button class="secondary mt" id="sdCopyBtn">📝 העתק לטקסט חופשי (לעריכת הנוסח)</button>
+        </div>
+      </div>
+    </div>
     <div id="loadMsg"></div>
     <div id="segPreviewWrap" hidden>
       <p class="okline" id="loadOk"></p>
       <div class="seglist bible" id="segPreview"></div>
       <p class="hint" id="segHint">בדיקת עיניים: החיתוך לפי טעמי המקרא — כל שורה תהיה כתובית אחת. אפשר לשנות את החלוקה בכפתור העריכה שבפינה.</p>
+      <!-- מבנה הביצוע — רק בתפילה ובטקסט חופשי (js/performance.js) -->
+      <div id="perfRow" class="perfRow" hidden>
+        <button type="button" class="secondary mt" id="perfBtn">🔁 מבנה הביצוע — חזרות, פזמון, דילוגים</button>
+        <p class="hint" id="perfStatus"></p>
+      </div>
     </div>
   </section>
 
@@ -150,6 +236,14 @@
   <!-- שלב 3: תזמון -->
   <section class="card locked" id="step3">
     <h2><span class="n">3</span> תזמון <span class="done" id="done3" hidden>✓</span></h2>
+    <!-- פרופיל שירה (PLAN_TEFILA.md 4.3.5) — רק בתפילה ובטקסט חופשי, כבוי כברירת מחדל (8.27) -->
+    <label class="singToggle" id="singWrap" hidden>
+      <input type="checkbox" id="singing" role="switch">
+      <span class="singTxt">
+        <b>🎵 שירה / חזנות</b>
+        <small>הדליקו אם ההקלטה מושרת או בנוסח חזנות — המערכת תדלג על דיבורים שאינם בטקסט (פתיחה, שם המנגינה)</small>
+      </span>
+    </label>
     <button id="startCloud" hidden>✨ סנכרון אוטומטי של הכתוביות</button>
     <div id="cloudProgress" hidden>
       <div class="procrow">
@@ -209,6 +303,33 @@
     </div>
     <div class="editBar" style="border-top:none;padding-top:0">
       <button id="editReset" class="ghost">🔄 חזרה לחלוקה לפי הטעמים</button>
+    </div>
+  </div>
+</div>
+
+<!-- מבנה הביצוע: חזרות, פזמון ודילוגים (js/performance.js, PLAN_TEFILA.md 4.3.1) -->
+<div id="perfOverlay">
+  <div id="perfSheet">
+    <div class="sheetHead">
+      <h3>מבנה הביצוע</h3>
+      <button id="perfCancel">ביטול</button>
+      <button id="perfSave" class="primary">שמירה</button>
+    </div>
+    <div class="perfTabs" role="tablist" aria-label="תצוגה">
+      <button type="button" role="tab" id="perfTabEdit" aria-selected="true">סימון הבתים</button>
+      <button type="button" role="tab" id="perfTabPreview" aria-selected="false">התוצאה</button>
+    </div>
+    <!-- הכול מתחת ללשוניות נגלל יחד — ההסבר לא תופס את המסך בטלפון -->
+    <div class="perfBody" id="perfBody">
+      <p class="sheetHint">סמנו מה שרים בפועל בהקלטה: מה חוזר, איזה בית הוא הפזמון ועל מה מדלגים. הקישו על שורה כדי לחזור עליה, לדלג עליה או להתחיל ממנה בית חדש.</p>
+      <p id="perfSoon" class="sheetSoon" hidden>⏳ בקרוב: הסנכרון של חזרות. אפשר כבר לסמן את המבנה — בינתיים הסנכרון בענן ייעשה לפי סדר הטקסט.</p>
+      <label class="perfAfter" id="perfAfterWrap" hidden><input type="checkbox" id="perfAfter"> הוסף את הפזמון אחרי כל בית</label>
+      <div class="perfList" id="perfList"></div>
+      <div class="perfList" id="perfPreview" hidden></div>
+    </div>
+    <div id="perfCount"></div>
+    <div class="editBar">
+      <button id="perfReset" class="ghost">🔄 חזרה לסדר הרגיל (לפי הטקסט)</button>
     </div>
   </div>
 </div>

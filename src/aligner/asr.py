@@ -20,10 +20,14 @@ CANDIDATE_MODELS = [
 
 
 def transcribe(wav_path: str, model_name: str = None, device: str = None,
-               compute_type: str = "float16", beam_size: int = 5):
+               compute_type: str = "float16", beam_size: int = 5,
+               vad_filter: bool = True):
     """הקלטה (wav 16kHz) → (רשימת מילים, שם המודל שנטען).
 
     כל מילה: {"word","start","end","prob"} בשניות מתחילת הקובץ.
+    ‏vad_filter=False — פרופיל שירה: ה-VAD (silero) מסווג חזנות כ"לא דיבור"
+    ומוחק אותה מהתמלול (בנשמת — כל מה שאחרי 58 ש׳). ספי no-speech של
+    Whisper נשארים — הם מסננים הזיות במליסמות.
     """
     import torch
     from faster_whisper import WhisperModel
@@ -52,7 +56,7 @@ def transcribe(wav_path: str, model_name: str = None, device: str = None,
 
     segments, _info = model.transcribe(
         wav_path, language="he", word_timestamps=True,
-        condition_on_previous_text=False, vad_filter=True,
+        condition_on_previous_text=False, vad_filter=vad_filter,
         beam_size=beam_size)
 
     words = []

@@ -27,7 +27,11 @@ $("pickAudio").addEventListener("click", () => $("audioFile").click());
    התהליך לא באמת צריך את המשך — הוא משמש רק להערכת זמן ולהאזנה. */
 $("audioFile").addEventListener("change", () => {
   const f = $("audioFile").files[0];
-  if (!f) return;
+  if (f) adoptAudioFile(f);
+});
+/* קובץ ההקלטה שנבחר — משלב 2, או מ"זהה לי את הקטע" בלשונית התפילה
+   (identify.js), כך שאחרי הזיהוי לא צריך לבחור אותו שוב */
+function adoptAudioFile(f) {
   audioFileObj = f;
   S.audioName = f.name;
   audioReady = true;
@@ -37,7 +41,7 @@ $("audioFile").addEventListener("change", () => {
   refreshTimingSteps();
   save();
   probeDuration(f);
-});
+}
 /* קריאת המשך והנגן — best-effort לגמרי, עם טיימאאוט ועם טיפול בשגיאה */
 function probeDuration(f) {
   if (lastObjectUrl) { URL.revokeObjectURL(lastObjectUrl); lastObjectUrl = null; }
@@ -71,11 +75,13 @@ function refreshTimingSteps() {
   setLocked("step3", !ready);
   // התוצאה לא תלויה בקובץ האודיו: דוח, זמנים וייצוא SRT נפתחים ברגע שיש
   // זמנים — גם אחרי סגירה מלאה, כשהקובץ אבד. רק ההאזנה דורשת אותו מחדש.
-  const timed = !!(S.data && S.times && S.times.length === S.data.segments.length && S.endTime != null);
+  // ‏cueCount — כתובית לכל הופעה בסדר הביצוע שנשלח (performance.js); בלעדיו = מספר הכתוביות
+  const timed = !!(S.data && S.times && S.times.length === cueCount() && S.endTime != null);
   setLocked("stepReport", !timed);
   setLocked("step4", !timed);
   setLocked("step5", !timed);
   $("noAudioHint").hidden = !timed || audioReady;
+  renderSingToggle();   // "שירה / חזנות" — רק כשנטען טקסט של תפילה/טקסט חופשי
   if (timed) { $("done3").hidden = false; renderReport(); renderTimeList(); }
 }
 

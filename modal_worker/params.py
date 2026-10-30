@@ -184,7 +184,8 @@ def parse_performance(raw):
 
     כאן נבדקת רק הצורה (מספרים שלמים אי-שליליים, לא ריק, תקרת אורך). הטווח
     מול מספר הכתוביות נבדק ב-_parse_units_params כשה-splits ידוע מראש,
-    ואחרת — רק אחרי החיתוך, בצינור עצמו (run_hybrid_units, משימה 4.3).
+    ובכל מקרה שוב אחרי החיתוך, בצינור עצמו (‏hybrid.expand_performance —
+    שם הספירה מדויקת: כתובית שכולה כתיב מתמזגת לשכנה).
     """
     if raw is None or not str(raw).strip():
         return None
@@ -275,6 +276,9 @@ def _parse_units_params(form: dict, source: str) -> dict:
         if max(performance) >= len(splits):
             raise ValueError("סדר הביצוע מפנה לכתובית שאינה קיימת "
                              f"(יש {len(splits)} כתוביות)")
+        # החזרות מכפילות מילים — אותה תקרה כמו לחלוקה עצמה
+        if sum(splits[i] for i in performance) > MAX_SPLIT_WORDS:
+            raise ValueError("סדר הביצוע ארוך מדי (יותר מדי מילים עם החזרות)")
     return {
         "source": source,
         "units": parse_units(form.get("units")),
@@ -317,6 +321,41 @@ def pipeline_call(params: dict, audio_path: str, out_srt_path: str,
         "profile": params.get("profile") or "reading",
         "mode": params.get("mode") or "tefila",
         "work_dir": work_dir,
+    }
+
+
+# --- זיהוי הקטע מההקלטה (PLAN_TEFILA.md 4.5.1, ‏POST /identify) ---------------
+_NUSACH_KEY = re.compile(r"[a-z][a-z0-9-]{0,39}")
+# רק תחילת ההקלטה מתומללת: מספיק לזהות את הקטע, ועלות התמלול חסומה גם
+# כשמעלים הקלטה של שעה (תמלול בלבד ≈ שליש מעיבוד מלא — 4.5)
+IDENTIFY_MAX_SEC = 10 * 60
+
+
+def parse_identify_params(form: dict) -> dict:
+    """שדות הטופס של /identify ⇐ פרמטרים ל-run_identify.
+
+    ‏nusach — אופציונלי: הנוסח שהמשתמש בחר (עדיפות קלה בתיקו כמעט). מפתח
+    לא מוכר אינו שגיאה מבחינת הזיהוי (פשוט אין עדיפות), אבל צורה לא תקינה —
+    כן, כדי לא להעביר קלט שרירותי הלאה.
+    """
+    nusach = str(form.get("nusach") or "").strip()
+    if nusach and not _NUSACH_KEY.fullmatch(nusach):
+        raise ValueError("נוסח לא תקין: " + nusach[:40])
+    return {"nusach": nusach or None, "max_sec": IDENTIFY_MAX_SEC}
+
+
+def identify_call(params: dict, audio_path: str, work_dir: str) -> dict:
+    """ה-kwargs ל-siddur.identify.run_identify — טהור, נבדק בלי modal.
+
+    ‏vad_filter=False: ה-VAD של faster-whisper מוחק שירה וחזנות מהתמלול
+    (‏samples/nishmat: כל מה שאחרי 58 ש׳), והזיהוי חייב לעבוד גם עליהן.
+    """
+    return {
+        "audio_path": audio_path,
+        "work_dir": work_dir,
+        "nusach": params.get("nusach"),
+        "vad_filter": False,
+        "max_sec": params.get("max_sec") or IDENTIFY_MAX_SEC,
     }
 
 

@@ -1,0 +1,22 @@
+{
+  "audio": "nishmat.m4a",
+  "text": "text.txt",
+  "duration_sec": 122.04,
+  "source": "בעל הפרויקט, 29.10.2026 — האזנה ידנית; זמנים מסומנים approx הם בקירוב",
+  "recording": "חזן שר באירוע חי; האודיו רציף, בלי שתיקות, חזק לאורך כל ההקלטה",
+  "non_text_speech": [
+    {"start": 0.0, "end": 12.0, "approx": false,
+     "what": "הקדמה מדוברת שאינה בטקסט; הפסקה קצרה בסביבות 10–11 שניות"},
+    {"start": 57.0, "end": 58.0, "approx": true,
+     "what": "החזן אומר את שם הניגון שבו הוא משתמש (לא בטקסט)"}
+  ],
+  "line_starts": [
+    {"line": 1, "first_words": "כִּי לה' הַמְּלוּכָה", "start": 12.0,
+     "approx": false},
+    {"line": 4, "first_words": "נִשְׁמַת כָּל חַי", "start": 58.0,
+     "approx": true}
+  ],
+  "optional_words": [
+    {"line": 4, "word": "מֶלֶךְ", "in_text_as": "(מֶלֶךְ)", "spoken": true}
+  ]
+}

@@ -25,6 +25,7 @@ async function loadText() {
     if (!res.ok) throw new Error(data.error || ("שגיאה " + res.status));
     S.data = data;
     S.times = null; S.endTime = null; S.report = null;
+    S.perf = null; S.timesOrder = null;   // מבנה הביצוע שייך לטקסט הקודם
     S.splits = null;
     S.baseSplits = data.segments.map(s => tokensOf(s.display).length);
     renderTextLoaded();
@@ -37,33 +38,69 @@ async function loadText() {
   }
 }
 
-/* תצוגת הטקסט שנטען — משותפת לכל המקורות; טקסט חופשי מציג "שורה N"
-   במקום "פסוק", והנחיה בלי "טעמי המקרא" (source-text.js) */
+/* תצוגת הטקסט שנטען — משותפת לכל המקורות; טקסט חופשי וסידור מציגים את
+   תווית היחידה ("שורה N", ‏"אשרי · 3") במקום "פסוק", והנחיה בלי "טעמי
+   המקרא" (source-text.js). בסידור ההוראות מוצגות באפור בין הכתוביות —
+   הן לא כתוביות ולא נספרות (‏kind="instruction" לא נכנס למקטעים) */
 const SEG_HINT_TANAKH = $("segHint").textContent;
 const SEG_HINT_TEXT = "בדיקת עיניים: החיתוך לפי סופי השורות וסימני הפיסוק — כל שורה כאן תהיה כתובית אחת. אפשר לשנות את החלוקה בכפתור העריכה שבפינה.";
+const SEG_HINT_SIDDUR = "בדיקת עיניים: כל שורה ממוספרת תהיה כתובית אחת. השורות באפור הן הוראות מהסידור — הן לא כתוביות ולא מסונכרנות. אפשר לשנות את החלוקה בכפתור העריכה שבפינה.";
+function loadedSummary(d) {
+  const src = dataSource();
+  if (src === "text")
+    return `נטען: ${readFreeText().title || "טקסט חופשי"} · ${d.n_units} שורות · ${d.segments.length} כתוביות`;
+  if (src === "siddur") {
+    const r = d.range || {};
+    const part = r.total > 1 ? ` · פסקאות ${r.from}–${r.to} מתוך ${r.total}` : "";
+    return `נטען: ${d.label || d.title}${part} · ${d.segments.length} כתוביות · גרסה: ${String(d.version || "").trim()}`;
+  }
+  return `נטען: ${d.ref} · ${d.n_verses} פסוקים · ${d.segments.length} כתוביות · גרסה: ${d.version}`;
+}
 function renderTextLoaded() {
   const d = S.data;
-  const free = isFreeText();
-  $("loadOk").textContent = free
-    ? `נטען: ${readFreeText().title || "טקסט חופשי"} · ${d.n_units} שורות · ${d.segments.length} כתוביות`
-    : `נטען: ${d.ref} · ${d.n_verses} פסוקים · ${d.segments.length} כתוביות · גרסה: ${d.version}`;
-  $("segHint").textContent = free ? SEG_HINT_TEXT : SEG_HINT_TANAKH;
+  const src = dataSource();
+  const units = isUnitsSource();
+  $("loadOk").textContent = loadedSummary(d);
+  $("segHint").textContent = src === "text" ? SEG_HINT_TEXT
+    : src === "siddur" ? SEG_HINT_SIDDUR : SEG_HINT_TANAKH;
   $("editSplitBtn").hidden = false;
   const list = $("segPreview");
   list.innerHTML = "";
-  let lastVerse = null;
+  let lastVerse = null, lastLabel = null;
+  const chipFor = verse => {
+    // תווית אחת לכל קבוצת יחידות באותה תווית (פסקה מעורבת = כמה יחידות)
+    const label = unitLabel(verse);
+    if (label === lastLabel) return "";
+    lastLabel = label;
+    return `<span class="vchip">${escapeHtml(label)}</span>`;
+  };
+  // הוראות (רק בסידור): יחידות kind="instruction" שבין המקטעים
+  const instrRows = (fromUnit, toUnit) => {
+    const all = (src === "siddur" && d.units) || [];
+    for (let u = fromUnit; u < Math.min(toUnit, all.length); u++) {
+      if (all[u].kind !== "instruction") continue;
+      const row = document.createElement("div");
+      row.className = "segrow instr";
+      row.innerHTML = `<span class="idx"></span>${chipFor(u + 1)}<span class="txt">${escapeHtml(all[u].text)}</span>`;
+      list.appendChild(row);
+    }
+  };
+  let nextUnit = 0;
   d.segments.forEach((seg, i) => {
+    if (units && seg.verse !== lastVerse) { instrRows(nextUnit, seg.verse - 1); nextUnit = seg.verse; }
     const row = document.createElement("div");
     row.className = "segrow";
     const chip = seg.verse === lastVerse ? ""
-      : free ? `<span class="vchip">${escapeHtml(unitLabel(seg.verse))}</span>`
+      : units ? chipFor(seg.verse)
       : `<span class="vchip">פסוק ${seg.verse}</span>`;
     lastVerse = seg.verse;
-    // טקסט שהמשתמש הדביק — תמיד מוצג כטקסט, לא כ-HTML
-    const shown = free ? escapeHtml(seg.display) : seg.display;
+    // טקסט שהמשתמש הדביק או שהגיע מהסידור — תמיד מוצג כטקסט, לא כ-HTML
+    const shown = units ? escapeHtml(seg.display) : seg.display;
     row.innerHTML = `<span class="idx">${i + 1}</span>${chip}<span class="txt">${shown}</span>`;
     list.appendChild(row);
   });
+  if (units) instrRows(nextUnit, Infinity);
+  renderPerfStatus();   // "מבנה הביצוע" — רק בתפילה ובטקסט חופשי
   $("segPreviewWrap").hidden = false;
   $("done1").hidden = false;
   setLocked("step2", false);
